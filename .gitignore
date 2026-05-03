@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+.python-version
+
+# Test & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Tool caches
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.cache/
+
+# Editors / OS
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# VS Code — keep shared settings, ignore user-local state
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# Local overrides
+.env
+.env.*
+!.env.example
+
+# Spec Kit local-only state
+.specify/init-options.json
+
+# Secrets / SSH (never)
+*.pem
+*.key
+id_rsa*
