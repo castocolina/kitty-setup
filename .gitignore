@@ -56,3 +56,12 @@ Thumbs.db
 *.pem
 *.key
 id_rsa*
+
+# Hypothesis scratch (never committed; promoted by manual rewrite)
+tmp/
+
+# Backups created by config_updater
+*.bak.*
+
+# Harness session scratch (in case it ever lands outside tmp/)
+.kitty-setup-test/
