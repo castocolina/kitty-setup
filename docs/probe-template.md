@@ -1,6 +1,10 @@
 # Probe Template
 
-Canonical shape for every probe artefact under `tmp/probes/<NN>-<slug>.md`.
+Canonical shape for every probe artefact under
+`tmp/probes/<change-id>/<NN>-<slug>.md`. The `<change-id>` subdirectory is the
+kebab-case identifier of the OpenSpec change the probe belongs to; the `<NN>`
+ordinal restarts at `01` per change. This avoids filename collisions when two
+changes have probes in flight at the same time.
 
 A probe answers a single, narrow factual question about an external CLI, an
 external API, an OS-level contract, or the syntax / semantics of a configuration
@@ -31,7 +35,8 @@ for the spec.
 
 Target ≤ 50 lines total. If you need more — multiple commands, multiple
 verdicts, a non-trivial environment to reproduce — your question is a hypothesis,
-not a probe. Move it to `tmp/h<NN>-<slug>/` and follow R1.
+not a probe. Move it to `tmp/h<NN>-<slug>/` (a directory; per-repo numbering, not
+per-change) and follow R1.
 
 ## Filled-in example
 

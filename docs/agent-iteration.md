@@ -45,11 +45,14 @@ gate. The hypothesis directory is then deleted.
 
 Any task that depends on the behavior of an external CLI, an external API, an
 OS-level contract, or the syntax / semantics of a configuration file format that
-the repo does not own requires a probe artefact in `tmp/probes/<NN>-<slug>.md`
-*before* the task is executed. The probe captures six fields: assumption (one
-line), command, exit code, relevant output, verdict (`holds` / `fails` /
-`partial-with-workaround`), and the design decision or code path that uses it.
-See [docs/probe-template.md](probe-template.md) for the canonical shape.
+the repo does not own requires a probe artefact in
+`tmp/probes/<change-id>/<NN>-<slug>.md` *before* the task is executed. Probes
+live in a per-change subdirectory so concurrent in-flight changes don't collide
+on `01-*.md`; the `<NN>` ordinal restarts at `01` inside each change. The probe
+captures six fields: assumption (one line), command, exit code, relevant
+output, verdict (`holds` / `fails` / `partial-with-workaround`), and the design
+decision or code path that uses it. See
+[docs/probe-template.md](probe-template.md) for the canonical shape.
 
 Probes are scratch evidence. Their findings flow into `Why:` lines on `design.md`
 decisions, into commit messages, or into source-code comments at the call site
@@ -92,7 +95,7 @@ These are peers, not the same thing:
 
 | Question shape | Artefact | Lives in | Size |
 |---|---|---|---|
-| "Does this CLI flag exist? What does this command return?" | **Probe** (R6) | `tmp/probes/<NN>-<slug>.md` | One screen, six fields |
+| "Does this CLI flag exist? What does this command return?" | **Probe** (R6) | `tmp/probes/<change-id>/<NN>-<slug>.md` | One screen, six fields |
 | "Does this configuration produce this user-observable behavior?" | **Hypothesis** (R1) | `tmp/h<NN>-<slug>/` (directory) | repro.md + run.py + actual.json + draft.conf |
 
 A probe answers a narrow factual question about external-system shape. A
@@ -119,11 +122,12 @@ change), repeat:
    populated, walk the planned tasks and identify every external-system
    assumption (a CLI flag exists, a config directive accepts these values, an
    API returns this JSON shape). For each one, write a probe at
-   `tmp/probes/<NN>-<slug>.md` per R6 and the
-   [probe template](probe-template.md). Wrong-shape probes get fixed here, in
-   minutes, instead of getting fossilised into code or hypotheses that have to
-   be ripped out later. Add a `## Probes` section to `design.md` listing each
-   probe + verdict.
+   `tmp/probes/<active-change>/<NN>-<slug>.md` per R6 and the
+   [probe template](probe-template.md). The probe pass writes into the
+   per-change subdirectory `tmp/probes/<active-change>/`. Wrong-shape probes
+   get fixed here, in minutes, instead of getting fossilised into code or
+   hypotheses that have to be ripped out later. Add a `## Probes` section to
+   `design.md` listing each probe + verdict.
 
 4. **Drop scratch** into `tmp/h<NN>-<slug>/`:
    - `repro.md` — what the behavior is, the manual repro steps, the expected

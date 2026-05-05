@@ -24,26 +24,50 @@ delivered in two independent components that share a repo:
 - `bash`, `curl`, `make`. Pre-installed on a stock Pop!_OS box.
 - A working internet connection. `make setup` downloads the upstream kitty installer and,
   if necessary, installs `uv` from `https://astral.sh/uv/install.sh`.
+- `~/.local/bin` should be on `$PATH`. `make install` will append a
+  sentinel-bracketed `export` to `~/.zshrc` or `~/.bashrc` if not.
 - No `sudo` is required. Everything lands under `~/.local/` and `~/.config/kitty/`.
 
 ## Quickstart
 
 ```bash
-make setup              # install kitty into ~/.local/kitty.app, inject our config block
-make doctor             # verify install state (kitty version, sentinel block, parse, paths)
+make install            # uv sync → uv tool install . → kitty + config + PATH (calls tools/setup.sh)
+my-kitty-setup doctor   # verify install state (kitty version, sentinel block, parse, paths)
+my-kitty-setup install  # idempotent re-run; same as `make install` after the first install
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
 KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
-make uninstall          # remove our install + strip our config block (backups kept)
-make clean              # wipe ./tmp/ scratch and uninstall our config block (keeps kitty)
+make uninstall          # strip our config + payload (kitty + binary stay)
+make uninstall ALL=1    # also remove ~/.local/kitty.app + print my-kitty-setup self-removal
+make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
 ```
 
 `make help` (the default target) lists every target.
+
+The deployable binary lives at `~/.local/bin/my-kitty-setup` (a uv-managed
+shim) and the source it dispatches to is COPIED into
+`~/.local/share/uv/tools/my-kitty-setup/` at install time. **The source repo
+can be deleted any time after `make install` completes** — the binary keeps
+working
+(probe-consolidate-into-my-kitty-setup-cli-03).
+
+## Updates
+
+```bash
+git pull && make install
+```
+
+`make install` calls `uv tool install --force .`, which idempotently rebuilds
+the tool venv from the current source in ~177 ms
+(probe-consolidate-into-my-kitty-setup-cli-01). No "skip if installed" branch:
+re-running is the supported update path.
 
 ## Stack and layout
 
 Python is the stack. Bash exists only inside `tools/setup.sh` and `tools/uninstall.sh`
 for prerequisite bootstrap. Everything else is a Python entry point under
-`src/kitty_setup/`, exposed via `[project.scripts]` in `pyproject.toml`.
+`src/kitty_setup/`. Exactly one entry is exposed via `[project.scripts]`:
+`my-kitty-setup`, dispatching subcommands (`install`, `uninstall`, `doctor`,
+`help`) via argparse subparsers in `src/kitty_setup/cli.py`.
 
 ```
 .
@@ -57,12 +81,13 @@ for prerequisite bootstrap. Everything else is a Python entry point under
 │   ├── agent-iteration.md         # hypothesis workflow playbook
 │   └── repro/                     # promoted manual repros (one per behavior)
 ├── src/kitty_setup/       # Python package (PyPA src layout)
-│   ├── installer.py       # kitty upstream install + verify + uninstall
+│   ├── cli.py             # my-kitty-setup subcommand dispatcher (single entry point)
+│   ├── installer.py       # kitty upstream install + verify + uninstall + cli handlers
 │   ├── config_updater.py  # sentinel-bracketed include, backup, idempotent
 │   ├── doctor.py          # install + config diagnostic
-│   └── harness/           # autonomous test infrastructure
-│       ├── kitty_session.py
-│       └── cli.py
+│   ├── path_integration.py# sentinel-bracketed PATH editor for ~/.zshrc / ~/.bashrc
+│   └── harness/           # autonomous test infrastructure (Python module, no CLI)
+│       └── kitty_session.py
 ├── tools/                 # bash glue, only allowed in bootstrap territory
 │   ├── setup.sh
 │   └── uninstall.sh
