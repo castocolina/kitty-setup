@@ -43,11 +43,12 @@ Python is the stack. Bash exists only inside `tools/setup.sh` and
 `tools/uninstall.sh` for prerequisite bootstrap (uv install, `uv tool install
 --force .`, the kitty upstream installer call, the sentinel-bracketed shell-rc
 PATH edit dispatch, and a thin confirm + flag-forward layer over
-`my-kitty-setup uninstall`). No new shell scripts elsewhere — anything beyond
-the bootstrap line is a subcommand under `src/kitty_setup/cli.py`, the single
-`[project.scripts]` entry point (`my-kitty-setup`). The Makefile is thin glue:
-each target is at most five lines, and any target that grows past that
-dispatches into `tools/` or a subcommand of `my-kitty-setup`.
+`my-kitty uninstall` with a fallback to the legacy `my-kitty-setup` binary
+during the rename upgrade window). No new shell scripts elsewhere — anything
+beyond the bootstrap line is a subcommand under `src/kitty_setup/cli.py`, the
+single `[project.scripts]` entry point (`my-kitty`). The Makefile is thin
+glue: each target is at most five lines, and any target that grows past that
+dispatches into `tools/` or a subcommand of `my-kitty`.
 
 ## Pluggable rules
 

@@ -18,9 +18,7 @@ INTEGRATION_ENV_VAR = "KITTI_INTEGRATION"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Skip ``tests/integration/`` items unless ``KITTI_INTEGRATION=1`` is set."""
     del config
     if os.environ.get(INTEGRATION_ENV_VAR) == "1":

@@ -32,24 +32,24 @@ delivered in two independent components that share a repo:
 
 ```bash
 make install            # uv sync → uv tool install . → kitty + config + PATH (calls tools/setup.sh)
-my-kitty-setup doctor   # verify install state (kitty version, sentinel block, parse, paths)
-my-kitty-setup install  # idempotent re-run; same as `make install` after the first install
+my-kitty doctor         # verify install state (kitty version, sentinel block, parse, paths)
+my-kitty install        # idempotent re-run; same as `make install` after the first install
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
 KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
 make uninstall          # strip our config + payload (kitty + binary stay)
-make uninstall ALL=1    # also remove ~/.local/kitty.app + print my-kitty-setup self-removal
+make uninstall ALL=1    # also remove ~/.local/kitty.app + print my-kitty self-removal
 make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
 make prune              # keep 3 most recent kitty.conf backups, delete the rest
-my-kitty-setup prune    # dry-run: list backups + total size, no deletions
-my-kitty-setup prune --backups --older-than 60   # non-default policy: trim by age (days)
-my-kitty-setup prune --backups --all             # most aggressive: delete every backup
+my-kitty prune          # dry-run: list backups + total size, no deletions
+my-kitty prune --backups --older-than 60   # non-default policy: trim by age (days)
+my-kitty prune --backups --all             # most aggressive: delete every backup
 ```
 
 `make help` (the default target) lists every target.
 
-The deployable binary lives at `~/.local/bin/my-kitty-setup` (a uv-managed
-shim) and the source it dispatches to is COPIED into
-`~/.local/share/uv/tools/my-kitty-setup/` at install time. **The source repo
+The deployable binary lives at `~/.local/bin/my-kitty` (a uv-managed shim)
+and the source it dispatches to is COPIED into
+`~/.local/share/uv/tools/kitty-setup/` at install time. **The source repo
 can be deleted any time after `make install` completes** — the binary keeps
 working
 (probe-consolidate-into-my-kitty-setup-cli-03).
@@ -62,12 +62,12 @@ writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install + uninstall
 The `prune` subcommand is the **only** opt-in path that removes them:
 
 ```
-my-kitty-setup prune                              # dry-run listing, no writes
-my-kitty-setup prune --backups                    # default: --keep 3
-my-kitty-setup prune --backups --keep N           # keep N most recent
-my-kitty-setup prune --backups --older-than DAYS  # trim by mtime age
-my-kitty-setup prune --backups --all              # nuke everything
-make prune                                        # alias of `--backups --keep 3`
+my-kitty prune                              # dry-run listing, no writes
+my-kitty prune --backups                    # default: --keep 3
+my-kitty prune --backups --keep N           # keep N most recent
+my-kitty prune --backups --older-than DAYS  # trim by mtime age
+my-kitty prune --backups --all              # nuke everything
+make prune                                  # alias of `--backups --keep 3`
 ```
 
 ⚠️ Pruning `--all` immediately before an install reduces rollback safety to
@@ -85,13 +85,19 @@ the tool venv from the current source in ~177 ms
 (probe-consolidate-into-my-kitty-setup-cli-01). No "skip if installed" branch:
 re-running is the supported update path.
 
+If you upgraded from the `my-kitty-setup` era, the install prints a one-line
+notice with the literal `uv tool uninstall my-kitty-setup` command — run it
+to clean up the legacy shim. Your shell rc PATH block migrates automatically
+from the legacy `# >>> my-kitty-setup PATH >>>` markers to the new
+`# >>> my-kitty PATH >>>` markers on the same `make install` run.
+
 ## Stack and layout
 
 Python is the stack. Bash exists only inside `tools/setup.sh` and `tools/uninstall.sh`
 for prerequisite bootstrap. Everything else is a Python entry point under
 `src/kitty_setup/`. Exactly one entry is exposed via `[project.scripts]`:
-`my-kitty-setup`, dispatching subcommands (`install`, `uninstall`, `doctor`,
-`help`) via argparse subparsers in `src/kitty_setup/cli.py`.
+`my-kitty`, dispatching subcommands (`install`, `uninstall`, `doctor`,
+`prune`, `help`) via argparse subparsers in `src/kitty_setup/cli.py`.
 
 ```
 .
@@ -105,7 +111,7 @@ for prerequisite bootstrap. Everything else is a Python entry point under
 │   ├── agent-iteration.md         # hypothesis workflow playbook
 │   └── repro/                     # promoted manual repros (one per behavior)
 ├── src/kitty_setup/       # Python package (PyPA src layout)
-│   ├── cli.py             # my-kitty-setup subcommand dispatcher (single entry point)
+│   ├── cli.py             # my-kitty subcommand dispatcher (single entry point)
 │   ├── installer.py       # kitty upstream install + verify + uninstall + cli handlers
 │   ├── config_updater.py  # sentinel-bracketed include, backup, idempotent
 │   ├── doctor.py          # install + config diagnostic

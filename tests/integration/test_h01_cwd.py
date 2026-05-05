@@ -58,6 +58,4 @@ def test_launch_inherits_cwd(
         after = session.ls()
         new_win = _new_window(after, baseline_ids)
         observed = _foreground_cwd(new_win)
-        assert observed == str(scratch_dir), (
-            f"expected cwd={scratch_dir}, observed cwd={observed}"
-        )
+        assert observed == str(scratch_dir), f"expected cwd={scratch_dir}, observed cwd={observed}"
