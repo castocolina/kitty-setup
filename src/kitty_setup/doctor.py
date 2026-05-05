@@ -106,9 +106,9 @@ def run_checks(home: Path | None = None) -> list[CheckResult]:
     ]
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for ``kitty-setup-doctor``."""
-    del argv  # no flags yet (Q4 in design.md — JSON output deferred)
+def cli_doctor(args: object | None = None) -> int:
+    """Handler for ``my-kitty-setup doctor``. Accepts (and ignores) parsed args."""
+    del args  # no flags yet (JSON output deferred)
     results = run_checks()
     for result in results:
         print(result.render())
@@ -116,4 +116,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli_doctor())

@@ -14,11 +14,11 @@ import pytest
 
 from kitty_setup import config_updater
 from kitty_setup.config_updater import (
-    ConfigPaths,
-    ConfigUpdaterError,
     INCLUDE_LINE,
     MARKER_BEGIN,
     MARKER_END,
+    ConfigPaths,
+    ConfigUpdaterError,
     install,
     is_block_present,
     uninstall,
@@ -48,9 +48,7 @@ def payload_source(tmp_path: Path) -> Path:
 def _fake_kitty_bin(tmp_path: Path, *, exit_code: int) -> Path:
     """Write a tiny shell script that exits with ``exit_code`` regardless of args."""
     script = tmp_path / f"fake-kitty-{exit_code}"
-    script.write_text(
-        f"#!/usr/bin/env bash\nexit {exit_code}\n", encoding="utf-8"
-    )
+    script.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return script
 
@@ -72,9 +70,7 @@ def test_install_creates_conf_when_missing(paths: ConfigPaths, payload_source: P
     assert (paths.payload_dir / "kitty-setup.conf").is_file()
 
 
-def test_install_appends_to_existing_user_content(
-    paths: ConfigPaths, payload_source: Path
-) -> None:
+def test_install_appends_to_existing_user_content(paths: ConfigPaths, payload_source: Path) -> None:
     paths.kitty_dir.mkdir(parents=True)
     paths.conf_file.write_text("font_size 12\nbackground #000\n", encoding="utf-8")
 
@@ -260,23 +256,19 @@ def test_repeated_install_overwrites_payload(
     assert (paths.payload_dir / "extra.conf").is_file()
 
 
-def test_no_extraneous_writes_to_xdg_paths(
-    paths: ConfigPaths, payload_source: Path
-) -> None:
+def test_no_extraneous_writes_to_xdg_paths(paths: ConfigPaths, payload_source: Path) -> None:
     install(paths, payload_source)
     # Footprint check: only the conf, the payload dir, and any backups.
     entries = sorted(p.name for p in paths.kitty_dir.iterdir())
     expected = {"kitty.conf", paths.payload_dir.name}
     actual = set(entries)
     extras = actual - expected
-    assert not extras or all(name.startswith("kitty.conf.bak.") for name in extras), (
-        f"unexpected extra entries: {extras}"
-    )
+    assert not extras or all(
+        name.startswith("kitty.conf.bak.") for name in extras
+    ), f"unexpected extra entries: {extras}"
 
 
-def test_backup_uses_utc_timestamp_format(
-    paths: ConfigPaths, payload_source: Path
-) -> None:
+def test_backup_uses_utc_timestamp_format(paths: ConfigPaths, payload_source: Path) -> None:
     paths.kitty_dir.mkdir(parents=True)
     paths.conf_file.write_text("x\n", encoding="utf-8")
     result = install(paths, payload_source)
@@ -336,3 +328,4 @@ def test_environment_variable_does_not_affect_paths(
     paths = ConfigPaths.for_user(home=home)
     assert paths.kitty_dir == home / ".config" / "kitty"
     assert os.environ["XDG_CONFIG_HOME"] == str(home / "elsewhere")
+

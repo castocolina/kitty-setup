@@ -8,8 +8,8 @@ The install path is intentionally per-user and ``sudo``-free:
 * ``~/.config/kitty/kitty-setup/`` — our configuration payload.
 * ``~/.config/kitty/kitty.conf`` — modified between sentinel markers only.
 
-This module is the implementation behind the ``kitty-setup-install`` entry
-point declared in ``pyproject.toml``.
+The CLI handlers in this module (``cli_install`` / ``cli_uninstall``) are
+dispatched from :mod:`kitty_setup.cli` under the ``my-kitty-setup`` entry point.
 """
 
 from __future__ import annotations
@@ -25,15 +25,13 @@ import urllib.request
 from pathlib import Path
 from typing import Final
 
-from kitty_setup import config_updater
+from kitty_setup import config_updater, path_integration
 
 INSTALLER_URL: Final[str] = "https://sw.kovidgoyal.net/kitty/installer.sh"
 DEFAULT_DEST: Final[Path] = Path.home() / ".local"
 KITTY_APP_DIRNAME: Final[str] = "kitty.app"
 SYMLINK_PATH: Final[Path] = Path.home() / ".local" / "bin" / "kitty"
-DESKTOP_PATH: Final[Path] = (
-    Path.home() / ".local" / "share" / "applications" / "kitty.desktop"
-)
+DESKTOP_PATH: Final[Path] = Path.home() / ".local" / "share" / "applications" / "kitty.desktop"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -58,6 +56,16 @@ def _repo_root() -> Path:
 
 
 def _payload_source() -> Path:
+    """Resolve the kitty config payload directory.
+
+    Wheel install (``uv tool install --force .``): hatch's force-include copies
+    ``config/kitty`` into ``kitty_setup/_payload/kitty`` next to this module.
+    Editable install (``uv sync``): force-include does NOT run, so the bundled
+    directory is absent — fall back to the repo-root ``config/kitty/``.
+    """
+    bundled = Path(__file__).resolve().parent / "_payload" / "kitty"
+    if bundled.is_dir():
+        return bundled
     return _repo_root() / "config" / "kitty"
 
 
@@ -151,7 +159,9 @@ def install(
         version = _capture_version(kitty_bin)
 
     _ensure_symlink(kitty_bin, SYMLINK_PATH)
-    icon = dest / KITTY_APP_DIRNAME / "share" / "icons" / "hicolor" / "256x256" / "apps" / "kitty.png"
+    icon = (
+        dest / KITTY_APP_DIRNAME / "share" / "icons" / "hicolor" / "256x256" / "apps" / "kitty.png"
+    )
     _write_desktop_entry(kitty_bin=kitty_bin, icon_path=icon)
     _record_install_log(version)
 
@@ -188,7 +198,47 @@ def uninstall_config_only() -> config_updater.UninstallResult:
     return config_updater.uninstall(paths)
 
 
-def _print_report(report: InstallReport) -> None:
+@dataclasses.dataclass(frozen=True, slots=True)
+class KittyRemovalReport:
+    """Outcome of a :func:`remove_kitty_install` call."""
+
+    app_dir: Path
+    app_dir_removed: bool
+    symlink: Path
+    symlink_removed: bool
+    desktop_entry: Path
+    desktop_entry_removed: bool
+
+
+def remove_kitty_install(dest: Path = DEFAULT_DEST) -> KittyRemovalReport:
+    """Remove ~/.local/kitty.app, the kitty symlink, and the desktop entry."""
+    app_dir = dest / KITTY_APP_DIRNAME
+    app_removed = False
+    if app_dir.is_dir():
+        shutil.rmtree(app_dir)
+        app_removed = True
+
+    link_removed = False
+    if SYMLINK_PATH.is_symlink() or SYMLINK_PATH.exists():
+        SYMLINK_PATH.unlink()
+        link_removed = True
+
+    desktop_removed = False
+    if DESKTOP_PATH.is_file():
+        DESKTOP_PATH.unlink()
+        desktop_removed = True
+
+    return KittyRemovalReport(
+        app_dir=app_dir,
+        app_dir_removed=app_removed,
+        symlink=SYMLINK_PATH,
+        symlink_removed=link_removed,
+        desktop_entry=DESKTOP_PATH,
+        desktop_entry_removed=desktop_removed,
+    )
+
+
+def _print_install_report(report: InstallReport) -> None:
     print(f"kitty version: {report.version}")
     print(f"kitty.app:     {report.kitty_app_dir}")
     print(f"symlink:       {report.symlink} -> {report.kitty_app_dir / 'bin' / 'kitty'}")
@@ -206,49 +256,73 @@ def _print_report(report: InstallReport) -> None:
         print("config:        WARNING — parse-check failed (rolled back)")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for ``kitty-setup-install``."""
-    parser = argparse.ArgumentParser(prog="kitty-setup-install", description=__doc__)
-    parser.add_argument(
-        "--uninstall-config",
-        action="store_true",
-        help="Strip our sentinel block from kitty.conf and remove the payload dir.",
-    )
-    parser.add_argument(
-        "--no-config",
-        action="store_true",
-        help="Install kitty but skip the config injection step.",
-    )
-    parser.add_argument(
-        "--dest",
-        type=Path,
-        default=DEFAULT_DEST,
-        help=f"Per-user install prefix (default: {DEFAULT_DEST}).",
-    )
-    args = parser.parse_args(argv)
+def _print_path_result(result: path_integration.PathEditResult) -> None:
+    if result.skipped:
+        print(
+            f"PATH:          shell {result.shell or '<unknown>'} not auto-handled; "
+            f"add manually: {result.manual_line}"
+        )
+    elif not result.changed:
+        print("PATH:          already configured")
+    else:
+        print(
+            f"PATH:          appended block to {result.rc_file}; "
+            f"run `source {result.rc_file}` or restart shell"
+        )
 
-    if args.uninstall_config:
-        result = uninstall_config_only()
-        if result.block_removed:
-            print(f"config:        block removed from {result.conf_file}")
-        else:
-            print(f"config:        no managed block found in {result.conf_file}")
-        if result.payload_dir_removed:
-            print("config:        payload directory removed")
-        if result.conf_restored_from is not None:
-            print(f"config:        restored from {result.conf_restored_from}")
-        if result.conf_deleted:
-            print(f"config:        {result.conf_file} deleted (no other content)")
-        return 0
 
+def cli_install(args: argparse.Namespace) -> int:
+    """Handler for ``my-kitty-setup install``."""
     try:
         report = install(dest=args.dest, inject_config=not args.no_config)
     except (subprocess.CalledProcessError, OSError, config_updater.ConfigUpdaterError) as exc:
         print(f"install failed: {exc}", file=sys.stderr)
         return 1
-    _print_report(report)
+    _print_install_report(report)
+    path_result = path_integration.ensure_local_bin_in_path()
+    _print_path_result(path_result)
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+_SELF_REMOVAL_BANNER: Final[str] = (
+    # probe-consolidate-into-my-kitty-setup-cli-04 confirmed `uv tool uninstall`
+    # cleanly removes the entry shim + tool venv. We PRINT the command (do not
+    # exec) per design D2: the running binary should not delete its own files.
+    "To remove the my-kitty-setup binary itself, run:\n"
+    "    uv tool uninstall my-kitty-setup\n"
+    "To remove the PATH block from your shell rc, delete the lines between:\n"
+    "    # >>> my-kitty-setup PATH >>>\n"
+    "    # <<< my-kitty-setup PATH <<<\n"
+    "in ~/.zshrc or ~/.bashrc."
+)
+
+
+def cli_uninstall(args: argparse.Namespace) -> int:
+    """Handler for ``my-kitty-setup uninstall`` (default + ``--kitty`` + ``--self``)."""
+    cfg = uninstall_config_only()
+    if cfg.block_removed:
+        print(f"config:        block removed from {cfg.conf_file}")
+    else:
+        print(f"config:        no managed block found in {cfg.conf_file}")
+    if cfg.payload_dir_removed:
+        print("config:        payload directory removed")
+    if cfg.conf_restored_from is not None:
+        print(f"config:        restored from {cfg.conf_restored_from}")
+    if cfg.conf_deleted:
+        print(f"config:        {cfg.conf_file} deleted (no other content)")
+
+    if args.kitty:
+        kitty_report = remove_kitty_install()
+        if kitty_report.app_dir_removed:
+            print(f"kitty:         removed {kitty_report.app_dir}")
+        else:
+            print(f"kitty:         no {kitty_report.app_dir} to remove")
+        if kitty_report.symlink_removed:
+            print(f"kitty:         removed symlink {kitty_report.symlink}")
+        if kitty_report.desktop_entry_removed:
+            print(f"kitty:         removed desktop entry {kitty_report.desktop_entry}")
+
+    if args.self_:
+        print(_SELF_REMOVAL_BANNER)
+
+    return 0

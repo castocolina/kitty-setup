@@ -9,9 +9,7 @@ authors = [{ name = "kitty-setup contributors" }]
 dependencies = []
 
 [project.scripts]
-kitty-setup-install = "kitty_setup.installer:main"
-kitty-setup-doctor = "kitty_setup.doctor:main"
-kitty-setup-harness = "kitty_setup.harness.cli:main"
+my-kitty-setup = "kitty_setup.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -19,6 +17,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kitty_setup"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Ship config/kitty/ inside the wheel so `uv tool install` (non-editable)
+# carries the payload with the binary. The dev `uv sync` install is editable
+# and does NOT trigger force-include — the installer falls back to the
+# repo-root config/kitty/ via Path(__file__).parents[2] in that case.
+"config/kitty" = "kitty_setup/_payload/kitty"
 
 [dependency-groups]
 dev = [
@@ -61,7 +66,10 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]  # asserts are the point in tests
+# S101: asserts are the point in tests.
+# S108: tests pass literal "/tmp/x" paths to argparse; never touched on disk.
+# S604: tests pass `shell="zsh"` to path_integration helpers (not subprocess shell).
+"tests/**/*.py" = ["S101", "S108", "S604"]
 
 [tool.pyright]
 include = ["src", "tests"]

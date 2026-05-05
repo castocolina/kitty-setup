@@ -21,7 +21,7 @@ def _fake_kitty(tmp_path: Path, version: str = "kitty 0.46.2 (fake)") -> Path:
     script.write_text(
         "#!/usr/bin/env bash\n"
         f'if [[ "$1" == "--version" ]]; then echo "{version}"; exit 0; fi\n'
-        'exit 0\n',
+        "exit 0\n",
         encoding="utf-8",
     )
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -53,17 +53,13 @@ def test_check_kitty_binary_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert resolved is None
 
 
-def test_run_checks_reports_each_check(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
     monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
     monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
-    monkeypatch.setattr(
-        doctor.installer, "_kitty_bin", lambda _: tmp_path / "missing-kitty"
-    )
+    monkeypatch.setattr(doctor.installer, "_kitty_bin", lambda _: tmp_path / "missing-kitty")
 
     results = doctor.run_checks(home=home)
     names = [r.name for r in results]
@@ -89,7 +85,7 @@ def test_main_exits_non_zero_on_any_fail(
             doctor.CheckResult("beta", False, "broken"),
         ],
     )
-    code = doctor.main()
+    code = doctor.cli_doctor()
     out = capsys.readouterr().out.splitlines()
     assert code == 1
     assert out == ["PASS alpha: ok", "FAIL beta: broken"]
@@ -103,7 +99,7 @@ def test_main_exits_zero_on_all_pass(
         "run_checks",
         lambda home=None: [doctor.CheckResult("alpha", True, "ok")],
     )
-    code = doctor.main()
+    code = doctor.cli_doctor()
     out = capsys.readouterr().out.splitlines()
     assert code == 0
     assert out == ["PASS alpha: ok"]
@@ -113,9 +109,7 @@ def test_check_kitty_binary_handles_subprocess_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     failing = tmp_path / "broken-kitty"
-    failing.write_text(
-        "#!/usr/bin/env bash\nexit 5\n", encoding="utf-8"
-    )
+    failing.write_text("#!/usr/bin/env bash\nexit 5\n", encoding="utf-8")
     failing.chmod(failing.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setattr(doctor.shutil, "which", lambda _: str(failing))
 
