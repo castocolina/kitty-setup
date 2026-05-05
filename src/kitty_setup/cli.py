@@ -20,7 +20,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from kitty_setup import doctor, installer, pruner
+from kitty_setup import binding_introspection, doctor, installer, pruner
 
 PROG: str = "my-kitty"
 
@@ -108,6 +108,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="delete every backup file (most aggressive)",
     )
     p_prune.set_defaults(func=pruner.cli_prune)
+
+    p_keys = sub.add_parser(
+        "keys",
+        help="list active key bindings, grouped by source, with conflicts flagged",
+        description=(
+            "Enumerate every chord active in the parsed kitty config. Groups "
+            "bindings by source file (windowing, bindings, etc., plus a "
+            "kitty defaults bucket). Annotates intentional overrides and flags "
+            "real conflicts."
+        ),
+    )
+    p_keys.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of grouped plain text",
+    )
+    p_keys.add_argument(
+        "--config-path",
+        dest="config_path",
+        default=None,
+        help="path to the kitty config file to load (default: ~/.config/kitty/kitty.conf)",
+    )
+    p_keys.set_defaults(func=binding_introspection.cli_keys)
 
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()

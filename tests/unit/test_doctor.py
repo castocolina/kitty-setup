@@ -70,6 +70,7 @@ def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path
         "config payload",
         "sentinel block",
         "parse check",
+        "bindings",
     ]
     assert all(not r.passed for r in results)
 

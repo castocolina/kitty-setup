@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from kitty_setup import config_updater, installer
+from kitty_setup import binding_introspection, config_updater, installer
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -93,6 +93,26 @@ def _check_parse(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> C
     return CheckResult("parse check", ok, f"kitty --debug-config exit={'0' if ok else 'non-0'}")
 
 
+def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> CheckResult:
+    if kitty_bin is None:
+        return CheckResult("bindings", False, "skipped — kitty binary not available")
+    if not paths.conf_file.exists():
+        return CheckResult("bindings", False, f"missing: {paths.conf_file}")
+    try:
+        report = binding_introspection.enumerate_bindings(
+            paths.conf_file, kitty_bin=kitty_bin, payload_dir=paths.payload_dir
+        )
+    except binding_introspection.BindingIntrospectionError as exc:
+        return CheckResult("bindings", False, f"skipped — {exc}")
+    summary = (
+        f"{report.ours_count} ours, {report.defaults_count} defaults, "
+        f"{report.conflicts_count} conflict{'s' if report.conflicts_count != 1 else ''}"
+    )
+    if report.conflicts_count == 0:
+        return CheckResult("bindings", True, summary)
+    return CheckResult("bindings", False, f"{summary} (run `my-kitty keys` for details)")
+
+
 def run_checks(home: Path | None = None) -> list[CheckResult]:
     paths = config_updater.ConfigPaths.for_user(home=home)
     binary_check, kitty_bin = _check_kitty_binary()
@@ -103,6 +123,7 @@ def run_checks(home: Path | None = None) -> list[CheckResult]:
         _check_payload(paths),
         _check_sentinel_block(paths),
         _check_parse(paths, kitty_bin),
+        _check_bindings(paths, kitty_bin),
     ]
 
 
