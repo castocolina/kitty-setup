@@ -3,7 +3,7 @@
 # See docs/agent-iteration.md (R3 — Makefile is thin).
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup clean doctor test uninstall
+.PHONY: help install setup clean doctor test uninstall prune
 
 help:
 	@echo "kitty-setup targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  test            run pytest (set KITTI_INTEGRATION=1 for integration tests)"
 	@echo "  uninstall       strip our config + payload (calls tools/uninstall.sh)"
 	@echo "  uninstall ALL=1 also removes kitty + prints my-kitty-setup self-removal command"
+	@echo "  prune           keep 3 most recent kitty.conf backups, delete the rest"
 
 install: setup
 
@@ -34,3 +35,6 @@ UNINSTALL_FLAGS := $(if $(filter 1,$(ALL)),--kitty --self,)
 
 uninstall:
 	@UNINSTALL_FLAGS="$(UNINSTALL_FLAGS)" ./tools/uninstall.sh
+
+prune:
+	@my-kitty-setup prune --backups --keep 3

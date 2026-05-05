@@ -39,6 +39,10 @@ KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against 
 make uninstall          # strip our config + payload (kitty + binary stay)
 make uninstall ALL=1    # also remove ~/.local/kitty.app + print my-kitty-setup self-removal
 make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
+make prune              # keep 3 most recent kitty.conf backups, delete the rest
+my-kitty-setup prune    # dry-run: list backups + total size, no deletions
+my-kitty-setup prune --backups --older-than 60   # non-default policy: trim by age (days)
+my-kitty-setup prune --backups --all             # most aggressive: delete every backup
 ```
 
 `make help` (the default target) lists every target.
@@ -49,6 +53,26 @@ shim) and the source it dispatches to is COPIED into
 can be deleted any time after `make install` completes** — the binary keeps
 working
 (probe-consolidate-into-my-kitty-setup-cli-03).
+
+## Backup hygiene
+
+Every `make install` that detects drift on `~/.config/kitty/kitty.conf`
+writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install + uninstall
+**never** delete those files — backups are kept indefinitely as a safety net.
+The `prune` subcommand is the **only** opt-in path that removes them:
+
+```
+my-kitty-setup prune                              # dry-run listing, no writes
+my-kitty-setup prune --backups                    # default: --keep 3
+my-kitty-setup prune --backups --keep N           # keep N most recent
+my-kitty-setup prune --backups --older-than DAYS  # trim by mtime age
+my-kitty-setup prune --backups --all              # nuke everything
+make prune                                        # alias of `--backups --keep 3`
+```
+
+⚠️ Pruning `--all` immediately before an install reduces rollback safety to
+the same-process backup written at the start of the next install. Run prune
+*after* a successful install, not before.
 
 ## Updates
 
