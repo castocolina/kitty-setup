@@ -145,6 +145,10 @@ change), repeat:
 6. **Promote** by hand:
    - Move the proven snippet into `config/kitty/<topic>.conf` (creating the file if
      needed). Update `config/kitty/kitty-setup.conf` to `include` it.
+     **File basename = binding category.** `windowing.conf` → "windowing"
+     section in `my-kitty keys`; `bindings.conf` → "bindings" section. Pick a
+     filename you would want to see as a section header in the introspection
+     report.
    - Move `repro.md` into `docs/repro/h<NN>-<slug>.md`.
    - Rewrite `run.py` as `tests/integration/test_h<NN>_<slug>.py` using pytest
      fixtures and the `KITTI_INTEGRATION` gate.

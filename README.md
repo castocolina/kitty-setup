@@ -32,8 +32,10 @@ delivered in two independent components that share a repo:
 
 ```bash
 make install            # uv sync → uv tool install . → kitty + config + PATH (calls tools/setup.sh)
-my-kitty doctor         # verify install state (kitty version, sentinel block, parse, paths)
+my-kitty doctor         # verify install state (kitty version, sentinel block, parse, paths, bindings)
 my-kitty install        # idempotent re-run; same as `make install` after the first install
+my-kitty keys           # list every active binding grouped by source; flags conflicts
+my-kitty keys --json    # same data as machine-readable JSON
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
 KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
 make uninstall          # strip our config + payload (kitty + binary stay)
