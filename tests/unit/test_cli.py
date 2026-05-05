@@ -15,7 +15,7 @@ def test_top_level_help_lists_all_subcommands(capsys: pytest.CaptureFixture[str]
         cli.main(["--help"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for sub in ("install", "uninstall", "doctor", "help"):
+    for sub in ("install", "uninstall", "doctor", "prune", "help"):
         assert sub in out
 
 
@@ -25,8 +25,60 @@ def test_help_subcommand_prints_help_and_exits_zero(
     code = cli.main(["help"])
     out = capsys.readouterr().out
     assert code == 0
-    for sub in ("install", "uninstall", "doctor", "help"):
+    for sub in ("install", "uninstall", "doctor", "prune", "help"):
         assert sub in out
+
+
+def test_prune_routes_to_cli_prune(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.pruner, "cli_prune", fake)
+    code = cli.main(["prune"])
+    assert code == 0
+    args = captured["args"]
+    assert args.backups is False
+    assert args.keep is None
+    assert args.older_than is None
+    assert args.all is False
+
+
+def test_prune_backups_keep_routes_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(cli.pruner, "cli_prune", lambda a: captured.setdefault("a", a) and 0)
+    cli.main(["prune", "--backups", "--keep", "5"])
+    args = captured["a"]
+    assert args.backups is True
+    assert args.keep == 5
+    assert args.all is False
+
+
+def test_prune_older_than_routes_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(cli.pruner, "cli_prune", lambda a: captured.setdefault("a", a) and 0)
+    cli.main(["prune", "--backups", "--older-than", "30"])
+    args = captured["a"]
+    assert args.backups is True
+    assert args.older_than == 30
+
+
+def test_prune_all_routes_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(cli.pruner, "cli_prune", lambda a: captured.setdefault("a", a) and 0)
+    cli.main(["prune", "--backups", "--all"])
+    args = captured["a"]
+    assert args.all is True
+
+
+def test_prune_two_policy_flags_exit_non_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["prune", "--backups", "--keep", "3", "--older-than", "30"])
+    assert exc.value.code != 0
+    err = capsys.readouterr().err
+    assert "not allowed" in err or "argument" in err.lower()
 
 
 def test_no_args_prints_help_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:

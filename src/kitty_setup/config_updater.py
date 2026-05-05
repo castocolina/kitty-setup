@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as _dt
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,9 @@ MARKER_BEGIN: Final[str] = "# >>> kitty-setup managed (do not edit between marke
 MARKER_END: Final[str] = "# <<< kitty-setup managed <<<"
 INCLUDE_LINE: Final[str] = "include kitty-setup/kitty-setup.conf"
 BACKUP_SUFFIX_FMT: Final[str] = "%Y%m%dT%H%M%SZ"
+# Strict pattern guarding prune from touching anything we did not write.
+# See add-backup-pruning design D4 + risk #3 (no glob, exact regex).
+BACKUP_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^kitty\.conf\.bak\.\d{8}T\d{6}Z$")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -74,7 +78,7 @@ class ConfigUpdaterError(RuntimeError):
 
 
 def _utc_timestamp(now: _dt.datetime | None = None) -> str:
-    moment = now or _dt.datetime.now(_dt.timezone.utc)
+    moment = now or _dt.datetime.now(_dt.UTC)
     return moment.strftime(BACKUP_SUFFIX_FMT)
 
 
@@ -124,13 +128,23 @@ def _backup(conf_file: Path, *, now: _dt.datetime | None = None) -> Path:
     return backup
 
 
-def _latest_backup(conf_file: Path) -> Path | None:
+def list_backups(conf_file: Path) -> list[Path]:
+    """Return all valid `kitty.conf.bak.<UTC-ts>` files next to ``conf_file``.
+
+    Sorted lexicographically (== chronological order, since the timestamp is
+    embedded in the filename). Files in the same directory that do not match
+    the strict :data:`BACKUP_NAME_RE` pattern are excluded — prune must never
+    touch a file we did not write.
+    """
     parent = conf_file.parent
     if not parent.is_dir():
-        return None
-    prefix = f"{conf_file.name}.bak."
-    candidates = sorted(p for p in parent.iterdir() if p.name.startswith(prefix))
-    return candidates[-1] if candidates else None
+        return []
+    return sorted(p for p in parent.iterdir() if BACKUP_NAME_RE.match(p.name))
+
+
+def _latest_backup(conf_file: Path) -> Path | None:
+    backups = list_backups(conf_file)
+    return backups[-1] if backups else None
 
 
 _PARSE_SNIPPET: Final[str] = (

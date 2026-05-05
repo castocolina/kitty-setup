@@ -329,3 +329,52 @@ def test_environment_variable_does_not_affect_paths(
     assert paths.kitty_dir == home / ".config" / "kitty"
     assert os.environ["XDG_CONFIG_HOME"] == str(home / "elsewhere")
 
+
+def test_list_backups_empty_when_dir_missing(tmp_path: Path) -> None:
+    conf = tmp_path / "no-such" / "kitty.conf"
+    assert config_updater.list_backups(conf) == []
+
+
+def test_list_backups_empty_when_dir_has_no_backups(tmp_path: Path) -> None:
+    conf = tmp_path / "kitty.conf"
+    conf.write_text("# user\n")
+    (tmp_path / "notes.md").write_text("# notes\n")
+    assert config_updater.list_backups(conf) == []
+
+
+def test_list_backups_returns_only_strict_pattern(tmp_path: Path) -> None:
+    conf = tmp_path / "kitty.conf"
+    conf.write_text("# user\n")
+    good_a = tmp_path / "kitty.conf.bak.20260101T000000Z"
+    good_b = tmp_path / "kitty.conf.bak.20260102T120000Z"
+    bad_1 = tmp_path / "kitty.conf.bak.notadate"
+    bad_2 = tmp_path / "kitty.conf.bak.2026-01-01T00:00:00Z"
+    bad_3 = tmp_path / "kitty.conf.backup"
+    for f in (good_a, good_b, bad_1, bad_2, bad_3):
+        f.write_text("backup")
+    result = config_updater.list_backups(conf)
+    assert result == [good_a, good_b]
+
+
+def test_list_backups_sort_order_is_lexicographic(tmp_path: Path) -> None:
+    conf = tmp_path / "kitty.conf"
+    conf.write_text("# user\n")
+    names = [
+        "kitty.conf.bak.20260101T120000Z",
+        "kitty.conf.bak.20260101T000000Z",
+        "kitty.conf.bak.20260102T080000Z",
+        "kitty.conf.bak.20251231T235959Z",
+    ]
+    for n in names:
+        (tmp_path / n).write_text("x")
+    result = [p.name for p in config_updater.list_backups(conf)]
+    assert result == sorted(names)
+
+
+def test_latest_backup_uses_list_backups(tmp_path: Path) -> None:
+    conf = tmp_path / "kitty.conf"
+    conf.write_text("# user\n")
+    (tmp_path / "kitty.conf.bak.20260101T000000Z").write_text("a")
+    newest = tmp_path / "kitty.conf.bak.20260102T000000Z"
+    newest.write_text("b")
+    assert config_updater._latest_backup(conf) == newest

@@ -19,7 +19,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from kitty_setup import doctor, installer
+from kitty_setup import doctor, installer, pruner
 
 PROG: str = "my-kitty-setup"
 
@@ -69,6 +69,44 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_doctor = sub.add_parser("doctor", help="diagnose install + config-include health")
     p_doctor.set_defaults(func=doctor.cli_doctor)
+
+    p_prune = sub.add_parser(
+        "prune",
+        help="list / delete accumulated kitty.conf.bak.* backups (opt-in)",
+        description=(
+            "List or delete accumulated kitty.conf.bak.* files. Without --backups, "
+            "only lists (dry run). With --backups, applies one of three policies "
+            "(--keep / --older-than / --all). NOTE: pruning --all immediately before "
+            "an install reduces rollback safety to the same-process backup."
+        ),
+    )
+    p_prune.add_argument(
+        "--backups",
+        action="store_true",
+        help="actually delete backup files (without this flag the command only lists)",
+    )
+    policy = p_prune.add_mutually_exclusive_group()
+    policy.add_argument(
+        "--keep",
+        type=int,
+        default=None,
+        metavar="N",
+        help="keep the N most recent backups (default 3 when --backups is passed alone)",
+    )
+    policy.add_argument(
+        "--older-than",
+        dest="older_than",
+        type=int,
+        default=None,
+        metavar="DAYS",
+        help="delete backups whose mtime is older than DAYS days",
+    )
+    policy.add_argument(
+        "--all",
+        action="store_true",
+        help="delete every backup file (most aggressive)",
+    )
+    p_prune.set_defaults(func=pruner.cli_prune)
 
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()
