@@ -9,7 +9,7 @@ authors = [{ name = "kitty-setup contributors" }]
 dependencies = []
 
 [project.scripts]
-my-kitty-setup = "kitty_setup.cli:main"
+my-kitty = "kitty_setup.cli:main"
 
 [build-system]
 requires = ["hatchling"]

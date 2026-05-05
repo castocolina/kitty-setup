@@ -17,8 +17,13 @@ import re
 from pathlib import Path
 from typing import Final
 
-MARKER_BEGIN: Final[str] = "# >>> my-kitty-setup PATH >>>"
-MARKER_END: Final[str] = "# <<< my-kitty-setup PATH <<<"
+MARKER_BEGIN: Final[str] = "# >>> my-kitty PATH >>>"
+MARKER_END: Final[str] = "# <<< my-kitty PATH <<<"
+# Legacy markers from the pre-rename my-kitty-setup era. Recognised so an
+# upgrade does not append a duplicate block. See rename-cli-to-my-kitty
+# design D2 + the new "PATH block migration" requirement.
+_LEGACY_MARKER_BEGIN: Final[str] = "# >>> my-kitty-setup PATH >>>"
+_LEGACY_MARKER_END: Final[str] = "# <<< my-kitty-setup PATH <<<"
 EXPORT_LINE: Final[str] = 'export PATH="$HOME/.local/bin:$PATH"'
 TARGET_DIR_REL: Final[str] = ".local/bin"
 
@@ -75,6 +80,34 @@ def _process_env_has_target(target: Path, env_path: str) -> bool:
 _PATH_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*export\s+PATH\s*=", re.MULTILINE)
 
 
+def _find_block(rc_text: str, begin: str, end: str) -> tuple[int, int] | None:
+    """Return (start_line_idx, end_line_idx_exclusive) for a marker block, or None."""
+    lines = rc_text.splitlines(keepends=False)
+    begin_idx: int | None = None
+    for idx, line in enumerate(lines):
+        stripped = line.rstrip()
+        if stripped == begin:
+            begin_idx = idx
+        elif stripped == end and begin_idx is not None:
+            return begin_idx, idx + 1
+    return None
+
+
+def _splice_lines(rc_text: str, start: int, end: int, replacement: list[str]) -> str:
+    """Replace lines [start, end) in ``rc_text`` with ``replacement`` (no trailing newline)."""
+    lines = rc_text.splitlines(keepends=True)
+    has_final_newline = rc_text.endswith("\n") if rc_text else False
+    new_lines = [
+        *lines[:start],
+        *(line + "\n" for line in replacement),
+        *lines[end:],
+    ]
+    out = "".join(new_lines)
+    if not has_final_newline and out.endswith("\n"):
+        out = out[:-1]
+    return out
+
+
 def _rc_already_exports_target(rc_text: str, target: Path) -> bool:
     if MARKER_BEGIN in rc_text and MARKER_END in rc_text:
         return True
@@ -123,6 +156,34 @@ def ensure_local_bin_in_path(
 
     if rc_file.is_file():
         rc_text = rc_file.read_text(encoding="utf-8")
+        new_block = _find_block(rc_text, MARKER_BEGIN, MARKER_END)
+        legacy_block = _find_block(rc_text, _LEGACY_MARKER_BEGIN, _LEGACY_MARKER_END)
+
+        if new_block is not None and legacy_block is not None:
+            # Degenerate: both blocks present. Remove the legacy one.
+            new_text = _splice_lines(rc_text, legacy_block[0], legacy_block[1], [])
+            rc_file.write_text(new_text, encoding="utf-8")
+            return PathEditResult(
+                changed=True,
+                skipped=False,
+                rc_file=rc_file,
+                shell=detected_shell,
+                reason="removed duplicate legacy marker",
+            )
+
+        if new_block is None and legacy_block is not None:
+            # Migration: rewrite the legacy marker lines in place.
+            replacement = [MARKER_BEGIN, EXPORT_LINE, MARKER_END]
+            new_text = _splice_lines(rc_text, legacy_block[0], legacy_block[1], replacement)
+            rc_file.write_text(new_text, encoding="utf-8")
+            return PathEditResult(
+                changed=True,
+                skipped=False,
+                rc_file=rc_file,
+                shell=detected_shell,
+                reason="migrated legacy marker",
+            )
+
         if _rc_already_exports_target(rc_text, target):
             return PathEditResult(
                 changed=False,

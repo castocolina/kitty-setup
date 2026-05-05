@@ -271,8 +271,24 @@ def _print_path_result(result: path_integration.PathEditResult) -> None:
         )
 
 
+LEGACY_BINARY_PATH: Final[Path] = Path.home() / ".local" / "bin" / "my-kitty-setup"
+
+
+def _print_legacy_shim_notice() -> None:
+    """Print the upgrade notice when the pre-rename binary is still on disk.
+
+    Per design D3 of rename-cli-to-my-kitty: detect, print, do NOT auto-remove
+    (mirrors the print-don't-execute pattern from consolidate D2).
+    """
+    if LEGACY_BINARY_PATH.is_file() or LEGACY_BINARY_PATH.is_symlink():
+        print(
+            f"legacy:        {LEGACY_BINARY_PATH} detected; remove it with:\n"
+            f"                   uv tool uninstall my-kitty-setup"
+        )
+
+
 def cli_install(args: argparse.Namespace) -> int:
-    """Handler for ``my-kitty-setup install``."""
+    """Handler for ``my-kitty install``."""
     try:
         report = install(dest=args.dest, inject_config=not args.no_config)
     except (subprocess.CalledProcessError, OSError, config_updater.ConfigUpdaterError) as exc:
@@ -281,24 +297,26 @@ def cli_install(args: argparse.Namespace) -> int:
     _print_install_report(report)
     path_result = path_integration.ensure_local_bin_in_path()
     _print_path_result(path_result)
+    _print_legacy_shim_notice()
     return 0
 
 
 _SELF_REMOVAL_BANNER: Final[str] = (
     # probe-consolidate-into-my-kitty-setup-cli-04 confirmed `uv tool uninstall`
     # cleanly removes the entry shim + tool venv. We PRINT the command (do not
-    # exec) per design D2: the running binary should not delete its own files.
-    "To remove the my-kitty-setup binary itself, run:\n"
-    "    uv tool uninstall my-kitty-setup\n"
+    # exec) per design D2 of consolidate: the running binary should not delete
+    # its own files. Banner text refreshed for the my-kitty rename.
+    "To remove the my-kitty binary itself, run:\n"
+    "    uv tool uninstall my-kitty\n"
     "To remove the PATH block from your shell rc, delete the lines between:\n"
-    "    # >>> my-kitty-setup PATH >>>\n"
-    "    # <<< my-kitty-setup PATH <<<\n"
+    "    # >>> my-kitty PATH >>>\n"
+    "    # <<< my-kitty PATH <<<\n"
     "in ~/.zshrc or ~/.bashrc."
 )
 
 
 def cli_uninstall(args: argparse.Namespace) -> int:
-    """Handler for ``my-kitty-setup uninstall`` (default + ``--kitty`` + ``--self``)."""
+    """Handler for ``my-kitty uninstall`` (default + ``--kitty`` + ``--self``)."""
     cfg = uninstall_config_only()
     if cfg.block_removed:
         print(f"config:        block removed from {cfg.conf_file}")

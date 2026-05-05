@@ -13,7 +13,7 @@ help:
 	@echo "  doctor          diagnose install state and config-include health"
 	@echo "  test            run pytest (set KITTI_INTEGRATION=1 for integration tests)"
 	@echo "  uninstall       strip our config + payload (calls tools/uninstall.sh)"
-	@echo "  uninstall ALL=1 also removes kitty + prints my-kitty-setup self-removal command"
+	@echo "  uninstall ALL=1 also removes kitty + prints my-kitty self-removal command"
 	@echo "  prune           keep 3 most recent kitty.conf backups, delete the rest"
 
 install: setup
@@ -22,11 +22,11 @@ setup:
 	@./tools/setup.sh
 
 clean:
-	@my-kitty-setup uninstall || true
+	@my-kitty uninstall || true
 	@rm -rf tmp/
 
 doctor:
-	@my-kitty-setup doctor
+	@my-kitty doctor
 
 test:
 	@uv run pytest tests/
@@ -37,4 +37,4 @@ uninstall:
 	@UNINSTALL_FLAGS="$(UNINSTALL_FLAGS)" ./tools/uninstall.sh
 
 prune:
-	@my-kitty-setup prune --backups --keep 3
+	@my-kitty prune --backups --keep 3

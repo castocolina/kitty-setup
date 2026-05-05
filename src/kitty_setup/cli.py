@@ -1,11 +1,12 @@
 """Single binary, subcommand-dispatched CLI for kitty-setup.
 
-Owned by the ``my-kitty-setup`` entry point declared in ``pyproject.toml``.
+Owned by the ``my-kitty`` entry point declared in ``pyproject.toml``.
 Subparsers route to handlers defined in their respective modules:
 
 * ``install``   → :func:`kitty_setup.installer.cli_install`
 * ``uninstall`` → :func:`kitty_setup.installer.cli_uninstall`
 * ``doctor``    → :func:`kitty_setup.doctor.cli_doctor`
+* ``prune``     → :func:`kitty_setup.pruner.cli_prune`
 * ``help``      → top-level help, identical to ``--help``
 
 Per design D4: argparse subparsers, no Click. Per spec: this is the ONLY entry
@@ -21,7 +22,7 @@ from pathlib import Path
 
 from kitty_setup import doctor, installer, pruner
 
-PROG: str = "my-kitty-setup"
+PROG: str = "my-kitty"
 
 Handler = Callable[[argparse.Namespace], int]
 

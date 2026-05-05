@@ -1,4 +1,4 @@
-"""Unit tests for ``kitty_setup.cli`` (the my-kitty-setup subcommand dispatcher)."""
+"""Unit tests for ``kitty_setup.cli`` (the my-kitty subcommand dispatcher)."""
 
 from __future__ import annotations
 

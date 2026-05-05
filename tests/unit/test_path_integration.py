@@ -102,3 +102,78 @@ def test_idempotent_double_run(tmp_path: Path) -> None:
     assert first.changed is True
     assert second.changed is False
     assert (home / ".zshrc").read_text().count(path_integration.MARKER_BEGIN) == 1
+
+
+# --- rename-cli-to-my-kitty migration cases --------------------------------
+
+
+def _legacy_block() -> str:
+    return (
+        f"{path_integration._LEGACY_MARKER_BEGIN}\n"
+        f"{path_integration.EXPORT_LINE}\n"
+        f"{path_integration._LEGACY_MARKER_END}\n"
+    )
+
+
+def _new_block() -> str:
+    return (
+        f"{path_integration.MARKER_BEGIN}\n"
+        f"{path_integration.EXPORT_LINE}\n"
+        f"{path_integration.MARKER_END}\n"
+    )
+
+
+def test_migrates_legacy_marker_alone(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    rc.write_text(_legacy_block())
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert result.changed is True
+    assert "migrated legacy marker" in result.reason
+    text = rc.read_text()
+    assert path_integration.MARKER_BEGIN in text
+    assert path_integration._LEGACY_MARKER_BEGIN not in text
+    assert path_integration.EXPORT_LINE in text
+
+
+def test_migrates_legacy_with_unrelated_content(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    rc.write_text(f"# user header\nalias ll='ls -la'\n{_legacy_block()}# trailing user line\n")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert result.changed is True
+    text = rc.read_text()
+    assert text.startswith("# user header\nalias ll='ls -la'\n")
+    assert text.endswith("# trailing user line\n")
+    assert path_integration.MARKER_BEGIN in text
+    assert path_integration._LEGACY_MARKER_BEGIN not in text
+
+
+def test_legacy_and_new_blocks_keep_new(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    rc.write_text(_legacy_block() + "# divider\n" + _new_block())
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert result.changed is True
+    assert "removed duplicate legacy marker" in result.reason
+    text = rc.read_text()
+    assert path_integration._LEGACY_MARKER_BEGIN not in text
+    assert text.count(path_integration.MARKER_BEGIN) == 1
+    assert "# divider" in text
+
+
+def test_idempotent_after_migration(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    rc.write_text(_legacy_block())
+    first = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    snapshot = rc.read_text()
+    second = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert first.changed is True
+    assert second.changed is False
+    assert "already" in second.reason
+    assert rc.read_text() == snapshot
