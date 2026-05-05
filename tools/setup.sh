@@ -4,10 +4,14 @@
 #
 # Steps:
 #   1. Ensure `uv` is on PATH; install via the upstream installer if missing.
-#   2. Sync the Python environment (`uv sync`).
-#   3. Hand off to the Python installer (`uv run kitty-setup-install`), which downloads
-#      the upstream kitty installer, installs into ~/.local/kitty.app, symlinks the
-#      binary, writes the desktop entry, and injects our config block.
+#   2. `uv sync` — provision the local dev .venv (used by tests).
+#   3. `uv tool install --force .` — provision the deployable binary at
+#      ~/.local/bin/my-kitty-setup. Non-editable: source is COPIED into the
+#      tool venv so the binary survives deletion of this repo
+#      (probe-consolidate-into-my-kitty-setup-cli-01 + 02 + 03).
+#   4. Hand off to `my-kitty-setup install` which downloads kitty, installs into
+#      ~/.local/kitty.app, symlinks the binary, writes the desktop entry, injects
+#      our config block, and ensures ~/.local/bin is on the user's shell rc PATH.
 
 set -euo pipefail
 
@@ -23,7 +27,6 @@ ensure_uv() {
     fi
     log "uv not found; installing from https://astral.sh/uv/install.sh"
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    # The installer writes to ~/.local/bin/uv by default; add to PATH for this run.
     if [[ -x "${HOME}/.local/bin/uv" ]]; then
         export PATH="${HOME}/.local/bin:${PATH}"
     fi
@@ -34,18 +37,31 @@ ensure_uv() {
     log "uv installed at $(command -v uv)"
 }
 
-sync_env() {
-    log "running uv sync"
+sync_dev_env() {
+    log "running uv sync (dev .venv)"
     uv sync
 }
 
-run_installer() {
-    log "running kitty-setup-install"
-    uv run kitty-setup-install "$@"
+install_tool() {
+    # probe-consolidate-into-my-kitty-setup-cli-01: --force is idempotent and
+    # re-installs in ~177 ms; cheaper than a "skip if installed" branch.
+    log "running uv tool install --force . (deployable binary)"
+    uv tool install --force .
+    if [[ ! -x "${HOME}/.local/bin/my-kitty-setup" ]]; then
+        log "ERROR: uv tool install completed but ~/.local/bin/my-kitty-setup is missing"
+        exit 1
+    fi
+    log "my-kitty-setup installed at ${HOME}/.local/bin/my-kitty-setup"
+}
+
+run_install_subcommand() {
+    log "running my-kitty-setup install"
+    "${HOME}/.local/bin/my-kitty-setup" install "$@"
 }
 
 ensure_uv
-sync_env
-run_installer "$@"
+sync_dev_env
+install_tool
+run_install_subcommand "$@"
 
 log "done"

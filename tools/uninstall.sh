@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# tools/uninstall.sh — bootstrap-territory bash. Removes the kitty install we wrote and
-# strips our config block. Backups created by config_updater are kept.
+# tools/uninstall.sh — bootstrap-territory bash. Thin dispatcher onto
+# `my-kitty-setup uninstall`. The CLI owns the actual removal logic; this
+# script just confirms (skippable via KITTI_FORCE=1) and forwards flags.
 #
-# Skips the interactive confirm when KITTI_FORCE=1 is set in the environment.
+# Caller (Makefile) sets UNINSTALL_FLAGS to control scope:
+#   ""              → strip config + payload only.
+#   "--kitty"       → also remove ~/.local/kitty.app + symlink + desktop entry.
+#   "--kitty --self" → above + print the manual self-removal command.
 
 set -euo pipefail
 
@@ -11,13 +15,24 @@ cd "${REPO_ROOT}"
 
 log() { printf '[uninstall] %s\n' "$*"; }
 
+resolve_binary() {
+    if command -v my-kitty-setup >/dev/null 2>&1; then
+        echo "my-kitty-setup"
+    elif [[ -x "${HOME}/.local/bin/my-kitty-setup" ]]; then
+        echo "${HOME}/.local/bin/my-kitty-setup"
+    else
+        log "ERROR: my-kitty-setup not found on PATH or in ~/.local/bin"
+        log "       run 'make install' first, or remove manually"
+        exit 1
+    fi
+}
+
 confirm() {
     if [[ "${KITTI_FORCE:-}" == "1" ]]; then
         log "KITTI_FORCE=1 set; skipping interactive confirm"
         return
     fi
-    printf 'About to remove ~/.local/kitty.app, the ~/.local/bin/kitty symlink, the\n'
-    printf 'desktop entry, and strip our config block from ~/.config/kitty/kitty.conf.\n'
+    printf 'About to run: my-kitty-setup uninstall %s\n' "${UNINSTALL_FLAGS:-}"
     printf 'Backups under ~/.config/kitty/kitty.conf.bak.* will be kept.\n'
     printf 'Continue? [y/N] '
     read -r reply
@@ -27,34 +42,9 @@ confirm() {
     esac
 }
 
-strip_config() {
-    log "stripping our config block via kitty-setup-install --uninstall-config"
-    uv run kitty-setup-install --uninstall-config
-}
-
-remove_install() {
-    local app_dir="${HOME}/.local/kitty.app"
-    local bin_link="${HOME}/.local/bin/kitty"
-    local desktop="${HOME}/.local/share/applications/kitty.desktop"
-
-    if [[ -d "${app_dir}" ]]; then
-        log "removing ${app_dir}"
-        rm -rf "${app_dir}"
-    else
-        log "no ${app_dir} to remove"
-    fi
-    if [[ -L "${bin_link}" || -e "${bin_link}" ]]; then
-        log "removing ${bin_link}"
-        rm -f "${bin_link}"
-    fi
-    if [[ -f "${desktop}" ]]; then
-        log "removing ${desktop}"
-        rm -f "${desktop}"
-    fi
-}
-
 confirm
-strip_config
-remove_install
+binary="$(resolve_binary)"
+# shellcheck disable=SC2086 — UNINSTALL_FLAGS expansion is intentional.
+"${binary}" uninstall ${UNINSTALL_FLAGS:-}
 
 log "done"

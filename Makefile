@@ -7,12 +7,13 @@
 
 help:
 	@echo "kitty-setup targets:"
-	@echo "  install    install kitty + inject our config (alias of 'setup')"
-	@echo "  setup      install kitty + inject our config (calls tools/setup.sh)"
-	@echo "  clean      strip our config block + wipe ./tmp/ scratch (keeps kitty)"
-	@echo "  doctor     diagnose install state and config-include health"
-	@echo "  test       run pytest (set KITTI_INTEGRATION=1 for integration tests)"
-	@echo "  uninstall  remove kitty + strip config (calls tools/uninstall.sh)"
+	@echo "  install         provision uv → uv tool install → kitty + config (calls tools/setup.sh)"
+	@echo "  setup           alias of 'install'"
+	@echo "  clean           strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)"
+	@echo "  doctor          diagnose install state and config-include health"
+	@echo "  test            run pytest (set KITTI_INTEGRATION=1 for integration tests)"
+	@echo "  uninstall       strip our config + payload (calls tools/uninstall.sh)"
+	@echo "  uninstall ALL=1 also removes kitty + prints my-kitty-setup self-removal command"
 
 install: setup
 
@@ -20,14 +21,16 @@ setup:
 	@./tools/setup.sh
 
 clean:
-	@uv run kitty-setup-install --uninstall-config
+	@my-kitty-setup uninstall || true
 	@rm -rf tmp/
 
 doctor:
-	@uv run kitty-setup-doctor
+	@my-kitty-setup doctor
 
 test:
 	@uv run pytest tests/
 
+UNINSTALL_FLAGS := $(if $(filter 1,$(ALL)),--kitty --self,)
+
 uninstall:
-	@./tools/uninstall.sh
+	@UNINSTALL_FLAGS="$(UNINSTALL_FLAGS)" ./tools/uninstall.sh
