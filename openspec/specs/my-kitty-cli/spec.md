@@ -8,9 +8,9 @@ TBD - created by archiving change rename-cli-to-my-kitty. Update Purpose after a
 The system SHALL expose exactly one entry point under `[project.scripts]`,
 named `my-kitty`, whose `main()` parses subcommands via argparse
 subparsers. The supported subcommands SHALL be `install`, `uninstall`,
-`doctor`, `prune`, and `help` (the latter implicit via argparse). The
-system MUST NOT expose any other `[project.scripts]` entry — historic
-entries `kitty-setup-install`, `kitty-setup-doctor`,
+`doctor`, `prune`, `keys`, and `help` (the latter implicit via
+argparse). The system MUST NOT expose any other `[project.scripts]`
+entry — historic entries `kitty-setup-install`, `kitty-setup-doctor`,
 `kitty-setup-harness`, and `my-kitty-setup` SHALL be removed.
 
 #### Scenario: User runs the binary with no arguments
@@ -24,6 +24,10 @@ entries `kitty-setup-install`, `kitty-setup-doctor`,
 #### Scenario: Legacy entry point name is no longer registered
 - **WHEN** a user inspects `~/.local/share/uv/tools/kitty-setup/bin/` after a fresh `make install`
 - **THEN** the directory contains `my-kitty` and does NOT contain `my-kitty-setup`
+
+#### Scenario: `keys` subcommand appears in the help banner
+- **WHEN** the user runs `my-kitty --help` or `my-kitty help`
+- **THEN** the printed subcommand list includes `keys` alongside `install`, `uninstall`, `doctor`, `prune`, and `help`
 
 ### Requirement: Install via `uv tool install --force .`, source-independent after install
 
