@@ -2,7 +2,8 @@
 
 ### Requirement: Enumerate every active binding from the parsed kitty config
 
-The system SHALL provide a `kitty-setup-bindings` CLI entry point that loads
+The system SHALL provide a `keys` subcommand of the `my-kitty` CLI
+(`my-kitty keys`) that loads
 the user's effective kitty configuration via `kitty +runpy` and emits, for
 every chord active in the default keyboard mode, a record containing: the
 human-readable chord (e.g. `ctrl+shift+t`), the action string (e.g.
@@ -16,7 +17,7 @@ is passed, the system SHALL emit a single JSON document with the same data
 suitable for machine consumption.
 
 #### Scenario: Plain-text report on a healthy install
-- **WHEN** a user runs `uv run kitty-setup-bindings` after `make install`
+- **WHEN** a user runs `my-kitty keys` after `make install`
 - **THEN** stdout contains a `windowing (N bindings)` section with each of our
   windowing bindings on its own line, a `bindings (N bindings)` section with
   the clear-screen binding, a `kitty defaults (N bindings)` section, and a
@@ -24,7 +25,7 @@ suitable for machine consumption.
 - **AND** the process exits 0 even when intentional overrides are present
 
 #### Scenario: JSON output for machine consumers
-- **WHEN** a user runs `uv run kitty-setup-bindings --json`
+- **WHEN** a user runs `my-kitty keys --json`
 - **THEN** stdout contains a single parseable JSON document with a `bindings`
   list (each item has the chord, action, source, override_of, conflicts_with
   fields) and a `summary` object with `ours`, `defaults`, and `conflicts` counts
@@ -94,7 +95,7 @@ The introspection command SHALL NOT modify any file under `~/.config/`,
 safe to run repeatedly without side effects.
 
 #### Scenario: Repeated runs leave the filesystem unchanged
-- **WHEN** a user runs `uv run kitty-setup-bindings` twice in succession
+- **WHEN** a user runs `my-kitty keys` twice in succession
 - **THEN** no file under `~/.config/kitty/` or `~/.local/` is modified
 - **AND** both runs produce byte-identical output (assuming no concurrent edits)
 

@@ -14,4 +14,4 @@ The system SHALL provide a `doctor` command that reports, in deterministic plain
 
 #### Scenario: Doctor with a non-zero conflict count
 - **WHEN** the user runs `make doctor` on an install whose binding introspection reports one or more real conflicts
-- **THEN** the command marks the bindings check `FAIL bindings: <N> ours, <N> defaults, <K> conflicts (run `kitty-setup-bindings` for details)`, exits non-zero, and the other five checks still report their own status independently
+- **THEN** the command marks the bindings check `FAIL bindings: <N> ours, <N> defaults, <K> conflicts (run `my-kitty keys` for details)`, exits non-zero, and the other five checks still report their own status independently

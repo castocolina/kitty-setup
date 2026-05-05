@@ -1,4 +1,4 @@
-## 1. Probes (already done — see tmp/probes/)
+## 1. Probes (already done — see tmp/probes/phase1-binding-introspection/)
 
 - [x] 1.1 Probe 01 — verified kitten/kitty has no built-in `list-keys` / `list-bindings` command. Verdict: fails. → forces D1 (`kitty +runpy` enumeration).
 - [x] 1.2 Probe 02 — verified `kitty.config.load_config(...).keyboard_modes[""].keymap` exposes a `dict[SingleKey, list[KeyDefinition]]` we can walk. Verdict: holds. → enables D1.
@@ -7,14 +7,14 @@
 
 ## 2. Hypothesis H03 — wire enumeration end to end
 
-- [ ] 2.1 Create `tmp/h03-introspection/repro.md` describing the manual repro (run kitty-setup-bindings, expect grouped report with N ours / N defaults / N conflicts; expect ctrl+shift+- flagged as conflict, ctrl+shift+t flagged as override).
+- [ ] 2.1 Create `tmp/h03-introspection/repro.md` describing the manual repro (run `my-kitty keys`, expect grouped report with N ours / N defaults / N conflicts; expect ctrl+shift+- flagged as conflict, ctrl+shift+t flagged as override).
 - [ ] 2.2 Create `tmp/h03-introspection/run.py` that: (a) writes a candidate `intentional-overrides.conf` to a scratch dir, (b) writes a small kitty.conf into the scratch dir that includes our windowing.conf + bindings.conf via absolute path, (c) drives the planned introspection module against that scratch config, (d) asserts the report shape: 4 windowing entries, 1 bindings entry, 4 overrides allow-listed, 1 real conflict on `ctrl+shift+-`.
 - [ ] 2.3 Iterate the module's logic in `tmp/h03-introspection/draft.py` until `run.py` is green.
 
 ## 3. Promote `kitty-binding-introspection`
 
-- [ ] 3.1 Move proven module logic to `src/kitty_setup/binding_introspection.py`. Public API: `enumerate(conf_path: Path, kitty_bin: Path, payload_dir: Path, allow_list: Path) -> Report`, plus `Report.render_text() -> str` and `Report.to_json() -> str`. CLI `main()` parses `--json` and `--config-path` and resolves the remaining parameters from defaults: `kitty_bin` via `shutil.which("kitty")` with fallback to `installer.SYMLINK_PATH` then `installer._kitty_bin(installer.DEFAULT_DEST)`; `payload_dir` from `config_updater.ConfigPaths.for_user().payload_dir`; `allow_list` from `payload_dir / "intentional-overrides.conf"`. If `kitty_bin` cannot be resolved, `main()` prints a descriptive `FAIL` message and exits non-zero rather than raising.
-- [ ] 3.2 Add `kitty-setup-bindings = "kitty_setup.binding_introspection:main"` to `[project.scripts]` in `pyproject.toml`. Run `uv sync` so the entry point lands in `.venv/bin/`.
+- [ ] 3.1 Move proven module logic to `src/kitty_setup/binding_introspection.py`. Public API: `enumerate(conf_path: Path, kitty_bin: Path, payload_dir: Path, allow_list: Path) -> Report`, plus `Report.render_text() -> str` and `Report.to_json() -> str`. The subcommand handler `cli_keys(args: argparse.Namespace) -> int` parses `--json` and `--config-path` and resolves the remaining parameters from defaults: `kitty_bin` via `shutil.which("kitty")` with fallback to `installer.SYMLINK_PATH` then `installer._kitty_bin(installer.DEFAULT_DEST)`; `payload_dir` from `config_updater.ConfigPaths.for_user().payload_dir`; `allow_list` from `payload_dir / "intentional-overrides.conf"`. If `kitty_bin` cannot be resolved, the handler prints a descriptive `FAIL` message and returns non-zero rather than raising.
+- [ ] 3.2 Register `keys` as a subparser in `src/kitty_setup/cli.py`: `sub.add_parser("keys", help="list active key bindings + flag conflicts")` with `--json` and `--config-path` arguments, dispatched via `set_defaults(func=binding_introspection.cli_keys)`. Add `binding_introspection` to the existing `from kitty_setup import doctor, installer, pruner` line. NO `[project.scripts]` change — `keys` is a subcommand of the existing `my-kitty` binary.
 - [ ] 3.3 Ship `config/kitty/intentional-overrides.conf` with the four bootstrap overrides (`ctrl+shift+t`, `ctrl+shift+n`, `ctrl+shift+enter`, `ctrl+shift+k`). The config_updater payload-mirror step already copies new files into `~/.config/kitty/kitty-setup/`; verify after `make install`.
 - [ ] 3.4 Promote `tmp/h03-introspection/repro.md` to `docs/repro/h03-introspection.md`. Rewrite `tmp/h03-introspection/run.py` as `tests/integration/test_h03_introspection.py` using a pytest fixture for the scratch config and the `KITTI_INTEGRATION` gate. Delete `tmp/h03-introspection/`.
 - [ ] 3.5 Add `tests/unit/test_binding_introspection.py` covering: pure parsing helpers (file regex, chord normalisation, conflict classification) against synthetic input. No real kitty in the unit test (per R7, the integration test in 3.4 is the real-system verifier; the unit test is a fast regression net for the pure-Python helpers).
@@ -28,7 +28,7 @@
 ## 5. Documentation
 
 - [ ] 5.1 Update `docs/agent-iteration.md`: add a one-line note in the loop step 6 (Promote) that any new file added under `config/kitty/` becomes a binding category by file basename. Cross-link to the new spec.
-- [ ] 5.2 README: add `kitty-setup-bindings` to the quickstart command list, with a one-line description.
+- [ ] 5.2 README: add `my-kitty keys` to the quickstart command list, with a one-line description ("list every active binding grouped by source file; flags conflicts with kitty defaults").
 
 ## 6. Probe-finding durability check (R6)
 

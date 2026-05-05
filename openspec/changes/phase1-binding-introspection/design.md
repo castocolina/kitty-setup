@@ -21,10 +21,10 @@ established two non-obvious facts about how to do this on kitty 0.46:
 ## Goals / Non-Goals
 
 **Goals:**
-- A `kitty-setup-bindings` CLI that prints every active binding, grouped by
-  source file, with conflicts flagged. Default output is plain text suitable
-  for a terminal; `--json` emits machine-readable output for tests and future
-  doctor consumers.
+- A `keys` subcommand on the existing `my-kitty` CLI (`my-kitty keys`) that
+  prints every active binding, grouped by source file, with conflicts
+  flagged. Default output is plain text suitable for a terminal; `--json`
+  emits machine-readable output for tests and future doctor consumers.
 - A doctor check that reports `bindings: <N> ours, <N> defaults, <N> conflicts`
   and FAILs when any of our bindings collide with a non-default binding (i.e.
   with another binding from our payload, indicating an internal conflict, OR
@@ -100,7 +100,7 @@ install until the follow-up change moves the horizontal-split chord off it.
 ### D4 — Output shape: grouped plain text by default, JSON behind `--json`
 
 **Why:** doctor consumes JSON; humans read text. One CLI, two formats. Plain
-text default keeps `kitty-setup-bindings` useful at a glance.
+text default keeps `my-kitty keys` useful at a glance.
 
 CLI flags:
 - `--json` — emit machine-readable JSON instead of plain text.
@@ -184,8 +184,11 @@ Deploy:
 Rollback:
 
 1. Revert the four commits. The doctor check goes away. The intentional-overrides
-   file goes away. The Python module goes away. The `[project.scripts]` entry
-   goes away. No persistent state was created anywhere.
+   file goes away. The Python module goes away. The `keys` subparser
+   registration in `cli.py` goes away. No new `[project.scripts]` entry was
+   added — `keys` is a subcommand of the existing `my-kitty` binary — so
+   nothing to remove from `pyproject.toml`. No persistent state was created
+   anywhere.
 
 ## Open Questions
 
