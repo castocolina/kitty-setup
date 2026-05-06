@@ -111,23 +111,7 @@ def test_install_routes_to_cli_install(monkeypatch: pytest.MonkeyPatch) -> None:
     assert args.dest == Path("/tmp/x")
 
 
-def test_uninstall_routes_to_cli_uninstall_with_flags(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, argparse.Namespace] = {}
-
-    def fake(args: argparse.Namespace) -> int:
-        captured["args"] = args
-        return 0
-
-    monkeypatch.setattr(cli.installer, "cli_uninstall", fake)
-    code = cli.main(["uninstall", "--kitty", "--self"])
-    assert code == 0
-    assert captured["args"].kitty is True
-    assert captured["args"].self_ is True
-
-
-def test_uninstall_default_scope_no_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_uninstall_default_no_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, argparse.Namespace] = {}
 
     def fake(args: argparse.Namespace) -> int:
@@ -137,8 +121,48 @@ def test_uninstall_default_scope_no_flags(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cli.installer, "cli_uninstall", fake)
     code = cli.main(["uninstall"])
     assert code == 0
-    assert captured["args"].kitty is False
-    assert captured["args"].self_ is False
+    args = captured["args"]
+    assert args.keep_backups is False
+    assert args.keep_config is False
+    assert args.keep_kitty is False
+
+
+@pytest.mark.parametrize(
+    "flag,attr",
+    [
+        ("--keep-backups", "keep_backups"),
+        ("--keep-config", "keep_config"),
+        ("--keep-kitty", "keep_kitty"),
+    ],
+)
+def test_uninstall_each_keep_flag_flips_only_its_attr(
+    monkeypatch: pytest.MonkeyPatch, flag: str, attr: str
+) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(cli.installer, "cli_uninstall", lambda a: captured.setdefault("a", a) and 0)
+    cli.main(["uninstall", flag])
+    args = captured["a"]
+    for name in ("keep_backups", "keep_config", "keep_kitty"):
+        assert getattr(args, name) is (name == attr)
+
+
+def test_uninstall_all_three_flags_compose(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(cli.installer, "cli_uninstall", lambda a: captured.setdefault("a", a) and 0)
+    cli.main(["uninstall", "--keep-backups", "--keep-config", "--keep-kitty"])
+    args = captured["a"]
+    assert args.keep_backups is True
+    assert args.keep_config is True
+    assert args.keep_kitty is True
+
+
+@pytest.mark.parametrize("legacy", ["--kitty", "--self"])
+def test_uninstall_legacy_flags_rejected(capsys: pytest.CaptureFixture[str], legacy: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["uninstall", legacy])
+    assert exc.value.code != 0
+    err = capsys.readouterr().err
+    assert "unrecognized" in err.lower() or "invalid" in err.lower() or legacy in err
 
 
 def test_doctor_routes_to_cli_doctor(monkeypatch: pytest.MonkeyPatch) -> None:

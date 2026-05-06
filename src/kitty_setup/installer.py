@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Final
 
-from kitty_setup import config_updater, path_integration
+from kitty_setup import config_updater, path_integration, pruner
 
 INSTALLER_URL: Final[str] = "https://sw.kovidgoyal.net/kitty/installer.sh"
 DEFAULT_DEST: Final[Path] = Path.home() / ".local"
@@ -305,8 +305,8 @@ _SELF_REMOVAL_BANNER: Final[str] = (
     # probe-consolidate-into-my-kitty-setup-cli-04 confirmed `uv tool uninstall`
     # cleanly removes the entry shim + tool venv. We PRINT the command (do not
     # exec) per design D2 of consolidate: the running binary should not delete
-    # its own files. Banner text refreshed for the my-kitty rename.
-    "To remove the my-kitty binary itself, run:\n"
+    # its own files. Always-on after simplify-uninstall-defaults D2.
+    "binary:        the my-kitty binary itself was NOT removed. To remove it:\n"
     "    uv tool uninstall my-kitty\n"
     "To remove the PATH block from your shell rc, delete the lines between:\n"
     "    # >>> my-kitty PATH >>>\n"
@@ -316,20 +316,45 @@ _SELF_REMOVAL_BANNER: Final[str] = (
 
 
 def cli_uninstall(args: argparse.Namespace) -> int:
-    """Handler for ``my-kitty uninstall`` (default + ``--kitty`` + ``--self``)."""
-    cfg = uninstall_config_only()
-    if cfg.block_removed:
-        print(f"config:        block removed from {cfg.conf_file}")
-    else:
-        print(f"config:        no managed block found in {cfg.conf_file}")
-    if cfg.payload_dir_removed:
-        print("config:        payload directory removed")
-    if cfg.conf_restored_from is not None:
-        print(f"config:        restored from {cfg.conf_restored_from}")
-    if cfg.conf_deleted:
-        print(f"config:        {cfg.conf_file} deleted (no other content)")
+    """Handler for ``my-kitty uninstall`` — remove everything by default.
 
-    if args.kitty:
+    ``--keep-config`` preserves the entire ``~/.config/kitty/`` footprint we
+    created (block + payload + backups). ``--keep-backups`` preserves only the
+    backup files. ``--keep-kitty`` preserves kitty.app + symlink + desktop
+    entry. Flags compose; the self-removal banner always prints.
+    """
+    do_config = not args.keep_config
+    do_backups = not args.keep_config and not args.keep_backups
+    do_kitty = not args.keep_kitty
+
+    paths = config_updater.ConfigPaths.for_user()
+
+    # Order matters: delete backups BEFORE stripping the block. If kitty.conf
+    # contained only our block, config_updater.uninstall's restore-from-backup
+    # branch will find no backups (correct — we just deleted them) and fall
+    # through to deleting the empty file.
+    if do_backups:
+        backups = config_updater.list_backups(paths.conf_file)
+        deleted = pruner.delete_each(backups)
+        if backups:
+            print(f"backups:       deleted {deleted} file(s) under {paths.kitty_dir}/")
+        else:
+            print(f"backups:       nothing to delete under {paths.kitty_dir}/")
+
+    if do_config:
+        cfg = config_updater.uninstall(paths)
+        if cfg.block_removed:
+            print(f"config:        block removed from {cfg.conf_file}")
+        else:
+            print(f"config:        no managed block found in {cfg.conf_file}")
+        if cfg.payload_dir_removed:
+            print("config:        payload directory removed")
+        if cfg.conf_restored_from is not None:
+            print(f"config:        restored from {cfg.conf_restored_from}")
+        if cfg.conf_deleted:
+            print(f"config:        {cfg.conf_file} deleted (no other content)")
+
+    if do_kitty:
         kitty_report = remove_kitty_install()
         if kitty_report.app_dir_removed:
             print(f"kitty:         removed {kitty_report.app_dir}")
@@ -340,7 +365,5 @@ def cli_uninstall(args: argparse.Namespace) -> int:
         if kitty_report.desktop_entry_removed:
             print(f"kitty:         removed desktop entry {kitty_report.desktop_entry}")
 
-    if args.self_:
-        print(_SELF_REMOVAL_BANNER)
-
+    print(_SELF_REMOVAL_BANNER)
     return 0

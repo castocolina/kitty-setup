@@ -53,18 +53,30 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_uninstall = sub.add_parser(
         "uninstall",
-        help="strip our config block (default) + optional --kitty / --self",
+        help="remove our entire footprint (default); --keep-* flags preserve subsets",
+        description=(
+            "Remove our entire footprint by default. Use --keep-* flags to preserve "
+            "specific subsets. The my-kitty binary itself is never removed; the "
+            "manual `uv tool uninstall my-kitty` command is always printed at the end."
+        ),
     )
     p_uninstall.add_argument(
-        "--kitty",
+        "--keep-backups",
+        dest="keep_backups",
         action="store_true",
-        help="also remove ~/.local/kitty.app, the kitty symlink, and the desktop entry",
+        help="preserve every kitty.conf.bak.* file under ~/.config/kitty/",
     )
     p_uninstall.add_argument(
-        "--self",
-        dest="self_",
+        "--keep-config",
+        dest="keep_config",
         action="store_true",
-        help="print (do NOT execute) the manual self-removal command and PATH cleanup",
+        help="preserve the entire ~/.config/kitty/ footprint (block + payload + backups)",
+    )
+    p_uninstall.add_argument(
+        "--keep-kitty",
+        dest="keep_kitty",
+        action="store_true",
+        help="preserve ~/.local/kitty.app, the kitty symlink, and the desktop entry",
     )
     p_uninstall.set_defaults(func=installer.cli_uninstall)
 
