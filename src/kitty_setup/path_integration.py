@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import re
 from pathlib import Path
 from typing import Final
 
@@ -81,29 +80,6 @@ def _detect_shell(explicit: str | None, env_shell: str | None) -> str | None:
     return Path(env_shell).name or None
 
 
-def _process_env_has_target(target: Path, env_path: str) -> bool:
-    try:
-        target_resolved = target.resolve()
-    except OSError:
-        target_resolved = target
-    for entry in env_path.split(os.pathsep):
-        if not entry:
-            continue
-        candidate = Path(entry)
-        try:
-            candidate_resolved = candidate.resolve()
-        except OSError:
-            candidate_resolved = candidate
-        if candidate_resolved == target_resolved or str(candidate) == str(target):
-            return True
-        if str(candidate) == f"~/{TARGET_DIR_REL}":
-            return True
-    return False
-
-
-_PATH_LINE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*export\s+PATH\s*=", re.MULTILINE)
-
-
 def _find_block(rc_text: str, begin: str, end: str) -> tuple[int, int] | None:
     """Return (start_line_idx, end_line_idx_exclusive) for a marker block, or None."""
     lines = rc_text.splitlines(keepends=False)
@@ -132,26 +108,21 @@ def _splice_lines(rc_text: str, start: int, end: int, replacement: list[str]) ->
     return out
 
 
-def _rc_already_exports_target(rc_text: str, target: Path) -> bool:
-    target_str = str(target)
-    home_rel = f"$HOME/{TARGET_DIR_REL}"
-    tilde_rel = f"~/{TARGET_DIR_REL}"
-    for match in _PATH_LINE_RE.finditer(rc_text):
-        line_end = rc_text.find("\n", match.start())
-        line = rc_text[match.start() : line_end if line_end != -1 else len(rc_text)]
-        if home_rel in line or tilde_rel in line or target_str in line:
-            return True
-    return False
-
-
 def ensure_local_bin_in_path(
     home: Path | None = None,
     shell: str | None = None,
-    env_path: str | None = None,
+    env_path: str | None = None,  # kept for kwarg back-compat; no longer consulted
 ) -> PathEditResult:
-    """Append the sentinel-bracketed PATH block to the user's shell rc if missing."""
+    """Ensure the sentinel-bracketed block is present in the user's shell rc.
+
+    Block carries two concerns: PATH export AND register-python-argcomplete
+    eval. Short-circuiting on "PATH already on $PATH" or "user has manual
+    export" would drop the completion line, so block injection is
+    unconditional given a supported shell. Splice helpers find/replace by
+    sentinel marker — user-authored PATH lines elsewhere in the rc are
+    untouched.
+    """
     home_dir = home or Path.home()
-    target = home_dir / TARGET_DIR_REL
     detected_shell = _detect_shell(shell, os.environ.get("SHELL"))
     rc_basename = _RC_BY_SHELL.get(detected_shell or "")
 
@@ -165,16 +136,6 @@ def ensure_local_bin_in_path(
         )
 
     rc_file = home_dir / rc_basename
-    current_env_path = env_path if env_path is not None else os.environ.get("PATH", "")
-
-    if _process_env_has_target(target, current_env_path):
-        return PathEditResult(
-            changed=False,
-            skipped=False,
-            rc_file=rc_file,
-            shell=detected_shell,
-            reason="already on $PATH in current environment",
-        )
 
     if rc_file.is_file():
         rc_text = rc_file.read_text(encoding="utf-8")
@@ -230,14 +191,8 @@ def ensure_local_bin_in_path(
                 reason="rewrote rc block body to current template",
             )
 
-        if _rc_already_exports_target(rc_text, target):
-            return PathEditResult(
-                changed=False,
-                skipped=False,
-                rc_file=rc_file,
-                shell=detected_shell,
-                reason="rc file already exports ~/.local/bin",
-            )
+        # No block (new or legacy) in the rc; append a fresh one. Any
+        # user-authored PATH lines elsewhere in the file are left untouched.
         separator = "" if rc_text.endswith("\n") or rc_text == "" else "\n"
         new_text = f"{rc_text}{separator}{_block_text()}"
     else:

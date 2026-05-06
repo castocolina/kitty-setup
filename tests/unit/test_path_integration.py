@@ -94,26 +94,40 @@ def test_legacy_block_migrates_with_completion_line(tmp_path: Path) -> None:
     assert path_integration.COMPLETION_LINE in text
 
 
-def test_rc_has_user_authored_export_is_noop(tmp_path: Path) -> None:
+def test_rc_has_user_authored_export_still_appends_block(tmp_path: Path) -> None:
+    """User's manual PATH line MUST NOT short-circuit block injection.
+
+    The block carries the completion eval line in addition to the PATH
+    export, so the presence of a user-authored PATH line elsewhere in the
+    rc does not satisfy the contract. The block is appended; the user's
+    line is left intact.
+    """
     home = tmp_path / "home"
     home.mkdir()
     rc = home / ".zshrc"
-    rc.write_text('export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"\n')
+    pre = 'export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"\n'
+    rc.write_text(pre)
     result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
-    assert result.changed is False
-    assert "rc file already" in result.reason
+    assert result.changed is True
+    text = rc.read_text()
+    assert text.startswith(pre)
+    assert path_integration.MARKER_BEGIN in text
+    assert path_integration.COMPLETION_LINE in text
 
 
-def test_rc_has_tilde_export_is_noop(tmp_path: Path) -> None:
+def test_rc_has_tilde_export_still_appends_block(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text('export PATH="~/.local/bin:$PATH"\n')
     result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
-    assert result.changed is False
+    assert result.changed is True
+    assert path_integration.COMPLETION_LINE in rc.read_text()
 
 
-def test_current_env_already_has_target_is_noop(tmp_path: Path) -> None:
+def test_current_env_already_has_target_still_appends_block(tmp_path: Path) -> None:
+    """$PATH covering ~/.local/bin must NOT skip block injection — the block
+    also carries the register-python-argcomplete eval line."""
     home = tmp_path / "home"
     home.mkdir()
     target = home / ".local" / "bin"
@@ -121,9 +135,10 @@ def test_current_env_already_has_target_is_noop(tmp_path: Path) -> None:
     result = path_integration.ensure_local_bin_in_path(
         home=home, shell="zsh", env_path=f"{target}:/usr/bin"
     )
-    assert result.changed is False
-    assert "current environment" in result.reason
-    assert not (home / ".zshrc").exists()
+    assert result.changed is True
+    text = (home / ".zshrc").read_text()
+    assert path_integration.MARKER_BEGIN in text
+    assert path_integration.COMPLETION_LINE in text
 
 
 def test_unsupported_shell_returns_skipped(tmp_path: Path) -> None:
