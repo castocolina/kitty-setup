@@ -38,8 +38,10 @@ my-kitty keys           # list every active binding grouped by source; flags con
 my-kitty keys --json    # same data as machine-readable JSON
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
 KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
-make uninstall          # strip our config + payload (kitty + binary stay)
-make uninstall ALL=1    # also remove ~/.local/kitty.app + print my-kitty self-removal
+make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups)
+make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files; remove the rest
+make uninstall KEEP_CONFIG=1     # preserve entire ~/.config/kitty/ footprint; still removes kitty.app
+make uninstall KEEP_KITTY=1      # preserve kitty.app + symlink + desktop; remove config + backups
 make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
 make prune              # keep 3 most recent kitty.conf backups, delete the rest
 my-kitty prune          # dry-run: list backups + total size, no deletions
@@ -59,9 +61,11 @@ working
 ## Backup hygiene
 
 Every `make install` that detects drift on `~/.config/kitty/kitty.conf`
-writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install + uninstall
-**never** delete those files — backups are kept indefinitely as a safety net.
-The `prune` subcommand is the **only** opt-in path that removes them:
+writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install **never**
+deletes those files. Uninstall **deletes them by default** (per
+simplify-uninstall-defaults — "uninstall = remove everything we put on your
+system"); pass `KEEP_BACKUPS=1` to preserve them. For routine maintenance
+without uninstalling, use `prune`:
 
 ```
 my-kitty prune                              # dry-run listing, no writes
@@ -92,6 +96,14 @@ notice with the literal `uv tool uninstall my-kitty-setup` command — run it
 to clean up the legacy shim. Your shell rc PATH block migrates automatically
 from the legacy `# >>> my-kitty-setup PATH >>>` markers to the new
 `# >>> my-kitty PATH >>>` markers on the same `make install` run.
+
+**Breaking change as of `simplify-uninstall-defaults`:** `make uninstall` now
+removes the entire footprint by default (config block + payload + kitty.app +
+symlink + desktop entry + every `kitty.conf.bak.*` file). The pre-rename
+`--kitty` and `--self` flags are gone, replaced by opt-out `--keep-backups` /
+`--keep-config` / `--keep-kitty` (Make-side: `KEEP_BACKUPS=1` etc.). The
+closest mapping to the legacy "config-only" default is
+`make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`.
 
 ## Stack and layout
 
