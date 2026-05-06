@@ -32,10 +32,11 @@ delivered in two independent components that share a repo:
 
 ```bash
 make install            # uv sync → uv tool install . → kitty + config + PATH (calls tools/setup.sh)
-my-kitty doctor         # verify install state (kitty version, sentinel block, parse, paths, bindings)
+my-kitty doctor         # verify install state (kitty version, sentinel block, parse, paths, bindings, completion)
 my-kitty install        # idempotent re-run; same as `make install` after the first install
 my-kitty keys           # list every active binding grouped by source; flags conflicts
 my-kitty keys --json    # same data as machine-readable JSON
+my-kitty <TAB>          # bash + zsh tab completion (after one make install + new shell)
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
 KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
 make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups)
@@ -104,6 +105,14 @@ symlink + desktop entry + every `kitty.conf.bak.*` file). The pre-rename
 `--keep-config` / `--keep-kitty` (Make-side: `KEEP_BACKUPS=1` etc.). The
 closest mapping to the legacy "config-only" default is
 `make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`.
+
+**Note as of `add-shell-completion`:** the sentinel-bracketed PATH block in
+your shell rc now contains a guarded `register-python-argcomplete` eval line
+in addition to the PATH export. Re-running `make install` rewrites the block
+body in place between the existing markers; nothing else in the rc file is
+touched. Open a fresh shell after the install — `my-kitty <TAB>` expands to
+the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
+`--keep-*` flags.
 
 ## Stack and layout
 
