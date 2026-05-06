@@ -1,4 +1,17 @@
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: Uninstall has three layered scopes
+
+**Reason**: Inverted by simplify-uninstall-defaults. The pre-rename
+`--kitty` / `--self` flags + the config-only default scope are replaced
+by the new `Uninstall removes everything by default; opt-out flags
+preserve subsets` requirement (added in this same change).
+
+**Migration**: Users who relied on the old config-only default run
+`my-kitty uninstall --keep-kitty --keep-backups` (or
+`make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`) for the closest mapping.
+
+## ADDED Requirements
 
 ### Requirement: Uninstall removes everything by default; opt-out flags preserve subsets
 
@@ -64,6 +77,8 @@ existed in the pre-rename design and are removed by this change.
 #### Scenario: Legacy --self flag is no longer recognised
 - **WHEN** a user runs `my-kitty uninstall --self` (pre-rename flag)
 - **THEN** the command exits non-zero with an argparse error mentioning the unrecognised argument
+
+## MODIFIED Requirements
 
 ### Requirement: `make` orchestrates the install and uninstall flows
 
