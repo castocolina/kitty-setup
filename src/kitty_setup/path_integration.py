@@ -25,7 +25,22 @@ MARKER_END: Final[str] = "# <<< my-kitty PATH <<<"
 _LEGACY_MARKER_BEGIN: Final[str] = "# >>> my-kitty-setup PATH >>>"
 _LEGACY_MARKER_END: Final[str] = "# <<< my-kitty-setup PATH <<<"
 EXPORT_LINE: Final[str] = 'export PATH="$HOME/.local/bin:$PATH"'
+COMPLETION_LINE: Final[str] = 'eval "$(register-python-argcomplete my-kitty)"'
+COMPLETION_GUARD_BEGIN: Final[str] = (
+    "if command -v register-python-argcomplete >/dev/null 2>&1; then"
+)
+COMPLETION_GUARD_END: Final[str] = "fi"
 TARGET_DIR_REL: Final[str] = ".local/bin"
+
+# Block body lines (between the sentinel markers). Render-replaced on every
+# install; hosts running an older PATH-only block migrate in place to this
+# shape (see add-shell-completion design D4).
+_BLOCK_BODY_LINES: Final[tuple[str, ...]] = (
+    EXPORT_LINE,
+    COMPLETION_GUARD_BEGIN,
+    f"    {COMPLETION_LINE}",
+    COMPLETION_GUARD_END,
+)
 
 _RC_BY_SHELL: Final[dict[str, str]] = {
     "zsh": ".zshrc",
@@ -46,7 +61,16 @@ class PathEditResult:
 
 
 def _block_text() -> str:
-    return f"{MARKER_BEGIN}\n{EXPORT_LINE}\n{MARKER_END}\n"
+    body = "\n".join(_BLOCK_BODY_LINES)
+    return f"{MARKER_BEGIN}\n{body}\n{MARKER_END}\n"
+
+
+def _block_body_matches_template(rc_text: str, bounds: tuple[int, int]) -> bool:
+    """True iff the block body between markers equals the current template."""
+    lines = rc_text.splitlines(keepends=False)
+    body = [line.rstrip() for line in lines[bounds[0] + 1 : bounds[1] - 1]]
+    expected = [line.rstrip() for line in _BLOCK_BODY_LINES]
+    return body == expected
 
 
 def _detect_shell(explicit: str | None, env_shell: str | None) -> str | None:
@@ -109,8 +133,6 @@ def _splice_lines(rc_text: str, start: int, end: int, replacement: list[str]) ->
 
 
 def _rc_already_exports_target(rc_text: str, target: Path) -> bool:
-    if MARKER_BEGIN in rc_text and MARKER_END in rc_text:
-        return True
     target_str = str(target)
     home_rel = f"$HOME/{TARGET_DIR_REL}"
     tilde_rel = f"~/{TARGET_DIR_REL}"
@@ -172,8 +194,9 @@ def ensure_local_bin_in_path(
             )
 
         if new_block is None and legacy_block is not None:
-            # Migration: rewrite the legacy marker lines in place.
-            replacement = [MARKER_BEGIN, EXPORT_LINE, MARKER_END]
+            # Migration: rewrite the legacy marker lines in place with the
+            # current block body (PATH export + completion eval guard).
+            replacement = [MARKER_BEGIN, *_BLOCK_BODY_LINES, MARKER_END]
             new_text = _splice_lines(rc_text, legacy_block[0], legacy_block[1], replacement)
             rc_file.write_text(new_text, encoding="utf-8")
             return PathEditResult(
@@ -182,6 +205,29 @@ def ensure_local_bin_in_path(
                 rc_file=rc_file,
                 shell=detected_shell,
                 reason="migrated legacy marker",
+            )
+
+        if new_block is not None:
+            # Block exists with current markers. Short-circuit iff body matches
+            # template; otherwise rewrite body in place (e.g. host on
+            # PATH-only block migrating to PATH + completion).
+            if _block_body_matches_template(rc_text, new_block):
+                return PathEditResult(
+                    changed=False,
+                    skipped=False,
+                    rc_file=rc_file,
+                    shell=detected_shell,
+                    reason="rc block already matches current template",
+                )
+            replacement = [MARKER_BEGIN, *_BLOCK_BODY_LINES, MARKER_END]
+            new_text = _splice_lines(rc_text, new_block[0], new_block[1], replacement)
+            rc_file.write_text(new_text, encoding="utf-8")
+            return PathEditResult(
+                changed=True,
+                skipped=False,
+                rc_file=rc_file,
+                shell=detected_shell,
+                reason="rewrote rc block body to current template",
             )
 
         if _rc_already_exports_target(rc_text, target):

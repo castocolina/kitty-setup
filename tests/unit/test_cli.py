@@ -181,3 +181,21 @@ def test_doctor_routes_to_cli_doctor(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_handler_return_code_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli.doctor, "cli_doctor", lambda _args: 42)
     assert cli.main(["doctor"]) == 42
+
+
+def test_main_invokes_argcomplete_autocomplete(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_autocomplete(parser: argparse.ArgumentParser) -> None:
+        captured["parser"] = parser
+
+    monkeypatch.setattr(cli.argcomplete, "autocomplete", fake_autocomplete)
+    monkeypatch.setattr(cli.doctor, "cli_doctor", lambda _args: 0)
+    assert cli.main(["doctor"]) == 0
+    assert isinstance(captured["parser"], argparse.ArgumentParser)
+
+
+def test_cli_module_has_argcomplete_magic_comment() -> None:
+    """`register-python-argcomplete` scans the first 1024 bytes for the marker."""
+    src = Path(cli.__file__).read_bytes()[:1024]
+    assert b"PYTHON_ARGCOMPLETE_OK" in src

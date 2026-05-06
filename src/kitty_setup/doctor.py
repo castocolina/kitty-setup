@@ -8,12 +8,13 @@ on any FAIL.
 from __future__ import annotations
 
 import dataclasses
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from kitty_setup import binding_introspection, config_updater, installer
+from kitty_setup import binding_introspection, config_updater, installer, path_integration
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -113,6 +114,45 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
     return CheckResult("bindings", False, f"{summary} (run `my-kitty keys` for details)")
 
 
+_RC_BY_SHELL: dict[str, str] = {"zsh": ".zshrc", "bash": ".bashrc"}
+
+
+def _check_completion(home: Path | None = None) -> CheckResult:
+    """Verify the argcomplete helper + the completion eval line in rc."""
+    helper = shutil.which("register-python-argcomplete")
+    home_dir = home or Path.home()
+    shell_name = Path(os.environ.get("SHELL", "")).name
+    rc_basename = _RC_BY_SHELL.get(shell_name)
+    if rc_basename is None:
+        rc_basename = ".zshrc"  # default when shell is unknown
+    rc_file = home_dir / rc_basename
+    rc_text = rc_file.read_text(encoding="utf-8") if rc_file.is_file() else ""
+    bounds = path_integration._find_block(
+        rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
+    )
+    body = ""
+    if bounds is not None:
+        body_lines = rc_text.splitlines(keepends=False)[bounds[0] + 1 : bounds[1] - 1]
+        body = "\n".join(body_lines)
+    rc_has_eval = path_integration.COMPLETION_LINE in body
+
+    if helper is not None and rc_has_eval:
+        return CheckResult("completion", True, f"helper {helper}; eval line present in {rc_file}")
+    if helper is None and not rc_has_eval:
+        return CheckResult(
+            "completion",
+            False,
+            f"register-python-argcomplete not on PATH AND eval line missing from {rc_file}",
+        )
+    if helper is None:
+        return CheckResult("completion", False, "register-python-argcomplete not on PATH")
+    return CheckResult(
+        "completion",
+        False,
+        f"register-python-argcomplete present at {helper}; eval line missing from {rc_file}",
+    )
+
+
 def run_checks(home: Path | None = None) -> list[CheckResult]:
     paths = config_updater.ConfigPaths.for_user(home=home)
     binary_check, kitty_bin = _check_kitty_binary()
@@ -124,6 +164,7 @@ def run_checks(home: Path | None = None) -> list[CheckResult]:
         _check_sentinel_block(paths),
         _check_parse(paths, kitty_bin),
         _check_bindings(paths, kitty_bin),
+        _check_completion(home=home),
     ]
 
 

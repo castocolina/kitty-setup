@@ -71,6 +71,7 @@ def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path
         "sentinel block",
         "parse check",
         "bindings",
+        "completion",
     ]
     assert all(not r.passed for r in results)
 
@@ -150,3 +151,61 @@ def test_check_kitty_binary_subprocess_timeout(
     result, resolved = doctor._check_kitty_binary()
     assert not result.passed
     assert resolved is None
+
+
+def _seed_rc_with_block(home: Path, body: str) -> Path:
+    rc = home / ".zshrc"
+    rc.write_text(
+        f"{doctor.path_integration.MARKER_BEGIN}\n{body}\n{doctor.path_integration.MARKER_END}\n",
+        encoding="utf-8",
+    )
+    return rc
+
+
+def test_completion_check_passes_when_helper_and_rc_line_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
+    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
+    body = (
+        f"{doctor.path_integration.EXPORT_LINE}\n"
+        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
+        f"    {doctor.path_integration.COMPLETION_LINE}\n"
+        f"{doctor.path_integration.COMPLETION_GUARD_END}"
+    )
+    _seed_rc_with_block(tmp_path, body)
+    result = doctor._check_completion(home=tmp_path)
+    assert result.name == "completion"
+    assert result.passed is True
+
+
+def test_completion_check_fails_when_helper_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
+    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+    body = (
+        f"{doctor.path_integration.EXPORT_LINE}\n"
+        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
+        f"    {doctor.path_integration.COMPLETION_LINE}\n"
+        f"{doctor.path_integration.COMPLETION_GUARD_END}"
+    )
+    _seed_rc_with_block(tmp_path, body)
+    result = doctor._check_completion(home=tmp_path)
+    assert result.passed is False
+    assert "register-python-argcomplete" in result.detail
+    assert "not on PATH" in result.detail
+
+
+def test_completion_check_fails_when_rc_eval_line_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
+    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
+    _seed_rc_with_block(tmp_path, doctor.path_integration.EXPORT_LINE)  # PATH-only block
+    result = doctor._check_completion(home=tmp_path)
+    assert result.passed is False
+    assert "missing" in result.detail.lower()

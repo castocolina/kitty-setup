@@ -33,22 +33,65 @@ def test_rc_with_unrelated_content_appends_block(tmp_path: Path) -> None:
     assert path_integration.MARKER_BEGIN in text
 
 
-def test_rc_already_has_our_block_is_noop(tmp_path: Path) -> None:
+def test_rc_already_has_our_block_with_current_template_is_noop(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     rc = home / ".zshrc"
-    block = (
-        f"{path_integration.MARKER_BEGIN}\n"
-        f"{path_integration.EXPORT_LINE}\n"
-        f"{path_integration.MARKER_END}\n"
-    )
-    rc.write_text(block)
+    rc.write_text(path_integration._block_text())
     before = rc.read_text()
     result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
     assert result.changed is False
     assert result.skipped is False
-    assert "already" in result.reason
+    assert "already" in result.reason or "matches" in result.reason
     assert rc.read_text() == before
+
+
+def test_rc_block_renders_path_export_and_completion_lines(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    text = (home / ".zshrc").read_text()
+    assert path_integration.EXPORT_LINE in text
+    assert path_integration.COMPLETION_LINE in text
+    assert path_integration.COMPLETION_GUARD_BEGIN in text
+
+
+def test_old_path_only_block_migrates_in_place(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    pre = "# my own stuff\nalias ll='ls -la'\n"
+    post = "\n# trailing user content\nexport EDITOR=vim\n"
+    old_body = path_integration.EXPORT_LINE
+    old_block = f"{path_integration.MARKER_BEGIN}\n{old_body}\n{path_integration.MARKER_END}\n"
+    rc.write_text(pre + old_block + post)
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert result.changed is True
+    assert "rewrote" in result.reason or "template" in result.reason
+    text = rc.read_text()
+    assert text.startswith(pre)
+    assert text.endswith(post)
+    assert path_integration.COMPLETION_LINE in text
+    assert path_integration.EXPORT_LINE in text
+
+
+def test_legacy_block_migrates_with_completion_line(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".zshrc"
+    legacy_body = path_integration.EXPORT_LINE
+    legacy = (
+        f"{path_integration._LEGACY_MARKER_BEGIN}\n"
+        f"{legacy_body}\n"
+        f"{path_integration._LEGACY_MARKER_END}\n"
+    )
+    rc.write_text(legacy)
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    assert result.changed is True
+    text = rc.read_text()
+    assert path_integration.MARKER_BEGIN in text
+    assert path_integration._LEGACY_MARKER_BEGIN not in text
+    assert path_integration.COMPLETION_LINE in text
 
 
 def test_rc_has_user_authored_export_is_noop(tmp_path: Path) -> None:

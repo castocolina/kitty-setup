@@ -1,17 +1,20 @@
-"""Single binary, subcommand-dispatched CLI for kitty-setup.
+"""Single binary, subcommand-dispatched CLI for kitty-setup."""
 
-Owned by the ``my-kitty`` entry point declared in ``pyproject.toml``.
-Subparsers route to handlers defined in their respective modules:
-
-* ``install``   → :func:`kitty_setup.installer.cli_install`
-* ``uninstall`` → :func:`kitty_setup.installer.cli_uninstall`
-* ``doctor``    → :func:`kitty_setup.doctor.cli_doctor`
-* ``prune``     → :func:`kitty_setup.pruner.cli_prune`
-* ``help``      → top-level help, identical to ``--help``
-
-Per design D4: argparse subparsers, no Click. Per spec: this is the ONLY entry
-point under ``[project.scripts]``.
-"""
+# PYTHON_ARGCOMPLETE_OK
+# Owned by the ``my-kitty`` entry point declared in ``pyproject.toml``.
+# Subparsers route to handlers defined in their respective modules:
+#
+# * ``install``   → :func:`kitty_setup.installer.cli_install`
+# * ``uninstall`` → :func:`kitty_setup.installer.cli_uninstall`
+# * ``doctor``    → :func:`kitty_setup.doctor.cli_doctor`
+# * ``prune``     → :func:`kitty_setup.pruner.cli_prune`
+# * ``keys``      → :func:`kitty_setup.binding_introspection.cli_keys`
+# * ``help``      → top-level help, identical to ``--help``
+#
+# Per design D4: argparse subparsers, no Click. Per spec: this is the ONLY
+# entry point under ``[project.scripts]``. The PYTHON_ARGCOMPLETE_OK magic
+# comment above is read by ``register-python-argcomplete`` to enable shell
+# tab completion (see add-shell-completion change).
 
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+
+import argcomplete
 
 from kitty_setup import binding_introspection, doctor, installer, pruner
 
@@ -156,6 +161,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
+    # No-op when _ARGCOMPLETE is unset in env (interactive runs); short-circuits
+    # to candidate emission when the shell is requesting tab completion.
+    argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
     func: Handler | None = getattr(args, "func", None)
     if func is None:

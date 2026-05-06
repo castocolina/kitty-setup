@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "kitty-setup contributors" }]
-dependencies = []
+dependencies = [
+    "argcomplete>=3.5,<4",
+]
 
 [project.scripts]
 my-kitty = "kitty_setup.cli:main"
