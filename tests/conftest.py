@@ -37,9 +37,21 @@ def windowing_conf() -> str:
 
 
 @pytest.fixture()
-def bindings_conf() -> str:
-    """Return the promoted ``config/kitty/bindings.conf`` text."""
-    return (REPO_ROOT / "config" / "kitty" / "bindings.conf").read_text()
+def clear_conf() -> str:
+    """Return the promoted ``config/kitty/clear.conf`` text (instant-clear binding)."""
+    return (REPO_ROOT / "config" / "kitty" / "clear.conf").read_text()
+
+
+@pytest.fixture()
+def tab_nav_conf() -> str:
+    """Return the promoted ``config/kitty/tab-nav.conf`` text (tab-navigation chords)."""
+    return (REPO_ROOT / "config" / "kitty" / "tab-nav.conf").read_text()
+
+
+@pytest.fixture()
+def window_nav_conf() -> str:
+    """Return the promoted ``config/kitty/window-nav.conf`` text (vim-style window-navigation chords)."""
+    return (REPO_ROOT / "config" / "kitty" / "window-nav.conf").read_text()
 
 
 @pytest.fixture()

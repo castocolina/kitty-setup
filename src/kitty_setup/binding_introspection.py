@@ -224,7 +224,20 @@ def _classify(
     conflicts_count = 0
 
     for chord, entries in by_chord.items():
-        sources = [payload_map.get((chord, e["action"]), DEFAULT_SOURCE) for e in entries]
+        # Attribute each (chord, action) to our payload at most once. Kitty's
+        # parsed keymap reports both the upstream default AND our redundant
+        # rebind as separate entries with identical action, so a naive lookup
+        # double-attributes them to our source. Keep the first hit ours; the
+        # rest are kitty defaults of the same shape (D5 redundant rebinds).
+        sources: list[str] = []
+        consumed: set[tuple[str, str]] = set()
+        for e in entries:
+            key = (chord, e["action"])
+            if key in payload_map and key not in consumed:
+                sources.append(payload_map[key])
+                consumed.add(key)
+            else:
+                sources.append(DEFAULT_SOURCE)
         is_multi = len(entries) > 1
         # Intentional override: exactly 2 defs, exactly one from us, exactly one default,
         # AND chord is allow-listed.

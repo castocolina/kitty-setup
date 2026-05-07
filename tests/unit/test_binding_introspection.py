@@ -43,12 +43,12 @@ def test_walk_payload_extracts_chord_action_pairs(tmp_path: Path) -> None:
         "# header\nmap ctrl+shift+t launch --type=tab --cwd=current\n"
         "map ctrl+shift+\\ launch --location=vsplit --cwd=current\n",
     )
-    _payload(tmp_path, "bindings.conf", "map ctrl+shift+k clear_terminal scrollback active\n")
+    _payload(tmp_path, "clear.conf", "map ctrl+shift+x clear_terminal scrollback active\n")
     result = bi._walk_payload(tmp_path)
     assert result == {
         ("ctrl+shift+t", "launch --type=tab --cwd=current"): "windowing",
         ("ctrl+shift+\\", "launch --location=vsplit --cwd=current"): "windowing",
-        ("ctrl+shift+k", "clear_terminal scrollback active"): "bindings",
+        ("ctrl+shift+x", "clear_terminal scrollback active"): "clear",
     }
 
 
@@ -160,6 +160,31 @@ def test_classify_two_of_ours_collide() -> None:
         assert any("also in" in c for c in b.conflicts_with)
 
 
+def test_classify_redundant_same_action_rebind_is_override() -> None:
+    # Kitty's parsed keymap returns BOTH the upstream default and our redundant
+    # rebind as separate entries with identical (chord, action). Without the
+    # dedupe in _classify, a naive payload_map lookup attributes both to "ours"
+    # and the "two of ours" conflict rule fires regardless of allow-list. This
+    # test locks in the dedupe: same-action shadows with an allow-listed chord
+    # are reported as overrides, not self-conflicts.
+    raw = [
+        _entry("ctrl+shift+.", "move_tab_forward"),  # kitty default
+        _entry("ctrl+shift+.", "move_tab_forward"),  # our redundant rebind
+    ]
+    payload = {("ctrl+shift+.", "move_tab_forward"): "tab-nav"}
+    allow = {"ctrl+shift+."}
+    bindings, ours, defaults, conflicts = bi._classify(raw, payload, allow)
+    assert conflicts == 0
+    assert ours == 1
+    assert defaults == 1
+    ours_binding = next(b for b in bindings if b.source == "tab-nav")
+    assert ours_binding.override_of == "move_tab_forward"
+    assert ours_binding.conflicts_with == ()
+    default_binding = next(b for b in bindings if b.source == bi.DEFAULT_SOURCE)
+    assert default_binding.override_of is None
+    assert default_binding.conflicts_with == ()
+
+
 def test_classify_three_or_more_defs_is_conflict_regardless_of_allow_list() -> None:
     raw = [
         _entry("ctrl+shift+t", "new_tab"),
@@ -193,17 +218,17 @@ def test_render_text_groups_by_source() -> None:
     report = _make_report(
         [
             bi.Binding("ctrl+shift+t", "launch --type=tab --cwd=current", "windowing", "new_tab"),
-            bi.Binding("ctrl+shift+k", "clear", "bindings"),
+            bi.Binding("ctrl+shift+x", "clear", "clear"),
             bi.Binding("ctrl+c", "copy", bi.DEFAULT_SOURCE),
         ]
     )
     text = report.render_text()
-    assert "bindings (1 bindings)" in text
+    assert "clear (1 bindings)" in text
     assert "windowing (1 bindings)" in text
     assert "kitty defaults (1 bindings)" in text
     # Default section appears LAST.
     assert text.index("kitty defaults") > text.index("windowing")
-    assert text.index("kitty defaults") > text.index("bindings (1 bindings)")
+    assert text.index("kitty defaults") > text.index("clear (1 bindings)")
     assert "[overrides default new_tab]" in text
     assert "Summary: 2 ours, 1 defaults, 0 conflicts." in text
 

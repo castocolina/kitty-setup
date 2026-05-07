@@ -131,7 +131,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="list active key bindings, grouped by source, with conflicts flagged",
         description=(
             "Enumerate every chord active in the parsed kitty config. Groups "
-            "bindings by source file (windowing, bindings, etc., plus a "
+            "bindings by source file (windowing, clear, etc., plus a "
             "kitty defaults bucket). Annotates intentional overrides and flags "
             "real conflicts."
         ),
