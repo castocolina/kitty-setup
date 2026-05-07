@@ -52,6 +52,52 @@ my-kitty prune --backups --all             # most aggressive: delete every backu
 
 `make help` (the default target) lists every target.
 
+### Chord catalog
+
+Curated bindings ship under `kitty_mod ctrl+shift` — pinned in `kitty-setup.conf` so
+the literal chord is identical on Linux and macOS (`ctrl+shift+<key>`, never `cmd+<key>`).
+One `.conf` per category; `my-kitty keys` groups bindings by category.
+
+| Category    | Chord              | Action                                                          | Source file        |
+| ----------- | ------------------ | --------------------------------------------------------------- | ------------------ |
+| windowing   | `ctrl+shift+t`     | new tab, inherits cwd                                           | `windowing.conf`   |
+| windowing   | `ctrl+shift+n`     | new OS window, inherits cwd                                     | `windowing.conf`   |
+| windowing   | `ctrl+shift+enter` | new window in tab, inherits cwd                                 | `windowing.conf`   |
+| windowing   | `ctrl+shift+\`     | vsplit, inherits cwd                                            | `windowing.conf`   |
+| windowing   | `ctrl+shift+/`     | hsplit, inherits cwd                                            | `windowing.conf`   |
+| clear       | `ctrl+shift+x`     | clear screen + scrollback (instant)                             | `clear.conf`       |
+| tab-nav     | `ctrl+shift+]`     | `next_tab`                                                      | `tab-nav.conf`     |
+| tab-nav     | `ctrl+shift+[`     | `previous_tab`                                                  | `tab-nav.conf`     |
+| tab-nav     | `ctrl+shift+.`     | `move_tab_forward`                                              | `tab-nav.conf`     |
+| tab-nav     | `ctrl+shift+,`     | `move_tab_backward`                                             | `tab-nav.conf`     |
+| tab-nav     | `ctrl+shift+q`     | `close_tab`                                                     | `tab-nav.conf`     |
+| window-nav  | `ctrl+shift+h`     | `neighboring_window left`                                       | `window-nav.conf`  |
+| window-nav  | `ctrl+shift+j`     | `neighboring_window down`                                       | `window-nav.conf`  |
+| window-nav  | `ctrl+shift+k`     | `neighboring_window up`                                         | `window-nav.conf`  |
+| window-nav  | `ctrl+shift+l`     | `neighboring_window right`                                      | `window-nav.conf`  |
+| window-nav  | `ctrl+shift+w`     | `close_window`                                                  | `window-nav.conf`  |
+| window-nav  | `ctrl+shift+f`     | `next_window` (round-robin focus)                               | `window-nav.conf`  |
+| font-zoom   | `ctrl+shift+=`     | `change_font_size all +2.0`                                     | `font-zoom.conf`   |
+| font-zoom   | `ctrl+shift+-`     | `change_font_size all -2.0`                                     | `font-zoom.conf`   |
+| font-zoom   | `ctrl+shift+0`     | `change_font_size all 0` (reset)                                | `font-zoom.conf`   |
+| detach      | `ctrl+shift+d`     | `detach_window ask` (interactive picker)                        | `detach.conf`      |
+| detach      | `ctrl+shift+alt+d` | `detach_tab ask` (interactive picker)                           | `detach.conf`      |
+| broadcast   | `ctrl+shift+i`     | `launch --allow-remote-control kitty +kitten broadcast`         | `broadcast.conf`   |
+| url-hints   | `ctrl+shift+e`     | `open_url_with_hints`                                           | `url-hints.conf`   |
+
+Notes:
+
+- The broadcast kitten mirrors typed input to ALL kitty windows by default (not just
+  the active tab). The §5 spec preamble suggests "active tab" but the action string is
+  intentionally unconstrained at the spec layer; tightening the scope to the focused
+  tab is tracked as a follow-up (`phase1-curated-bindings-broadcast-tab-scope`).
+- macOS-only `cmd+*` parity overrides (e.g. `cmd+k` for clear) are deferred to a
+  follow-up change (`phase1-curated-bindings-macos-overrides`); the curated chords
+  above work as-is on macOS today.
+- `my-kitty keys` reports each category as its own section. Run
+  `my-kitty keys --json | jq '.summary'` to see the `0 conflicts` invariant doctored
+  by `make doctor`'s `bindings` check.
+
 The deployable binary lives at `~/.local/bin/my-kitty` (a uv-managed shim)
 and the source it dispatches to is COPIED into
 `~/.local/share/uv/tools/kitty-setup/` at install time. **The source repo
@@ -145,9 +191,16 @@ for prerequisite bootstrap. Everything else is a Python entry point under
 │   ├── setup.sh
 │   └── uninstall.sh
 ├── config/kitty/          # promoted kitty config snippets, loaded via include
-│   ├── kitty-setup.conf   # entry, includes the per-topic files below
-│   ├── windowing.conf     # cwd inheritance bindings
-│   └── bindings.conf      # instant clear binding
+│   ├── kitty-setup.conf   # entry; pins kitty_mod ctrl+shift, includes the per-topic files below
+│   ├── intentional-overrides.conf  # allow-list for chords that shadow kitty defaults
+│   ├── windowing.conf     # cwd inheritance bindings (5 chords)
+│   ├── clear.conf         # instant clear binding (ctrl+shift+x)
+│   ├── tab-nav.conf       # tab navigation (5 chords)
+│   ├── window-nav.conf    # vim-style window navigation h/j/k/l (6 chords)
+│   ├── font-zoom.conf     # font zoom +/-/reset (3 chords)
+│   ├── detach.conf        # detach window/tab (2 chords)
+│   ├── broadcast.conf     # broadcast kitten (1 chord)
+│   └── url-hints.conf     # open_url_with_hints (1 chord)
 ├── tests/
 │   ├── unit/              # fast, isolated, kitty mocked
 │   └── integration/       # real kitty session, gated by KITTI_INTEGRATION=1
