@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from kitty_setup import binding_introspection as bi
+from tests.integration._helpers import copy_clear_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PAYLOAD_SOURCE = REPO_ROOT / "config" / "kitty"
@@ -66,7 +67,6 @@ def url_hints_scratch(tmp_path: Path) -> tuple[Path, Path]:
     payload_dir.mkdir()
     for name in (
         "windowing.conf",
-        "clear.conf",
         "tab-nav.conf",
         "window-nav.conf",
         "font-zoom.conf",
@@ -76,6 +76,7 @@ def url_hints_scratch(tmp_path: Path) -> tuple[Path, Path]:
         "intentional-overrides.conf",
     ):
         shutil.copy(PAYLOAD_SOURCE / name, payload_dir / name)
+    copy_clear_payload(payload_dir)
     conf_path = tmp_path / "kitty.conf"
     conf_path.write_text(
         f"include {payload_dir / 'windowing.conf'}\n"
@@ -94,17 +95,14 @@ def url_hints_scratch(tmp_path: Path) -> tuple[Path, Path]:
 def test_url_hints_conf_carries_one_map_line(url_hints_conf: str) -> None:
     """``url-hints.conf`` carries the one expected ``map`` line verbatim."""
     map_lines = [
-        line.strip()
-        for line in url_hints_conf.splitlines()
-        if line.lstrip().startswith("map ")
+        line.strip() for line in url_hints_conf.splitlines() if line.lstrip().startswith("map ")
     ]
-    assert len(map_lines) == 1, (
-        f"expected exactly 1 map line in url-hints.conf, got {len(map_lines)}: {map_lines!r}"
-    )
+    assert (
+        len(map_lines) == 1
+    ), f"expected exactly 1 map line in url-hints.conf, got {len(map_lines)}: {map_lines!r}"
     for chord, action in EXPECTED_ACTIONS.items():
         assert any(
-            line.startswith(f"map {chord} ") and line.endswith(action)
-            for line in map_lines
+            line.startswith(f"map {chord} ") and line.endswith(action) for line in map_lines
         ), f"missing or wrong map line for {chord} -> {action} in {map_lines!r}"
 
 
@@ -121,38 +119,38 @@ def test_introspection_reports_url_hints_section(
     """
     conf_path, payload_dir = url_hints_scratch
     report = bi.enumerate_bindings(conf_path, payload_dir=payload_dir)
-    by_chord_ours = {
-        b.chord: b for b in report.bindings if b.source != bi.DEFAULT_SOURCE
-    }
+    by_chord_ours = {b.chord: b for b in report.bindings if b.source != bi.DEFAULT_SOURCE}
 
     for chord, expected_action in EXPECTED_ACTIONS.items():
         assert chord in by_chord_ours, f"missing our binding for {chord}"
         b = by_chord_ours[chord]
-        assert b.source == "url-hints", (
-            f"{chord} should be attributed to url-hints, got {b.source!r}"
-        )
-        assert b.action == expected_action, (
-            f"{chord} should be bound to {expected_action!r}, got {b.action!r}"
-        )
-        assert b.override_of == expected_action, (
+        assert (
+            b.source == "url-hints"
+        ), f"{chord} should be attributed to url-hints, got {b.source!r}"
+        assert (
+            b.action == expected_action
+        ), f"{chord} should be bound to {expected_action!r}, got {b.action!r}"
+        # After phase1-curated-bindings-revert-defaults the introspection
+        # module marks same-(chord, action) rebinds as redundant rather than
+        # as overrides. No allow-list entry is required for this case.
+        assert b.redundant is True, (
             f"{chord} is a redundant rebind of the kitty default "
-            f"{expected_action!r}; expected override_of=={expected_action!r}, "
-            f"got {b.override_of!r}. If this fires, kitty's default for the "
-            f"chord changed (or our action string drifted) — re-probe."
+            f"{expected_action!r}; expected redundant=True, got {b!r}"
         )
+        assert (
+            b.override_of is None
+        ), f"{chord} is a redundant rebind; override_of should be None, got {b.override_of!r}"
         assert b.conflicts_with == (), (
-            f"{chord} is allow-listed; should not be flagged as a conflict, "
+            f"{chord} is a redundant rebind; should not be flagged as a conflict, "
             f"got {b.conflicts_with!r}"
         )
 
     url_hints_entries = [b for b in report.bindings if b.source == "url-hints"]
     assert len(url_hints_entries) == 1, (
-        f"expected exactly 1 entry under source 'url-hints', got "
-        f"{len(url_hints_entries)}"
+        f"expected exactly 1 entry under source 'url-hints', got " f"{len(url_hints_entries)}"
     )
     assert report.conflicts_count == 0, (
-        f"expected 0 conflicts after url-hints category lands, got "
-        f"{report.conflicts_count}"
+        f"expected 0 conflicts after url-hints category lands, got " f"{report.conflicts_count}"
     )
 
 
@@ -164,16 +162,13 @@ def test_keys_json_exposes_url_hints_section(
     report = bi.enumerate_bindings(conf_path, payload_dir=payload_dir)
     payload = json.loads(report.to_json())
 
-    url_hints_entries = [
-        b for b in payload["bindings"] if b["source"] == "url-hints"
-    ]
+    url_hints_entries = [b for b in payload["bindings"] if b["source"] == "url-hints"]
     assert len(url_hints_entries) == 1, (
         f"expected 1 url-hints entry in JSON output, got "
         f"{len(url_hints_entries)}: {url_hints_entries!r}"
     )
     chords_to_actions = {b["chord"]: b["action"] for b in url_hints_entries}
     assert chords_to_actions == EXPECTED_ACTIONS, (
-        f"url-hints JSON entries do not match expected mapping; got "
-        f"{chords_to_actions!r}"
+        f"url-hints JSON entries do not match expected mapping; got " f"{chords_to_actions!r}"
     )
     assert payload["summary"]["conflicts"] == 0

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from kitty_setup import binding_introspection as bi
+from tests.integration._helpers import copy_clear_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PAYLOAD_SOURCE = REPO_ROOT / "config" / "kitty"
@@ -59,7 +60,10 @@ def scratch_config(tmp_path: Path) -> tuple[Path, Path]:
     payload_dir = tmp_path / "kitty-setup"
     payload_dir.mkdir()
     for name in (*INCLUDED_PAYLOADS, *METADATA_PAYLOADS):
-        shutil.copy(PAYLOAD_SOURCE / name, payload_dir / name)
+        if name == "clear.conf":
+            copy_clear_payload(payload_dir)
+        else:
+            shutil.copy(PAYLOAD_SOURCE / name, payload_dir / name)
     conf_path = tmp_path / "kitty.conf"
     conf_path.write_text(
         "".join(f"include {payload_dir / name}\n" for name in INCLUDED_PAYLOADS),
@@ -82,71 +86,69 @@ def test_h03_introspection_reports_expected_shape(scratch_config: tuple[Path, Pa
         report.defaults_count >= 50
     )  # kitty 0.46 ships ~64; lower bound is robust to version drift.
     assert report.conflicts_count == 0, (
-        f"expected zero conflicts after the ctrl+shift+- collision fix and "
-        f"ctrl+shift+x clear move, got {report.conflicts_count}"
+        f"expected zero conflicts after phase1-curated-bindings-revert-defaults, "
+        f"got {report.conflicts_count}"
     )
 
     by_chord = {b.chord: b for b in report.bindings if b.source != bi.DEFAULT_SOURCE}
 
-    # All five intentional overrides (windowing creators + new hsplit chord +
-    # clear chord) shadow a kitty default and are allow-listed.
+    # The intentional overrides that survive after the revert are the three
+    # cwd-inheriting windowing creators. Each shadows a kitty default and is
+    # allow-listed in intentional-overrides.conf.
     intentional = [
         "ctrl+shift+t",
         "ctrl+shift+n",
         "ctrl+shift+enter",
-        "ctrl+shift+/",
-        "ctrl+shift+x",
     ]
     for chord in intentional:
         assert chord in by_chord, f"missing our binding for {chord}"
         b = by_chord[chord]
-        assert b.override_of is not None, f"{chord} should be marked as overriding a default"
+        assert (
+            b.override_of is not None
+        ), f"{chord} should be marked as overriding a default; got {b!r}"
         assert b.conflicts_with == (), f"{chord} is allow-listed; should not be flagged as conflict"
 
-    # ctrl+shift+x is the clear binding, attributed to source "clear", and
-    # overrides kitty's scroll_to_prompt 1 default.
-    clear_binding = by_chord["ctrl+shift+x"]
-    assert clear_binding.source == "clear"
-    assert clear_binding.override_of == "scroll_to_prompt 1"
+    # Instant-clear chord ownership depends on the host OS: super+k on Linux,
+    # cmd+k on macOS. Both hosts ship the ctrl+shift+alt+k cross-OS fallback.
+    # All three (where applicable) are net-new chords with no kitty default —
+    # so they appear as ours, attributed to `clear`, with override_of=None.
+    import sys as _sys
 
-    # ctrl+shift+- moved off windowing in §2 (hsplit relocated to
-    # ctrl+shift+/) and was re-bound under font-zoom.conf in §5 with the
-    # kitty-default action change_font_size all -2.0 (true redundant rebind
-    # for categorisation per design D5/D6). It MUST NOT be attributed to
-    # windowing — that would mean the §2 hsplit relocation regressed.
-    assert "ctrl+shift+-" in by_chord, (
-        "ctrl+shift+- should be ours after font-zoom lands (§5)"
-    )
+    expected_clear_chords = {"ctrl+shift+alt+k"}
+    expected_clear_chords.add("cmd+k" if _sys.platform == "darwin" else "super+k")
+    for chord in expected_clear_chords:
+        assert chord in by_chord, f"missing our clear binding for {chord}"
+        b = by_chord[chord]
+        assert b.source == "clear", f"{chord} should be attributed to clear, got {b.source!r}"
+        assert "combine" in b.action
+
+    # The legacy ctrl+shift+x is no longer one of ours.
+    assert (
+        "ctrl+shift+x" not in by_chord
+    ), f"ctrl+shift+x must not be one of our bindings any more; got {by_chord.get('ctrl+shift+x')}"
+
+    # ctrl+shift+- is now a redundant rebind under font-zoom (same action as
+    # kitty default); the redundant flag is set, override_of stays None.
+    assert "ctrl+shift+-" in by_chord, "ctrl+shift+- should be ours under font-zoom"
     minus = by_chord["ctrl+shift+-"]
-    assert minus.source == "font-zoom", (
-        f"§2 hsplit relocation regressed: ctrl+shift+- should be attributed "
-        f"to font-zoom (post-§5), got {minus.source!r}"
-    )
-    assert minus.action == "change_font_size all -2.0", (
-        f"expected ctrl+shift+- to carry change_font_size all -2.0, got {minus.action!r}"
-    )
-    assert minus.override_of == "change_font_size all -2.0", (
-        f"expected ctrl+shift+- to be a redundant rebind of the kitty default "
-        f"change_font_size all -2.0, got override_of={minus.override_of!r}"
-    )
-    assert minus.conflicts_with == (), (
-        f"ctrl+shift+- is allow-listed in font-zoom; should not be flagged as conflict, "
-        f"got {minus.conflicts_with!r}"
-    )
+    assert (
+        minus.source == "font-zoom"
+    ), f"ctrl+shift+- should be attributed to font-zoom, got {minus.source!r}"
+    assert minus.action == "change_font_size all -2.0"
+    assert (
+        minus.redundant is True
+    ), f"ctrl+shift+- should be marked redundant (same action as kitty default), got {minus!r}"
+    assert minus.override_of is None
+    assert minus.conflicts_with == ()
 
-    # vsplit binding has no kitty default collision; no annotation.
-    assert "ctrl+shift+\\" in by_chord
-    vsplit = by_chord["ctrl+shift+\\"]
-    assert vsplit.source == "windowing"
-    assert vsplit.override_of is None
-    assert vsplit.conflicts_with == ()
-
-    # New hsplit chord ctrl+shift+/ is ours, attributed to windowing, and
-    # shadows kitty's search_scrollback (allow-listed).
-    hsplit = by_chord["ctrl+shift+/"]
-    assert hsplit.source == "windowing"
-    assert hsplit.override_of == "search_scrollback"
-    assert hsplit.conflicts_with == ()
+    # ctrl+shift+\ and ctrl+shift+/ are no longer ours — the vsplit/hsplit
+    # chord pair was dropped (D2).
+    assert (
+        "ctrl+shift+\\" not in by_chord
+    ), f"ctrl+shift+\\ should not be ours after D2; got {by_chord.get('ctrl+shift+\\')}"
+    assert (
+        "ctrl+shift+/" not in by_chord
+    ), f"ctrl+shift+/ should not be ours after D2; got {by_chord.get('ctrl+shift+/')}"
 
 
 def test_h03_render_text_includes_summary(scratch_config: tuple[Path, Path]) -> None:
@@ -161,9 +163,9 @@ def test_h03_render_text_includes_summary(scratch_config: tuple[Path, Path]) -> 
         section = name.removesuffix(".conf")
         count = _count_map_lines(payload_dir / name)
         expected_total += count
-        assert f"{section} ({count} bindings)" in text, (
-            f"expected '{section} ({count} bindings)' header in render_text() output"
-        )
+        assert (
+            f"{section} ({count} bindings)" in text
+        ), f"expected '{section} ({count} bindings)' header in render_text() output"
     assert "kitty defaults" in text
     assert f"Summary: {expected_total} ours" in text
     assert "0 conflicts." in text

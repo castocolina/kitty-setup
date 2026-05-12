@@ -73,6 +73,7 @@ class Binding:
     source: str
     override_of: str | None = None
     conflicts_with: tuple[str, ...] = ()
+    redundant: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -100,6 +101,8 @@ class Report:
                 annotation = ""
                 if b.conflicts_with:
                     annotation = f"  [CONFLICT: {'; '.join(b.conflicts_with)}]"
+                elif b.redundant:
+                    annotation = "  [redundant rebind of kitty default]"
                 elif b.override_of is not None:
                     annotation = f"  [overrides default {b.override_of}]"
                 lines.append(f"  {b.chord:<22}{b.action}{annotation}")
@@ -120,6 +123,7 @@ class Report:
                     "source": b.source,
                     "override_of": b.override_of,
                     "conflicts_with": list(b.conflicts_with),
+                    "redundant": b.redundant,
                 }
                 for b in self.bindings
             ],
@@ -243,8 +247,24 @@ def _classify(
         # AND chord is allow-listed.
         ours_in_chord = [s for s in sources if s != DEFAULT_SOURCE]
         defaults_in_chord = [s for s in sources if s == DEFAULT_SOURCE]
+        # Redundant rebind: every def on this chord carries the same action.
+        # That means our `map` line restates kitty's default verbatim — the
+        # parsed keymap surfaces both entries, but they are semantically
+        # equivalent. Suppress the false "two of ours = conflict" by treating
+        # the our-side entry as a redundant rebind (no override, no conflict).
+        # No allow-list entry is required for this case; the same-(chord, action)
+        # equality is itself the proof. See phase1-curated-bindings-revert-defaults
+        # design D7.
+        unique_actions = {e["action"] for e in entries}
+        is_redundant_rebind = (
+            is_multi
+            and len(unique_actions) == 1
+            and len(ours_in_chord) >= 1
+            and len(defaults_in_chord) >= 1
+        )
         is_intentional_override = (
             is_multi
+            and not is_redundant_rebind
             and len(entries) == 2
             and len(ours_in_chord) == 1
             and len(defaults_in_chord) == 1
@@ -253,12 +273,21 @@ def _classify(
         # A chord is OUR conflict only when at least one def is ours. Pure
         # kitty-default multi-defs (e.g. kitty cycles ctrl+shift+a through four
         # opacity actions by design) are kitty's own surface, not our bug.
-        is_conflict = is_multi and not is_intentional_override and len(ours_in_chord) >= 1
+        # Redundant rebinds are not conflicts (handled above).
+        is_conflict = (
+            is_multi
+            and not is_intentional_override
+            and not is_redundant_rebind
+            and len(ours_in_chord) >= 1
+        )
 
         for entry, source in zip(entries, sources, strict=True):
             override_of: str | None = None
             conflicts_with: tuple[str, ...] = ()
-            if is_intentional_override and source != DEFAULT_SOURCE:
+            redundant = False
+            if is_redundant_rebind and source != DEFAULT_SOURCE:
+                redundant = True
+            elif is_intentional_override and source != DEFAULT_SOURCE:
                 # Annotate the OUR-side binding with the default it overrides.
                 default_action = next(
                     e["action"]
@@ -287,6 +316,7 @@ def _classify(
                     source=source,
                     override_of=override_of,
                     conflicts_with=conflicts_with,
+                    redundant=redundant,
                 )
             )
             if source == DEFAULT_SOURCE:

@@ -1,5 +1,14 @@
 # H10 — horizontal-split chord move (`ctrl+shift+-` → `ctrl+shift+/`)
 
+> **Superseded — vsplit/hsplit chord pair removed.** The split
+> workflow is now kitty's compose model: `ctrl+shift+enter` opens a
+> new window, then `ctrl+shift+l` (kitty's default `next_layout`)
+> cycles the layout to flip stacked ↔ side-by-side. The
+> `--location=vsplit/hsplit` flags were no-ops without
+> `enabled_layouts splits`, which the catalog deliberately does not
+> pin. See
+> `openspec/changes/phase1-curated-bindings-revert-defaults/design.md` D2.
+
 **Capability:** kitty-curated-bindings (Phase 1 §5) + kitty-cwd-inheritance
 (Phase 1 §1, no behaviour change — only the chord moved).
 

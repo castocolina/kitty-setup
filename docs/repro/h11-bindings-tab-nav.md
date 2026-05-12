@@ -1,5 +1,13 @@
 # H11 — tab-nav category (renumbered from h03)
 
+> **Partially superseded by [h19-bindings-revert.md](h19-bindings-revert.md).**
+> The `]`/`[` -> tab-nav rebind was dropped — those chords return to
+> kitty's `next_window`/`previous_window` defaults and are restated
+> under `window-nav.conf`. `tab-nav.conf` now carries five redundant
+> rebinds on kitty's own tab-nav chords (`right`, `left`, `.`, `,`,
+> `q`). See
+> `openspec/changes/phase1-curated-bindings-revert-defaults/design.md` D3.
+
 **Capability:** kitty-curated-bindings (Phase 1 §3, tab navigation).
 
 **Status:** Promoted. Configuration in

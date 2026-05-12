@@ -13,8 +13,41 @@ import datetime as _dt
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Final
+
+
+def _select_clear_variant(payload_dir: Path) -> None:
+    """Materialise ``clear.conf`` from the host-matching ``clear-*.conf`` variant.
+
+    The repo carries ``clear-linux.conf`` and ``clear-mac.conf`` as full,
+    self-contained variants of the instant-clear payload. The deployed
+    ``kitty-setup.conf`` `include`s a single ``clear.conf``; this helper
+    picks the matching variant, renames it to ``clear.conf``, and removes
+    the other variant from the payload dir. See
+    ``openspec/changes/phase1-curated-bindings-revert-defaults/notes/clear-chord-os-mechanism.md``
+    for the rationale.
+
+    No-op if neither variant exists (older payload layouts) or if
+    ``clear.conf`` is already in place.
+    """
+    linux_variant = payload_dir / "clear-linux.conf"
+    mac_variant = payload_dir / "clear-mac.conf"
+    target = payload_dir / "clear.conf"
+
+    if sys.platform == "darwin":
+        chosen, other = mac_variant, linux_variant
+    else:
+        chosen, other = linux_variant, mac_variant
+
+    if chosen.is_file():
+        if target.exists():
+            target.unlink()
+        chosen.rename(target)
+    if other.is_file():
+        other.unlink()
+
 
 MARKER_BEGIN: Final[str] = "# >>> kitty-setup managed (do not edit between markers) >>>"
 MARKER_END: Final[str] = "# <<< kitty-setup managed <<<"
@@ -204,6 +237,7 @@ def install(
     if paths.payload_dir.exists():
         shutil.rmtree(paths.payload_dir)
     shutil.copytree(payload_source, paths.payload_dir)
+    _select_clear_variant(paths.payload_dir)
 
     conf = paths.conf_file
     backup_path: Path | None = None

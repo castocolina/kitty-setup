@@ -1,5 +1,12 @@
 # H09 — instant clear chord move (`ctrl+shift+k` → `ctrl+shift+x`)
 
+> **Superseded by [h20-bindings-clear-relocation-superK.md](h20-bindings-clear-relocation-superK.md).**
+> The chord moved off `ctrl+shift+x` (which now returns to kitty's
+> default `scroll_to_prompt 1`) onto host-OS-native modifiers:
+> `super+k` on Linux, `cmd+k` on macOS, with `ctrl+shift+alt+k` as a
+> cross-OS fallback. See
+> `openspec/changes/phase1-curated-bindings-revert-defaults/design.md` D5.
+
 **Capability:** kitty-instant-clear (Phase 1 §2) + kitty-curated-bindings.
 Supersedes the original H02 manual repro.
 

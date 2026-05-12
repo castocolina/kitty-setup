@@ -1,5 +1,12 @@
 # H12 — window-nav category (renumbered from h04)
 
+> **Superseded by [h19-bindings-revert.md](h19-bindings-revert.md).**
+> Vim-style hjkl navigation was dropped — those chords return to kitty
+> defaults (`show_scrollback`, `scroll_line_down`/`up`, `next_layout`).
+> `window-nav.conf` now carries four redundant rebinds (`]`, `[`, `f`,
+> `w`) instead of six semantic overrides. See
+> `openspec/changes/phase1-curated-bindings-revert-defaults/design.md` D1.
+
 **Capability:** kitty-curated-bindings (Phase 1 §4, vim-style window/split
 navigation).
 

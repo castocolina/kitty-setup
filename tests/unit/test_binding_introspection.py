@@ -160,27 +160,30 @@ def test_classify_two_of_ours_collide() -> None:
         assert any("also in" in c for c in b.conflicts_with)
 
 
-def test_classify_redundant_same_action_rebind_is_override() -> None:
+def test_classify_redundant_same_action_rebind_is_marked_redundant() -> None:
     # Kitty's parsed keymap returns BOTH the upstream default and our redundant
-    # rebind as separate entries with identical (chord, action). Without the
-    # dedupe in _classify, a naive payload_map lookup attributes both to "ours"
-    # and the "two of ours" conflict rule fires regardless of allow-list. This
-    # test locks in the dedupe: same-action shadows with an allow-listed chord
-    # are reported as overrides, not self-conflicts.
+    # rebind as separate entries with identical (chord, action). After
+    # phase1-curated-bindings-revert-defaults, _classify treats same-(chord,
+    # action) multi-defs as redundant rebinds — they are NOT conflicts, they
+    # are NOT overrides, and crucially they do NOT need an allow-list entry
+    # because same-action equality is the proof. The our-side binding gets
+    # `redundant=True`; the default-side binding stays a plain default entry.
     raw = [
         _entry("ctrl+shift+.", "move_tab_forward"),  # kitty default
         _entry("ctrl+shift+.", "move_tab_forward"),  # our redundant rebind
     ]
     payload = {("ctrl+shift+.", "move_tab_forward"): "tab-nav"}
-    allow = {"ctrl+shift+."}
+    allow: set[str] = set()  # explicitly NOT allow-listed
     bindings, ours, defaults, conflicts = bi._classify(raw, payload, allow)
     assert conflicts == 0
     assert ours == 1
     assert defaults == 1
     ours_binding = next(b for b in bindings if b.source == "tab-nav")
-    assert ours_binding.override_of == "move_tab_forward"
+    assert ours_binding.redundant is True
+    assert ours_binding.override_of is None
     assert ours_binding.conflicts_with == ()
     default_binding = next(b for b in bindings if b.source == bi.DEFAULT_SOURCE)
+    assert default_binding.redundant is False
     assert default_binding.override_of is None
     assert default_binding.conflicts_with == ()
 

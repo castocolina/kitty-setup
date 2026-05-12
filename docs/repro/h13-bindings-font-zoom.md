@@ -1,5 +1,11 @@
 # H13 — font-zoom category (renumbered from h05)
 
+> **Superseded by [h19-bindings-revert.md](h19-bindings-revert.md).**
+> The `ctrl+shift+0` -> font-reset override was dropped — `0` returns
+> to kitty's `tenth_window`. Reset is on `ctrl+shift+backspace`
+> (kitty's default), restated as a redundant rebind. See
+> `openspec/changes/phase1-curated-bindings-revert-defaults/design.md` D4.
+
 **Capability:** kitty-curated-bindings (Phase 1 §5, font-zoom chords).
 
 **Status:** Promoted. Configuration in

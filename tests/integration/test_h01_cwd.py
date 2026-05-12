@@ -36,7 +36,12 @@ def _new_window(snapshot: list[dict[str, Any]], baseline_ids: set[int]) -> dict[
     [
         ("new-tab", {"type": "tab", "cwd": "current"}),
         ("new-os-window", {"type": "os-window", "cwd": "current"}),
-        ("new-vsplit", {"location": "vsplit", "cwd": "current"}),
+        # phase1-curated-bindings-revert-defaults dropped the vsplit/hsplit
+        # chord pair (D2); the cwd-inheriting "new window in current tab"
+        # behaviour is now delivered exclusively via ctrl+shift+enter, which
+        # launches with no --location pin. Placement follows kitty's active
+        # layout (the user cycles layouts with ctrl+shift+l).
+        ("new-window", {"cwd": "current"}),
     ],
 )
 def test_launch_inherits_cwd(

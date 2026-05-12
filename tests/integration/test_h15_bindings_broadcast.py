@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from kitty_setup import binding_introspection as bi
+from tests.integration._helpers import copy_clear_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PAYLOAD_SOURCE = REPO_ROOT / "config" / "kitty"
@@ -62,7 +63,6 @@ def broadcast_scratch(tmp_path: Path) -> tuple[Path, Path]:
     payload_dir.mkdir()
     for name in (
         "windowing.conf",
-        "clear.conf",
         "tab-nav.conf",
         "window-nav.conf",
         "font-zoom.conf",
@@ -71,6 +71,7 @@ def broadcast_scratch(tmp_path: Path) -> tuple[Path, Path]:
         "intentional-overrides.conf",
     ):
         shutil.copy(PAYLOAD_SOURCE / name, payload_dir / name)
+    copy_clear_payload(payload_dir)
     conf_path = tmp_path / "kitty.conf"
     conf_path.write_text(
         f"include {payload_dir / 'windowing.conf'}\n"
@@ -88,17 +89,15 @@ def broadcast_scratch(tmp_path: Path) -> tuple[Path, Path]:
 def test_broadcast_conf_carries_one_map_line(broadcast_conf: str) -> None:
     """``broadcast.conf`` carries the one expected ``map`` line verbatim."""
     map_lines = [
-        line.strip()
-        for line in broadcast_conf.splitlines()
-        if line.lstrip().startswith("map ")
+        line.strip() for line in broadcast_conf.splitlines() if line.lstrip().startswith("map ")
     ]
-    assert len(map_lines) == 1, (
-        f"expected exactly 1 map line in broadcast.conf, got {len(map_lines)}: {map_lines!r}"
-    )
+    assert (
+        len(map_lines) == 1
+    ), f"expected exactly 1 map line in broadcast.conf, got {len(map_lines)}: {map_lines!r}"
     for chord, action in EXPECTED_ACTIONS.items():
-        assert any(line.startswith(f"map {chord} ") and line.endswith(action) for line in map_lines), (
-            f"missing or wrong map line for {chord} -> {action} in {map_lines!r}"
-        )
+        assert any(
+            line.startswith(f"map {chord} ") and line.endswith(action) for line in map_lines
+        ), f"missing or wrong map line for {chord} -> {action} in {map_lines!r}"
 
 
 def test_introspection_reports_broadcast_section(broadcast_scratch: tuple[Path, Path]) -> None:
@@ -114,29 +113,29 @@ def test_introspection_reports_broadcast_section(broadcast_scratch: tuple[Path, 
     for chord, expected_action in EXPECTED_ACTIONS.items():
         assert chord in by_chord, f"missing our binding for {chord}"
         b = by_chord[chord]
-        assert b.source == "broadcast", (
-            f"{chord} should be attributed to broadcast, got {b.source!r}"
-        )
-        assert b.action == expected_action, (
-            f"{chord} should be bound to {expected_action!r}, got {b.action!r}"
-        )
+        assert (
+            b.source == "broadcast"
+        ), f"{chord} should be attributed to broadcast, got {b.source!r}"
+        assert (
+            b.action == expected_action
+        ), f"{chord} should be bound to {expected_action!r}, got {b.action!r}"
         assert b.override_of is None, (
             f"{chord} is a new binding (no kitty default on the chord); "
             f"override_of should be None, got {b.override_of!r}. If this fires, "
             f"a future kitty version added a default on the chord and the chord "
             f"now needs to be allow-listed in intentional-overrides.conf."
         )
-        assert b.conflicts_with == (), (
-            f"{chord} should not be flagged as a conflict; got {b.conflicts_with!r}"
-        )
+        assert (
+            b.conflicts_with == ()
+        ), f"{chord} should not be flagged as a conflict; got {b.conflicts_with!r}"
 
     broadcast_entries = [b for b in report.bindings if b.source == "broadcast"]
-    assert len(broadcast_entries) == 1, (
-        f"expected exactly 1 entry under source 'broadcast', got {len(broadcast_entries)}"
-    )
-    assert report.conflicts_count == 0, (
-        f"expected 0 conflicts after broadcast category lands, got {report.conflicts_count}"
-    )
+    assert (
+        len(broadcast_entries) == 1
+    ), f"expected exactly 1 entry under source 'broadcast', got {len(broadcast_entries)}"
+    assert (
+        report.conflicts_count == 0
+    ), f"expected 0 conflicts after broadcast category lands, got {report.conflicts_count}"
 
 
 def test_keys_json_exposes_broadcast_section(broadcast_scratch: tuple[Path, Path]) -> None:
@@ -146,11 +145,11 @@ def test_keys_json_exposes_broadcast_section(broadcast_scratch: tuple[Path, Path
     payload = json.loads(report.to_json())
 
     broadcast_entries = [b for b in payload["bindings"] if b["source"] == "broadcast"]
-    assert len(broadcast_entries) == 1, (
-        f"expected 1 broadcast entry in JSON output, got {len(broadcast_entries)}: {broadcast_entries!r}"
-    )
+    assert (
+        len(broadcast_entries) == 1
+    ), f"expected 1 broadcast entry in JSON output, got {len(broadcast_entries)}: {broadcast_entries!r}"
     chords_to_actions = {b["chord"]: b["action"] for b in broadcast_entries}
-    assert chords_to_actions == EXPECTED_ACTIONS, (
-        f"broadcast JSON entries do not match expected mapping; got {chords_to_actions!r}"
-    )
+    assert (
+        chords_to_actions == EXPECTED_ACTIONS
+    ), f"broadcast JSON entries do not match expected mapping; got {chords_to_actions!r}"
     assert payload["summary"]["conflicts"] == 0
