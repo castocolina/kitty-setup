@@ -112,6 +112,7 @@ cosmic-comp journal lines to rule out compositor fault.
 | ---------- | ------------------------------------------------ | --------- |
 | 2026-05-11 | Default native Wayland (`linux_display_server` not set) | ❌ kitty dies on monitor power-cycle |
 | 2026-05-11 | `linux_display_server x11` (XWayland)            | ✅ kitty survives |
+| 2026-05-12 | `font_size 13.0` (phase1-monitor-x11-font-bump) | ✅ compensates for XWayland's loss of fractional scaling; kitty text height matches surrounding Wayland-native apps under COSMIC at 150% scale (manual visual check pending user confirmation post-restart) |
 
 ## Known limitations
 
