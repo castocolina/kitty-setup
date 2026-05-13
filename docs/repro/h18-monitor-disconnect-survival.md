@@ -112,7 +112,8 @@ cosmic-comp journal lines to rule out compositor fault.
 | ---------- | ------------------------------------------------ | --------- |
 | 2026-05-11 | Default native Wayland (`linux_display_server` not set) | ❌ kitty dies on monitor power-cycle |
 | 2026-05-11 | `linux_display_server x11` (XWayland)            | ✅ kitty survives |
-| 2026-05-12 | `font_size 13.0` (phase1-monitor-x11-font-bump) | ✅ compensates for XWayland's loss of fractional scaling; kitty text height matches surrounding Wayland-native apps under COSMIC at 150% scale (manual visual check pending user confirmation post-restart) |
+| 2026-05-12 | `font_size 13.0` (phase1-monitor-x11-font-bump, first iteration) | ⚠️ insufficient — kitty text still visibly smaller than native-Wayland apps on the user's primary display (DELL S2725QC at 150% scale). +2pt is below the parity target |
+| 2026-05-12 | `font_size 16.0` (≈ 11.0 × 1.5 for 150% scale) | ✅ user-confirmed parity with Firefox / GNOME Terminal on the DELL S2725QC. Math: `target = kitty_default × primary_display_scale`. ASUS VP228 at 100% sees the same 16.0 = ~50% larger than native; trade-off accepted (single `font_size` directive, mixed-scale setup) |
 
 ## Known limitations
 

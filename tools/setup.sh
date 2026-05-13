@@ -45,8 +45,13 @@ sync_dev_env() {
 install_tool() {
     # probe-consolidate-into-my-kitty-cli-01: --force is idempotent and
     # re-installs in ~177 ms; cheaper than a "skip if installed" branch.
-    log "running uv tool install --force . (deployable binary)"
-    uv tool install --force .
+    # --reinstall invalidates uv's wheel build cache so config payload
+    # edits in config/kitty/ propagate on every `make install`; without
+    # it, uv reuses the previously-built wheel and stale config silently
+    # ships (phase1-monitor-x11-font-bump verification.md "Wheel-cache
+    # trap" incident, 2026-05-12).
+    log "running uv tool install --reinstall --force . (deployable binary)"
+    uv tool install --reinstall --force .
     if [[ ! -x "${HOME}/.local/bin/my-kitty" ]]; then
         log "ERROR: uv tool install completed but ~/.local/bin/my-kitty is missing"
         exit 1

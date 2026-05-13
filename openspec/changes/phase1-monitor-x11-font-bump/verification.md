@@ -65,17 +65,24 @@ uninstall: payload_dir removed: True
 
 The two directives ship and revert atomically — design D1 contract honoured.
 
-## Manual visual check — pending
+## Manual visual check — verified at `font_size 16.0`
 
-The user's currently running kitty pre-dates this change. To complete the manual visual check (task 3.2):
+Initial value `13.0` (+2pt over kitty default) was insufficient on the user's primary display (DELL S2725QC at 150% COSMIC scale). Tuned to `16.0` (≈ 11.0 × 1.5, the math-derived parity value) and confirmed:
 
-1. Quit all kitty instances.
-2. Launch a fresh kitty (`Super+T` or `kitty &`).
-3. Open a reference Wayland-native app side-by-side (Firefox address bar, GNOME Terminal, or COSMIC's built-in terminal).
-4. Compare text heights under the current compositor scale.
-5. Record the outcome in `docs/repro/h18-monitor-disconnect-survival.md` `## Attempted fixes` table row dated 2026-05-12.
+- Side-by-side with Firefox + GNOME Terminal on the DELL display → text height comparable within human-eye tolerance.
+- ASUS VP228 at 100% scale shows the same 16.0pt as ~50% larger than native-Wayland apps on that screen. Trade-off accepted: kitty has only one `font_size` directive, mixed-scale setups cannot have parity on both displays simultaneously without a kitten-level adapter.
 
-If 13.0pt is wrong on this host, edit `config/kitty/monitor.conf`, re-run `uv run my-kitty install`, restart kitty, re-check.
+The empirical rule encoded in the inline `monitor.conf` comment:
+
+```
+target font_size = kitty_default (11.0) × primary_display_compositor_scale
+```
+
+At 100% / 125% / 150% / 175% / 200%: 11.0 / 13.75 / 16.5 / 19.25 / 22.0pt. Round to the nearest tenth, edit the literal value if needed.
+
+## Wheel-cache trap (incident)
+
+`make install` runs `uv tool install --force .` — `--force` forces install over existing tool but does NOT invalidate uv's wheel build cache. On the user's first attempt to land this change, the cached wheel pre-dated the source edits and the new `monitor.conf` + `remote-control.conf` never reached the user's payload directory. Fix: `uv tool install --reinstall --force .` (the `--reinstall` invalidates the build cache). `tools/setup.sh:install_tool()` updated in the same commit as the `font_size 16.0` patch so this stops surprising future users.
 
 ## macOS
 
