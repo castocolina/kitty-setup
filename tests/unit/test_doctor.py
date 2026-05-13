@@ -72,8 +72,14 @@ def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path
         "parse check",
         "bindings",
         "completion",
+        "remote-control",
     ]
-    assert all(not r.passed for r in results)
+    # All non-skipped checks must FAIL given the synthetic empty home. The
+    # remote-control check SKIPs when `remote-control.conf` is absent — that
+    # branch is correct here and is the expected behaviour after the
+    # phase2-remote-control-foundation change.
+    for r in results:
+        assert not r.passed or r.skipped, f"{r.name} unexpectedly passed: {r.detail!r}"
 
 
 def test_main_exits_non_zero_on_any_fail(

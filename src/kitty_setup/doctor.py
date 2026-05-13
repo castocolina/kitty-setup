@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,8 +23,11 @@ class CheckResult:
     name: str
     passed: bool
     detail: str
+    skipped: bool = False
 
     def render(self) -> str:
+        if self.skipped:
+            return f"SKIP {self.name}: {self.detail}"
         status = "PASS" if self.passed else "FAIL"
         return f"{status} {self.name}: {self.detail}"
 
@@ -114,6 +118,120 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
     return CheckResult("bindings", False, f"{summary} (run `my-kitty keys` for details)")
 
 
+_LISTEN_ON_RE = re.compile(r"^\s*listen_on\s+unix:(?P<path>\S+)", re.MULTILINE)
+
+
+def _parse_listen_on_base(remote_control_conf: Path) -> str | None:
+    """Return the `listen_on unix:<path>` base path from the managed `remote-control.conf`.
+
+    The resolved per-instance socket appends `-<PID>` to this base (kitty's documented
+    behaviour, verified by probe 01 of phase2-remote-control-foundation). Returns
+    ``None`` when the file is absent or contains no ``listen_on`` directive.
+    """
+    if not remote_control_conf.is_file():
+        return None
+    match = _LISTEN_ON_RE.search(remote_control_conf.read_text(encoding="utf-8"))
+    return match.group("path") if match else None
+
+
+def _pgrep_kitty_pids() -> list[int]:
+    """Return the PIDs of running kitty processes (`pgrep -x kitty`)."""
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, trusted binary
+            ["pgrep", "-x", "kitty"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return []
+    if result.returncode not in (0, 1):  # 1 = no matches; that is not an error
+        return []
+    return [int(line) for line in result.stdout.split() if line.isdigit()]
+
+
+def _kitten_ls_succeeds(kitten_bin: Path, socket: Path) -> tuple[bool, str]:
+    """Return ``(ok, stderr_or_empty)`` for ``kitten @ --to unix:<socket> ls`` with KITTY_LISTEN_ON unset."""
+    env = dict(os.environ)
+    env.pop("KITTY_LISTEN_ON", None)
+    try:
+        result = subprocess.run(  # noqa: S603 — trusted paths
+            [str(kitten_bin), "@", f"--to=unix:{socket}", "ls"],
+            capture_output=True,
+            check=False,
+            timeout=2,
+            env=env,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if result.returncode == 0:
+        return True, ""
+    return False, result.stderr.decode("utf-8", errors="replace").strip()
+
+
+def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> CheckResult:
+    """Per-instance remote-control reachability — best-effort, never fails on "no kitty running".
+
+    Resolves the socket base from `remote-control.conf`, enumerates running kitty
+    PIDs via `pgrep -x kitty`, and for every PID where the resolved socket
+    `<base>-<PID>` exists on disk, calls `kitten @ ls` against it. SKIPs when no
+    kitty is running OR no managed socket exists (e.g. a pre-`make setup` kitty
+    is still running). FAILs only when at least one managed socket fails to
+    respond. Verified by probe 04 (`tmp/probes/phase2-remote-control-foundation/04-out-of-process-ls.md`).
+    """
+    rc_conf = paths.payload_dir / "remote-control.conf"
+    if not rc_conf.is_file():
+        return CheckResult(
+            "remote-control",
+            True,
+            "managed remote-control.conf not installed (run `make install`)",
+            skipped=True,
+        )
+    base = _parse_listen_on_base(rc_conf)
+    if base is None:
+        return CheckResult(
+            "remote-control", False, f"{rc_conf} has no `listen_on unix:<path>` directive"
+        )
+
+    kitten_bin = installer.DEFAULT_DEST / "kitty.app" / "bin" / "kitten"
+    if not kitten_bin.is_file():
+        on_path = shutil.which("kitten")
+        if on_path is None:
+            return CheckResult("remote-control", False, "no kitten binary on PATH or under ~/.local")
+        kitten_bin = Path(on_path)
+
+    pids = _pgrep_kitty_pids()
+    reachable: list[int] = []
+    failures: list[str] = []
+    for pid in pids:
+        socket = Path(f"{base}-{pid}")
+        if not socket.exists():
+            continue  # not a managed kitty; skip silently
+        ok, stderr = _kitten_ls_succeeds(kitten_bin, socket)
+        if ok:
+            reachable.append(pid)
+        else:
+            failures.append(f"{socket} ({stderr or 'unknown error'})")
+
+    if not pids:
+        return CheckResult("remote-control", True, "no running kitty", skipped=True)
+    if not reachable and not failures:
+        return CheckResult(
+            "remote-control",
+            True,
+            "no managed kitty socket found (running kitty pre-dates `make setup`?)",
+            skipped=True,
+        )
+    if failures:
+        return CheckResult("remote-control", False, "; ".join(failures))
+    return CheckResult(
+        "remote-control",
+        True,
+        f"reachable on {len(reachable)} kitty instance{'s' if len(reachable) != 1 else ''}",
+    )
+
+
 _RC_BY_SHELL: dict[str, str] = {"zsh": ".zshrc", "bash": ".bashrc"}
 
 
@@ -165,6 +283,7 @@ def run_checks(home: Path | None = None) -> list[CheckResult]:
         _check_parse(paths, kitty_bin),
         _check_bindings(paths, kitty_bin),
         _check_completion(home=home),
+        _check_remote_control_per_probe_04(paths),
     ]
 
 
@@ -174,7 +293,7 @@ def cli_doctor(args: object | None = None) -> int:
     results = run_checks()
     for result in results:
         print(result.render())
-    return 0 if all(r.passed for r in results) else 1
+    return 0 if all(r.passed or r.skipped for r in results) else 1
 
 
 if __name__ == "__main__":
