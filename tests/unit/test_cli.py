@@ -15,7 +15,7 @@ def test_top_level_help_lists_all_subcommands(capsys: pytest.CaptureFixture[str]
         cli.main(["--help"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for sub in ("install", "uninstall", "doctor", "prune", "help"):
+    for sub in ("install", "uninstall", "doctor", "prune", "keys", "window", "tab", "help"):
         assert sub in out
 
 
@@ -25,7 +25,7 @@ def test_help_subcommand_prints_help_and_exits_zero(
     code = cli.main(["help"])
     out = capsys.readouterr().out
     assert code == 0
-    for sub in ("install", "uninstall", "doctor", "prune", "help"):
+    for sub in ("install", "uninstall", "doctor", "prune", "keys", "window", "tab", "help"):
         assert sub in out
 
 
@@ -199,3 +199,74 @@ def test_cli_module_has_argcomplete_magic_comment() -> None:
     """`register-python-argcomplete` scans the first 1024 bytes for the marker."""
     src = Path(cli.__file__).read_bytes()[:1024]
     assert b"PYTHON_ARGCOMPLETE_OK" in src
+
+
+def test_window_title_routes_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.title, "cli_set_window_title", fake)
+    code = cli.main(["window", "title", "deploy logs"])
+    assert code == 0
+    args = captured["args"]
+    assert args.text == "deploy logs"
+    assert args.temporary is True  # default
+    assert args.match is None
+    assert args.to is None
+
+
+def test_window_title_no_temporary_flips_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(
+        cli.scenes.title, "cli_set_window_title",
+        lambda a: captured.setdefault("a", a) and 0,
+    )
+    cli.main(["window", "title", "--no-temporary", "sticky"])
+    args = captured["a"]
+    assert args.text == "sticky"
+    assert args.temporary is False
+
+
+def test_tab_title_routes_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.title, "cli_set_tab_title", fake)
+    code = cli.main(["tab", "title", "monitoring"])
+    assert code == 0
+    args = captured["args"]
+    assert args.text == "monitoring"
+    assert args.match is None
+    assert args.to is None
+    # The tab subparser must NOT expose --temporary; the Namespace should not carry it.
+    assert not hasattr(args, "temporary")
+
+
+def test_tab_title_rejects_temporary_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["tab", "title", "--temporary", "anything"])
+    assert exc.value.code != 0
+    err = capsys.readouterr().err
+    assert "unrecognized" in err.lower() or "--temporary" in err
+
+
+def test_window_title_match_and_to_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(
+        cli.scenes.title, "cli_set_window_title",
+        lambda a: captured.setdefault("a", a) and 0,
+    )
+    cli.main([
+        "window", "title", "x",
+        "--match", "id:5",
+        "--to", "unix:/tmp/kitty-9999",
+    ])
+    args = captured["a"]
+    assert args.match == "id:5"
+    assert args.to == "unix:/tmp/kitty-9999"

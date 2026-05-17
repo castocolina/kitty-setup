@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from kitty_setup import binding_introspection, config_updater, installer, path_integration
+from kitty_setup.scenes._client import _parse_listen_on_base, _pgrep_kitty_pids
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -116,39 +116,6 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
     if report.conflicts_count == 0:
         return CheckResult("bindings", True, summary)
     return CheckResult("bindings", False, f"{summary} (run `my-kitty keys` for details)")
-
-
-_LISTEN_ON_RE = re.compile(r"^\s*listen_on\s+unix:(?P<path>\S+)", re.MULTILINE)
-
-
-def _parse_listen_on_base(remote_control_conf: Path) -> str | None:
-    """Return the `listen_on unix:<path>` base path from the managed `remote-control.conf`.
-
-    The resolved per-instance socket appends `-<PID>` to this base (kitty's documented
-    behaviour, verified by probe 01 of phase2-remote-control-foundation). Returns
-    ``None`` when the file is absent or contains no ``listen_on`` directive.
-    """
-    if not remote_control_conf.is_file():
-        return None
-    match = _LISTEN_ON_RE.search(remote_control_conf.read_text(encoding="utf-8"))
-    return match.group("path") if match else None
-
-
-def _pgrep_kitty_pids() -> list[int]:
-    """Return the PIDs of running kitty processes (`pgrep -x kitty`)."""
-    try:
-        result = subprocess.run(  # noqa: S603 — fixed argv, trusted binary
-            ["pgrep", "-x", "kitty"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=2,
-        )
-    except (FileNotFoundError, subprocess.SubprocessError):
-        return []
-    if result.returncode not in (0, 1):  # 1 = no matches; that is not an error
-        return []
-    return [int(line) for line in result.stdout.split() if line.isdigit()]
 
 
 def _kitten_ls_succeeds(kitten_bin: Path, socket: Path) -> tuple[bool, str]:

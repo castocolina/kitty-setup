@@ -25,7 +25,7 @@ from pathlib import Path
 
 import argcomplete
 
-from kitty_setup import binding_introspection, doctor, installer, pruner
+from kitty_setup import binding_introspection, doctor, installer, pruner, scenes
 
 PROG: str = "my-kitty"
 
@@ -148,6 +148,77 @@ def _build_parser() -> argparse.ArgumentParser:
         help="path to the kitty config file to load (default: ~/.config/kitty/kitty.conf)",
     )
     p_keys.set_defaults(func=binding_introspection.cli_keys)
+
+    # window / tab — scene primitives (Phase 2 §8, kitty-scenes capability)
+    p_window = sub.add_parser(
+        "window",
+        help="scene primitives that act on a kitty window (title, …)",
+    )
+    p_window_sub = p_window.add_subparsers(dest="window_action", metavar="<action>")
+    p_window_title = p_window_sub.add_parser(
+        "title",
+        help="set the kitty window title (UTF-8, including emoji)",
+    )
+    p_window_title.add_argument("text", help="title text")
+    p_window_title.add_argument(
+        "--temporary",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "if set (default), programs running in the window may override "
+            "the title via OSC-2 escape sequences; --no-temporary makes the "
+            "title sticky"
+        ),
+    )
+    p_window_title.add_argument(
+        "--match",
+        type=str,
+        default=None,
+        metavar="EXPR",
+        help="kitty match expression to select the target window",
+    )
+    p_window_title.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_window_title.set_defaults(func=scenes.title.cli_set_window_title)
+
+    p_tab = sub.add_parser(
+        "tab",
+        help="scene primitives that act on a kitty tab (title, …)",
+    )
+    p_tab_sub = p_tab.add_subparsers(dest="tab_action", metavar="<action>")
+    p_tab_title = p_tab_sub.add_parser(
+        "title",
+        help="set the kitty tab title (UTF-8, including emoji)",
+    )
+    p_tab_title.add_argument("text", help="title text")
+    p_tab_title.add_argument(
+        "--match",
+        type=str,
+        default=None,
+        metavar="EXPR",
+        help="kitty match expression to select the target tab",
+    )
+    p_tab_title.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    # No --temporary on tab: kitten @ set-tab-title doesn't expose one,
+    # and OSC-2 escapes don't route to tab titles regardless.
+    p_tab_title.set_defaults(func=scenes.title.cli_set_tab_title)
 
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()
