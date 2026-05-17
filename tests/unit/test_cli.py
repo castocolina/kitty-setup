@@ -15,7 +15,17 @@ def test_top_level_help_lists_all_subcommands(capsys: pytest.CaptureFixture[str]
         cli.main(["--help"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    for sub in ("install", "uninstall", "doctor", "prune", "keys", "window", "tab", "help"):
+    for sub in (
+        "install",
+        "uninstall",
+        "doctor",
+        "prune",
+        "keys",
+        "window",
+        "tab",
+        "os-window",
+        "help",
+    ):
         assert sub in out
 
 
@@ -25,7 +35,17 @@ def test_help_subcommand_prints_help_and_exits_zero(
     code = cli.main(["help"])
     out = capsys.readouterr().out
     assert code == 0
-    for sub in ("install", "uninstall", "doctor", "prune", "keys", "window", "tab", "help"):
+    for sub in (
+        "install",
+        "uninstall",
+        "doctor",
+        "prune",
+        "keys",
+        "window",
+        "tab",
+        "os-window",
+        "help",
+    ):
         assert sub in out
 
 
@@ -270,3 +290,98 @@ def test_window_title_match_and_to_flags(monkeypatch: pytest.MonkeyPatch) -> Non
     args = captured["a"]
     assert args.match == "id:5"
     assert args.to == "unix:/tmp/kitty-9999"
+
+
+def test_tab_accent_routes_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.accent, "cli_set_tab_accent", fake)
+    code = cli.main(["tab", "accent", "#0066cc"])
+    assert code == 0
+    args = captured["args"]
+    assert args.color == "#0066cc"
+    assert args.active_fg is None
+    assert args.inactive_fg is None
+    assert args.match is None
+    assert args.to is None
+
+
+def test_tab_accent_passes_fg_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(
+        cli.scenes.accent, "cli_set_tab_accent",
+        lambda a: captured.setdefault("a", a) and 0,
+    )
+    cli.main(["tab", "accent", "blue", "--active-fg", "white", "--inactive-fg", "#cccccc"])
+    args = captured["a"]
+    assert args.color == "blue"
+    assert args.active_fg == "white"
+    assert args.inactive_fg == "#cccccc"
+
+
+def test_window_background_routes_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.background, "cli_set_window_background", fake)
+    code = cli.main(["window", "background", "#001a33", "--match", "id:5"])
+    assert code == 0
+    args = captured["args"]
+    assert args.color == "#001a33"
+    assert args.match == "id:5"
+    assert args.to is None
+
+
+def test_os_window_font_size_routes_to_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Leading-dash positional `-2` MUST be accepted by argparse as the value."""
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.font, "cli_set_os_window_font_size", fake)
+    code = cli.main(["os-window", "font-size", "-2"])
+    assert code == 0
+    args = captured["args"]
+    assert args.value == "-2"
+    assert args.all is False
+    assert args.to is None
+
+
+def test_os_window_font_size_all_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+    monkeypatch.setattr(
+        cli.scenes.font, "cli_set_os_window_font_size",
+        lambda a: captured.setdefault("a", a) and 0,
+    )
+    cli.main(["os-window", "font-size", "14", "--all"])
+    args = captured["a"]
+    assert args.value == "14"
+    assert args.all is True
+
+
+def test_os_window_opacity_routes_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.scenes.opacity, "cli_set_os_window_opacity", fake)
+    code = cli.main(["os-window", "opacity", "0.7", "--toggle"])
+    assert code == 0
+    args = captured["args"]
+    assert args.value == 0.7
+    assert args.toggle is True
+    assert args.all is False
+    assert args.to is None

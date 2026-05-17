@@ -1,6 +1,5 @@
 """Runtime scene primitives — Phase 2 §8-§14 (see docs/requirements.md)."""
 
-# Expose `scenes.title` as a module attribute so `cli.scenes.title` resolves
-# for monkeypatch.setattr in tests/unit/test_cli.py (§6.5–6.6 of
-# phase2-scene-title-primitive tasks).
-from kitty_setup.scenes import title  # noqa: F401
+# Expose each scene module as a `scenes.<name>` attribute so `cli.scenes.<name>`
+# resolves for `monkeypatch.setattr` targets in tests/unit/test_cli.py.
+from kitty_setup.scenes import accent, background, font, opacity, title  # noqa: F401

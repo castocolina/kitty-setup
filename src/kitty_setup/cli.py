@@ -189,6 +189,33 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_window_title.set_defaults(func=scenes.title.cli_set_window_title)
 
+    p_window_background = p_window_sub.add_parser(
+        "background",
+        help="set the per-pane background color (named, #rrggbb, or NONE)",
+    )
+    p_window_background.add_argument(
+        "color",
+        help="color: named (blue), hex (#001a33), or NONE to reset",
+    )
+    p_window_background.add_argument(
+        "--match",
+        type=str,
+        default=None,
+        metavar="EXPR",
+        help="kitty match expression to select the target pane",
+    )
+    p_window_background.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_window_background.set_defaults(func=scenes.background.cli_set_window_background)
+
     p_tab = sub.add_parser(
         "tab",
         help="scene primitives that act on a kitty tab (title, …)",
@@ -219,6 +246,124 @@ def _build_parser() -> argparse.ArgumentParser:
     # No --temporary on tab: kitten @ set-tab-title doesn't expose one,
     # and OSC-2 escapes don't route to tab titles regardless.
     p_tab_title.set_defaults(func=scenes.title.cli_set_tab_title)
+
+    p_tab_accent = p_tab_sub.add_parser(
+        "accent",
+        help="set the kitty tab accent color (active+inactive bg in one call)",
+    )
+    p_tab_accent.add_argument(
+        "color",
+        help="color: named (blue), hex (#0066cc), or NONE to reset",
+    )
+    p_tab_accent.add_argument(
+        "--active-fg",
+        type=str,
+        default=None,
+        metavar="COLOR",
+        help="foreground color when the tab is focused",
+    )
+    p_tab_accent.add_argument(
+        "--inactive-fg",
+        type=str,
+        default=None,
+        metavar="COLOR",
+        help="foreground color when the tab is unfocused",
+    )
+    p_tab_accent.add_argument(
+        "--match",
+        type=str,
+        default=None,
+        metavar="EXPR",
+        help="kitty match expression to select the target tab",
+    )
+    p_tab_accent.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_tab_accent.set_defaults(func=scenes.accent.cli_set_tab_accent)
+
+    # os-window — OS-window-scoped scene primitives (Phase 2 §10).
+    # Kitty's architecture binds font size and opacity to the OS window,
+    # not the sub-window (pane); the noun makes that explicit.
+    p_os_window = sub.add_parser(
+        "os-window",
+        help="scene primitives that act on the OS window (font-size, opacity)",
+    )
+    p_os_window_sub = p_os_window.add_subparsers(
+        dest="os_window_action", metavar="<action>"
+    )
+
+    p_os_window_font = p_os_window_sub.add_parser(
+        "font-size",
+        help="set the OS-window font size (absolute, relative, or reset)",
+    )
+    p_os_window_font.add_argument(
+        "value",
+        type=str,
+        help=(
+            "font size: absolute (14), relative (+2 / -2 / *1.1 / /2), "
+            "or 0 to reset to the configured default"
+        ),
+    )
+    p_os_window_font.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "apply to all current AND future OS windows (changes the "
+            "configured default, per kitten's documented semantics)"
+        ),
+    )
+    p_os_window_font.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_os_window_font.set_defaults(func=scenes.font.cli_set_os_window_font_size)
+
+    p_os_window_opacity = p_os_window_sub.add_parser(
+        "opacity",
+        help="set the OS-window background opacity (0.0–1.0)",
+    )
+    p_os_window_opacity.add_argument(
+        "value",
+        type=float,
+        help="opacity 0.0 (transparent) to 1.0 (opaque)",
+    )
+    p_os_window_opacity.add_argument(
+        "--toggle",
+        action="store_true",
+        help=(
+            "reset to default if current opacity equals the requested value, "
+            "else set"
+        ),
+    )
+    p_os_window_opacity.add_argument(
+        "--all",
+        action="store_true",
+        help="apply to all current AND future OS windows",
+    )
+    p_os_window_opacity.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_os_window_opacity.set_defaults(func=scenes.opacity.cli_set_os_window_opacity)
 
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()
