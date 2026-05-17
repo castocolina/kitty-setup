@@ -8,15 +8,19 @@ TBD - created by archiving change rename-cli-to-my-kitty. Update Purpose after a
 The system SHALL expose exactly one entry point under `[project.scripts]`,
 named `my-kitty`, whose `main()` parses subcommands via argparse
 subparsers. The supported subcommands SHALL be `install`, `uninstall`,
-`doctor`, `prune`, `keys`, `window`, `tab`, and `help` (the latter
-explicitly registered via `sub.add_parser("help", ...)` with a
-`set_defaults(func=…)` handler, consistent with every other subcommand). The `window` and `tab` subcommands SHALL each
-host a nested `title <text>` sub-subcommand (per the `kitty-scenes` spec);
-additional nested verbs on `window` / `tab` MAY be added by later
-Phase 2 changes (§9-§12). The system MUST NOT expose any other
-`[project.scripts]` entry — historic entries `kitty-setup-install`,
-`kitty-setup-doctor`, `kitty-setup-harness`, and `my-kitty-setup` SHALL be
-removed.
+`doctor`, `prune`, `keys`, `window`, `tab`, `os-window`, and `help` (the
+latter explicitly registered via `sub.add_parser("help", ...)` with a
+`set_defaults(func=…)` handler, consistent with every other subcommand).
+The `window` and `tab` subcommands SHALL each host nested verbs as defined
+by the `kitty-scenes` spec — `title` (from
+`phase2-scene-title-primitive`), `accent` (added on `tab` by
+`phase2-scene-styling`), `background` (added on `window` by
+`phase2-scene-styling`). The new `os-window` top-level subcommand SHALL
+host `font-size <value>` and `opacity <value>` sub-subcommands.
+Additional nested verbs MAY be added by later Phase 2 changes
+(§11-§12). The system MUST NOT expose any other `[project.scripts]`
+entry — historic entries `kitty-setup-install`, `kitty-setup-doctor`,
+`kitty-setup-harness`, and `my-kitty-setup` SHALL be removed.
 
 The `main()` function SHALL register an `argcomplete` completion hook
 between parser construction and `parse_args()` so that the parser tree
@@ -25,23 +29,26 @@ the literal `# PYTHON_ARGCOMPLETE_OK` magic comment within its first
 1024 bytes so that `register-python-argcomplete` recognises the script
 as completion-enabled. In normal interactive runs (without
 `_ARGCOMPLETE` set in the environment) the registered hook SHALL be a
-near-no-op (one env-var check, return). The `window` and `tab`
-subparsers — and their nested `title` sub-subcommands — SHALL be
+near-no-op (one env-var check, return). The `window`, `tab`, and
+`os-window` subparsers — and their nested sub-subcommands — SHALL be
 visible to the same argcomplete hook with no additional registration
 beyond standard argparse subparser construction (i.e. autocomplete
-SHALL work for `my-kitty window <TAB>`, `my-kitty tab <TAB>`, and
-`my-kitty window title <TAB>` on a host with a healthy install).
+SHALL work for `my-kitty os-window <TAB>`, `my-kitty tab accent
+<TAB>`, etc. on a host with a healthy install).
 
 Handler dispatch for the new subcommands SHALL follow the existing
 `set_defaults(func=…)` pattern used by `install`, `uninstall`,
-`doctor`, `prune`, and `keys`. The `window title` sub-subcommand
-SHALL register a handler callable exported from
-`src/kitty_setup/scenes/title.py` (e.g. `cli_set_window_title`); the
-`tab title` sub-subcommand SHALL register a handler callable from the
-same module (e.g. `cli_set_tab_title`). The specific names are
-implementation detail; the requirement is that the handlers live in
-`scenes/title.py` (per `kitty-scenes`) and are wired via
-`set_defaults(func=…)` from inside `cli.py`'s `_build_parser()`.
+`doctor`, `prune`, `keys`, `window title`, and `tab title`. The new
+sub-subcommands SHALL register handlers as follows:
+- `tab accent` → `kitty_setup.scenes.accent.cli_set_tab_accent`
+- `window background` → `kitty_setup.scenes.background.cli_set_window_background`
+- `os-window font-size` → `kitty_setup.scenes.font.cli_set_os_window_font_size`
+- `os-window opacity` → `kitty_setup.scenes.opacity.cli_set_os_window_opacity`
+
+The specific function names are implementation detail; the requirement
+is that the handlers live in the per-attribute `scenes/<attr>.py`
+modules (per `kitty-scenes`) and are wired via `set_defaults(func=…)`
+from inside `cli.py`'s `_build_parser()`.
 
 #### Scenario: User runs the binary with no arguments
 - **WHEN** the user runs `my-kitty` with no arguments after a successful `make install`
@@ -57,11 +64,11 @@ implementation detail; the requirement is that the handlers live in
 
 #### Scenario: `keys` subcommand appears in the help banner
 - **WHEN** the user runs `my-kitty --help` or `my-kitty help`
-- **THEN** the printed subcommand list includes `keys` alongside `install`, `uninstall`, `doctor`, `prune`, `window`, `tab`, and `help`
+- **THEN** the printed subcommand list includes `keys` alongside `install`, `uninstall`, `doctor`, `prune`, `window`, `tab`, `os-window`, and `help`
 
-#### Scenario: `window` and `tab` subcommands appear in the help banner
+#### Scenario: `os-window` subcommand appears in the help banner
 - **WHEN** the user runs `my-kitty --help` or `my-kitty help`
-- **THEN** the printed subcommand list includes `window` and `tab` alongside the other registered subcommands
+- **THEN** the printed subcommand list includes `os-window` alongside the other registered subcommands
 
 #### Scenario: `window title` is reachable through the subparser dispatch
 - **WHEN** the user runs `my-kitty window title --help`
@@ -71,6 +78,22 @@ implementation detail; the requirement is that the handlers live in
 - **WHEN** the user runs `my-kitty tab title --help`
 - **THEN** argparse prints the `tab title` subcommand's help (including the `<text>` positional and the `--match`, `--to` flags; `--temporary` is intentionally absent because `kitten @ set-tab-title` does not expose it) and exits 0
 
+#### Scenario: `tab accent` is reachable through the subparser dispatch
+- **WHEN** the user runs `my-kitty tab accent --help`
+- **THEN** argparse prints the `tab accent` subcommand's help (including the `<color>` positional and the `--active-fg`, `--inactive-fg`, `--match`, `--to` flags) and exits 0
+
+#### Scenario: `window background` is reachable through the subparser dispatch
+- **WHEN** the user runs `my-kitty window background --help`
+- **THEN** argparse prints the `window background` subcommand's help (including the `<color>` positional and the `--match`, `--to` flags) and exits 0
+
+#### Scenario: `os-window font-size` is reachable through the subparser dispatch
+- **WHEN** the user runs `my-kitty os-window font-size --help`
+- **THEN** argparse prints the `os-window font-size` subcommand's help (including the `<value>` positional and the `--all`, `--to` flags) and exits 0
+
+#### Scenario: `os-window opacity` is reachable through the subparser dispatch
+- **WHEN** the user runs `my-kitty os-window opacity --help`
+- **THEN** argparse prints the `os-window opacity` subcommand's help (including the `<value>` positional and the `--toggle`, `--all`, `--to` flags) and exits 0
+
 #### Scenario: Argcomplete hook fires when the shell requests completion
 - **WHEN** a process invokes `my-kitty` with `_ARGCOMPLETE=1` set in its environment (the contract `register-python-argcomplete` uses to request completion candidates)
 - **THEN** the argcomplete hook intercepts the run and emits completion candidates for the current cursor position based on the live argparse parser, without dispatching to any subcommand handler
@@ -79,27 +102,35 @@ implementation detail; the requirement is that the handlers live in
 - **WHEN** a tool grep's the first 1024 bytes of the installed `cli.py` for `PYTHON_ARGCOMPLETE_OK`
 - **THEN** the marker is present so `register-python-argcomplete my-kitty` will accept the script as completion-enabled
 
-#### Scenario: Completion offers `window` and `tab` as top-level candidates
+#### Scenario: Completion offers `window`, `tab`, and `os-window` as top-level candidates
 - **WHEN** a shell with the `register-python-argcomplete` eval line active completes `my-kitty <TAB>`
-- **THEN** the candidate list includes `window` and `tab` alongside the other registered subcommands
+- **THEN** the candidate list includes `window`, `tab`, and `os-window` alongside the other registered subcommands
 
 #### Testing approach for CLI dispatch changes
 `tests/unit/test_cli.py` SHALL be updated to cover the new subcommands
 added by this change:
 
-- The two existing help-banner tests that assert
-  `("install", "uninstall", "doctor", "prune", "help")` appear in
-  `--help` / `help` output SHALL be extended to also assert `keys`,
-  `window`, and `tab` appear.
-- A new test SHALL assert that `my-kitty window title <text>` routes to
-  the correct handler in `scenes/title.py` (following the same
-  `monkeypatch` + `set_defaults` pattern as `test_prune_routes_to_cli_prune`).
-- A new test SHALL assert that `my-kitty tab title <text>` routes to
-  the correct handler in `scenes/title.py` via the same pattern.
+- The two existing help-banner tests SHALL be extended to also assert
+  `os-window` appears (alongside the already-asserted `keys`, `window`,
+  `tab`).
+- A new test SHALL assert that `my-kitty tab accent <color>` routes to
+  the correct handler in `scenes/accent.py` (following the same
+  `monkeypatch` + `set_defaults` pattern as
+  `test_window_title_routes_to_handler`).
+- A new test SHALL assert that `my-kitty window background <color>`
+  routes to the correct handler in `scenes/background.py`.
+- A new test SHALL assert that `my-kitty os-window font-size <value>`
+  routes to the correct handler in `scenes/font.py`. The test SHALL
+  also exercise a leading-`-` value (e.g. `-2`) to confirm argparse
+  accepts it as the positional `<value>` (not as an unrecognized flag).
+- A new test SHALL assert that `my-kitty os-window opacity <value>
+  --toggle` routes to the correct handler in `scenes/opacity.py` with
+  `args.toggle is True`.
 
-These tests cover the CLI dispatch layer (the `cli.py` → `scenes/title.py`
-wiring); the `_client.py` socket-discovery layer is covered separately by
-the unit tests specified in `kitty-scenes/spec.md`.
+These tests cover the CLI dispatch layer; the kitten-argv ordering
+invariants (especially `--toggle` BEFORE positional for opacity) are
+covered by unit tests in `tests/unit/test_scenes_opacity.py` per the
+`kitty-scenes` spec.
 
 ### Requirement: Install via `uv tool install --force .`, source-independent after install
 
