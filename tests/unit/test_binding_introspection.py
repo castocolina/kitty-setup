@@ -69,6 +69,21 @@ def test_walk_payload_ignores_non_map_lines(tmp_path: Path) -> None:
     assert bi._walk_payload(tmp_path) == {("ctrl+a", "copy_to_clipboard"): "x"}
 
 
+def test_walk_payload_routes_layout_conf_to_layout_source(tmp_path: Path) -> None:
+    # layout.conf ships the `enabled_layouts` directive alongside one map line;
+    # `_walk_payload` MUST skip the directive (non-map) and surface the chord
+    # under source "layout" so `my-kitty keys` groups it as a seventh category.
+    _payload(
+        tmp_path,
+        "layout.conf",
+        "# header comment\n"
+        "enabled_layouts tall,tall:mirrored=true,fat,grid,horizontal,vertical,splits,stack\n"
+        "map ctrl+shift+m goto_layout tall:mirrored=true\n",
+    )
+    result = bi._walk_payload(tmp_path)
+    assert result == {("ctrl+shift+m", "goto_layout tall:mirrored=true"): "layout"}
+
+
 # ---- _read_allow_list -----------------------------------------------------
 
 
@@ -103,6 +118,23 @@ def test_classify_no_collisions() -> None:
     assert sources == {"windowing", bi.DEFAULT_SOURCE}
     assert all(b.conflicts_with == () for b in bindings)
     assert all(b.override_of is None for b in bindings)
+
+
+def test_classify_layout_chord_routes_to_layout_source_no_shadow() -> None:
+    # Phase 2 §11: `ctrl+shift+m` is unbound by kitty default and lives in
+    # `layout.conf`. _classify SHALL surface it as a clean entry: ours=1,
+    # defaults=0, conflicts=0; source "layout"; not redundant; no override.
+    raw = [_entry("ctrl+shift+m", "goto_layout tall:mirrored=true")]
+    payload = {("ctrl+shift+m", "goto_layout tall:mirrored=true"): "layout"}
+    bindings, ours, defaults, conflicts = bi._classify(raw, payload, set())
+    assert ours == 1
+    assert defaults == 0
+    assert conflicts == 0
+    layout_binding = next(b for b in bindings if b.source == "layout")
+    assert layout_binding.action == "goto_layout tall:mirrored=true"
+    assert layout_binding.override_of is None
+    assert layout_binding.conflicts_with == ()
+    assert layout_binding.redundant is False
 
 
 def test_classify_intentional_override() -> None:
