@@ -365,6 +365,81 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_os_window_opacity.set_defaults(func=scenes.opacity.cli_set_os_window_opacity)
 
+    # scene — composition primitive (Phase 2 §12).
+    # Materialises a new tab with a layout + N pre-styled panes in one user
+    # gesture, on top of the existing single-noun primitives.
+    p_scene = sub.add_parser(
+        "scene",
+        help="composition primitives (launch a tab with layout + N pre-styled panes)",
+    )
+    p_scene_sub = p_scene.add_subparsers(dest="scene_action", metavar="<action>")
+
+    p_scene_launch = p_scene_sub.add_parser(
+        "launch",
+        help=(
+            "launch a new tab with a chosen layout and one or more "
+            "pre-styled panes in one user gesture"
+        ),
+        description=(
+            "Open a new tab on the running kitty, optionally apply a "
+            "layout, spawn one or more --pane groups (each with optional "
+            "title / cmd / cwd / bg), and optionally tint the tab accent."
+        ),
+    )
+    p_scene_launch.add_argument(
+        "--layout",
+        type=str,
+        default=None,
+        metavar="NAME[:OPTS]",
+        help=(
+            "kitty layout to apply after the tab is created, e.g. "
+            "'tall:mirrored=true'; omit to keep enabled_layouts' default"
+        ),
+    )
+    p_scene_launch.add_argument(
+        "--tab-title",
+        dest="tab_title",
+        type=str,
+        default=None,
+        metavar="TEXT",
+        help="title for the new tab (UTF-8, including emoji)",
+    )
+    p_scene_launch.add_argument(
+        "--tab-accent",
+        dest="tab_accent",
+        type=str,
+        default=None,
+        metavar="COLOR",
+        help=(
+            "accent color for the new tab (named, #rrggbb); applies "
+            "only to the focused-tab background"
+        ),
+    )
+    p_scene_launch.add_argument(
+        "--pane",
+        dest="panes",
+        action="append",
+        default=[],
+        metavar="'key=value,key=value,...'",
+        help=(
+            "one pane spec; repeatable (at least one required). "
+            "Recognised keys: title, cmd, cwd, bg. Commas inside a "
+            "value are escaped as '\\,' and backslashes as '\\\\'. "
+            "Example: --pane 'title=docker ps,cmd=docker ps,bg=#001f3f'"
+        ),
+    )
+    p_scene_launch.add_argument(
+        "--to",
+        type=str,
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
+            "overrides auto-discovery"
+        ),
+    )
+    p_scene_launch.set_defaults(func=scenes.launcher.cli_scene_launch)
+
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()
         return 0
