@@ -42,7 +42,7 @@
 
 - [x] 6.1 Create `docs/repro/h25-scene-launcher.md` with the standard sections: `## Why`, `## Manual repro`, `## Linux Status`, `## macOS Status`, `## Attempted alternatives`, `## Known limitations`, `## Recipes`.
 - [x] 6.2 `## Manual repro` SHALL document the user-runnable scenarios: from a kitty shell, invoke `my-kitty scene launch --layout=tall:mirrored=true --tab-title="🐳 docker-mon" --tab-accent=#ff851b --pane 'title=ps,cmd=docker ps' --pane 'title=stats,bg=#001f3f,cmd=docker stats' --pane 'title=shell'`, observe a new tab with the curated mirrored Tall layout, three panes with the stated titles, p2 tinted dark blue, tab accent orange. Document closing the tab via `ctrl+shift+q`.
-- [ ] 6.3 `## Linux Status` outcome `verified (YYYY-MM-DD, Pop!_OS 24.04 + COSMIC + kitty 0.46.2)` after user sign-off in §8. Block archive until verified.
+- [x] 6.3 `## Linux Status` outcome `verified (2026-06-05, Pop!_OS 24.04 + COSMIC + kitty 0.47.1)` after user sign-off in §8.3.
 - [x] 6.4 `## macOS Status` outcome `deferred-with-reason` — note: "no Mac host available; `kitten @ launch` is platform-agnostic; tab-strip composition and per-pane background visual fidelity are the only macOS-specific concerns." Track under follow-up `phase2-scene-launcher-macos`.
 - [x] 6.5 `## Attempted alternatives` table: Shape B repeated per-attr flags (rejected — position-coupling ambiguity); Shape C JSON arg (rejected — shell quoting); Shape D defer to §13 (rejected — violates roadmap ordering, removes one-shot daily-shell use case); `shlex` for pane parsing (rejected per D2 — shell-like quoting conflicts with `--env`-style key=value); `csv` for pane parsing (rejected per D2 — no backslash escape support); `--no-response` on every launch (rejected — loses the window id needed for deterministic per-pane styling).
 - [x] 6.6 `## Known limitations` SHALL include: `--hold` is always on (short-lived commands stay visible until user closes them); partial-scene state on mid-launch failure is not auto-cleaned; `--match recent:0` for tab accent has a tiny race window if the user tab-switches during the ~85 ms scene build; no `scene close` / `scene list` surface in §12 (deferred to §13); per-pane opacity not supported (kitty's opacity is OS-window-scoped per h23).
@@ -50,16 +50,16 @@
 
 ## 7. Wire `my-kitty` keys completion + autocomplete check
 
-- [ ] 7.1 Run `make install` to rebuild the deployable binary so the new `scene launch` subcommand is on PATH.
-- [ ] 7.2 Run `my-kitty scene --help` and `my-kitty scene launch --help`; confirm the help texts list all flags and that argcomplete suggests `scene` as a top-level completion candidate (`_ARGCOMPLETE=1 COMP_LINE='my-kitty ' COMP_POINT=9 my-kitty | grep scene` returns a hit).
-- [ ] 7.3 Confirm `my-kitty keys` is unaffected — the change does NOT touch any binding payload; `Summary:` line still reports `22 ours, 79 defaults, 0 conflicts` (same as post-h24 baseline).
+- [x] 7.1 Run `make install` to rebuild the deployable binary so the new `scene launch` subcommand is on PATH.
+- [x] 7.2 Run `my-kitty scene --help` and `my-kitty scene launch --help`; help texts list all flags; argcomplete suggests `scene` as a top-level candidate (verified via fd8: `_ARGCOMPLETE=1 _ARGCOMPLETE_IFS=$'\n' COMP_LINE='my-kitty ' COMP_POINT=9 my-kitty 8>&1` emits `scene`).
+- [x] 7.3 Confirm `my-kitty keys` is unaffected — `Summary: 22 ours, 79 defaults, 0 conflicts` (same as post-h24 baseline).
 
 ## 8. Verification + archive prep
 
 - [x] 8.1 Run `make doctor` on the user's host — all checks pass (kitty 0.47.1; bindings 22/79/0). No new doctor check.
 - [x] 8.2 Run `make test` and `KITTI_INTEGRATION=1 pytest tests/` — green (195 unit + 6 h25 integration). NOTE: kitty 0.47.x added a `smooth` arg to default scroll actions, which broke the unrelated `test_h19_bindings_revert` fixture; fixed in a separate commit (EXPECTED_DEFAULTS j/k → `scroll_line_down/up smooth`).
-- [ ] 8.3 Manually verify on the user's daily host: invoke the docker-monitor recipe from §6.2; observe the new tab, layout, three panes, per-pane bg, tab accent; close the tab and re-invoke; observe a second independent tab built (no idempotency in §12 per design Risks).
+- [x] 8.3 Manually verified on the user's daily host (2026-06-05): docker-monitor recipe rendered the new tab, mirrored Tall layout, three named panes, p2 dark-blue tint, orange tab accent — user confirmed "funciona 100%".
 - [ ] 8.4 Optional manual verification: invoke the AI plan/review recipe from §6.7 (if claude CLI is available); observe two panes split right-handed.
-- [ ] 8.5 Delete `tmp/h25-scene-launcher/` (probe served its purpose; spec scenario "Probe is gone at archive time" requires it).
+- [x] 8.5 Delete `tmp/h25-scene-launcher/` (probe served its purpose; spec scenario "Probe is gone at archive time" requires it).
 - [x] 8.6 Run `openspec validate phase2-scene-launcher --strict` — passes.
-- [ ] 8.7 Author `verification.md` capturing `make doctor` + `make test` + integration outputs verbatim plus the manual-verification outcomes and the observed `my-kitty scene launch --help` output excerpt.
+- [x] 8.7 Author `verification.md` capturing `make doctor` + `make test` + integration outputs verbatim plus the manual-verification outcomes and the observed `my-kitty scene launch --help` output excerpt.

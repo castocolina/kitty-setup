@@ -77,10 +77,12 @@ as `\,`. The launcher is a pure Python module composing over
 
 ## Linux Status
 
-`pending verification` — to be updated to
-`verified (YYYY-MM-DD, Pop!_OS 24.04 + COSMIC + kitty 0.46.2)` after the
-user signs off on the manual repro above as part of §8.3 of the
-`phase2-scene-launcher` apply pass.
+`verified (2026-06-05, Pop!_OS 24.04 + COSMIC + kitty 0.47.1)` — user ran
+the docker-monitor recipe above and confirmed the new tab, mirrored Tall
+layout, three named panes, p2 dark-blue tint, and orange tab accent all
+render correctly. (Probed against kitty 0.46.2; verified on 0.47.1 after a
+routine upstream bump — `kitten @ launch` / `set-colors` / `set-tab-color`
+are unchanged across the two releases.)
 
 ## macOS Status
 
