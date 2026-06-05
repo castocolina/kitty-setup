@@ -46,8 +46,9 @@ METADATA_PAYLOADS: tuple[str, ...] = ("intentional-overrides.conf",)
 # action on the right-hand side. See design.md D1-D5.
 EXPECTED_DEFAULTS: dict[str, str] = {
     "ctrl+shift+h": "show_scrollback",
-    "ctrl+shift+j": "scroll_line_down",
-    "ctrl+shift+k": "scroll_line_up",
+    # kitty 0.47.x added a `smooth` argument to the default scroll actions.
+    "ctrl+shift+j": "scroll_line_down smooth",
+    "ctrl+shift+k": "scroll_line_up smooth",
     "ctrl+shift+l": "next_layout",
     "ctrl+shift+0": "tenth_window",
     "ctrl+shift+x": "scroll_to_prompt 1",
