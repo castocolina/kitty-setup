@@ -1,0 +1,26 @@
+# Sample scene — Docker dashboard (multi-pane → opens a NEW tab).
+#
+#   cp examples/scenes/docker.toml ~/.config/kitty-setup/scenes/
+#   my-kitty scene launch docker
+#
+# Panes with no `cwd` inherit the directory you launched from. In TOML a literal
+# comma inside a value needs no escaping (unlike the inline --pane form).
+#
+# Layout: plain `tall` puts the FIRST pane (shell) large on the LEFT; the two
+# docker panes stack on the RIGHT.
+
+layout     = "tall"
+tab_title  = "🐳 docker"
+tab_accent = "#ff851b"
+
+[[pane]]
+title = "shell"
+
+[[pane]]
+title = "docker-ps"
+cmd   = "docker ps ; exec bash"
+
+[[pane]]
+title = "docker-memory"
+bg    = "#001f3f"
+cmd   = "docker stats ; exec bash"

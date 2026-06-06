@@ -1,0 +1,28 @@
+# Sample scene — a 3-pane dev workspace.
+#
+# Copy into your scenes directory and launch by name:
+#   mkdir -p ~/.config/kitty-setup/scenes
+#   cp examples/scenes/dev.toml ~/.config/kitty-setup/scenes/
+#   my-kitty scene launch dev
+#
+# Scene name = file stem (this file → "dev"). Top-level keys map to the tab;
+# each [[pane]] becomes one window. `cmd` runs via `bash -lc`; the trailing
+# `; exec bash` keeps the pane interactive after the command finishes.
+
+layout     = "tall:mirrored=true"   # one tall pane on the right, two stacked left
+tab_title  = "🛠️ dev"
+tab_accent = "#2ecc40"              # green focused-tab accent
+
+[[pane]]
+title = "shell"                     # plain interactive shell (no cmd)
+
+[[pane]]
+title = "git"
+bg    = "#0b1f0b"                   # dark-green tint
+# Panes inherit the dir you launched from; degrade cleanly outside a git repo
+# instead of spewing kitty's "fatal: not a git repository".
+cmd   = "git status 2>/dev/null || echo '(not inside a git repo — cd into one)'; exec bash"
+
+[[pane]]
+title = "watch"
+cmd   = "echo 'edit me — e.g. uv run pytest tests/unit -q' ; exec bash"

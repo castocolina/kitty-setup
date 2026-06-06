@@ -182,10 +182,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_window_title.set_defaults(func=scenes.title.cli_set_window_title)
 
@@ -209,10 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_window_background.set_defaults(func=scenes.background.cli_set_window_background)
 
@@ -238,10 +232,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     # No --temporary on tab: kitten @ set-tab-title doesn't expose one,
     # and OSC-2 escapes don't route to tab titles regardless.
@@ -281,10 +272,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_tab_accent.set_defaults(func=scenes.accent.cli_set_tab_accent)
 
@@ -295,9 +283,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "os-window",
         help="scene primitives that act on the OS window (font-size, opacity)",
     )
-    p_os_window_sub = p_os_window.add_subparsers(
-        dest="os_window_action", metavar="<action>"
-    )
+    p_os_window_sub = p_os_window.add_subparsers(dest="os_window_action", metavar="<action>")
 
     p_os_window_font = p_os_window_sub.add_parser(
         "font-size",
@@ -324,10 +310,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_os_window_font.set_defaults(func=scenes.font.cli_set_os_window_font_size)
 
@@ -343,10 +326,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_os_window_opacity.add_argument(
         "--toggle",
         action="store_true",
-        help=(
-            "reset to default if current opacity equals the requested value, "
-            "else set"
-        ),
+        help=("reset to default if current opacity equals the requested value, " "else set"),
     )
     p_os_window_opacity.add_argument(
         "--all",
@@ -358,10 +338,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_os_window_opacity.set_defaults(func=scenes.opacity.cli_set_os_window_opacity)
 
@@ -378,14 +355,32 @@ def _build_parser() -> argparse.ArgumentParser:
         "launch",
         help=(
             "launch a new tab with a chosen layout and one or more "
-            "pre-styled panes in one user gesture"
+            "pre-styled panes (named TOML recipe OR inline --pane groups)"
         ),
         description=(
-            "Open a new tab on the running kitty, optionally apply a "
-            "layout, spawn one or more --pane groups (each with optional "
-            "title / cmd / cwd / bg), and optionally tint the tab accent."
+            "Open a new tab on the running kitty with a layout + N pre-styled "
+            "panes. Two modes: 'scene launch <name>' loads a TOML recipe from "
+            "the scenes directory (~/.config/kitty-setup/scenes/<name>.toml); "
+            "'scene launch --pane ...' takes the panes inline. The two forms "
+            "are mutually exclusive, and --layout/--tab-title/--tab-accent are "
+            "rejected with a named scene (the recipe file is authoritative). "
+            "Use 'my-kitty scene list' to enumerate available recipes."
         ),
     )
+    p_scene_launch_name = p_scene_launch.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        metavar="NAME",
+        help=(
+            "name of a TOML recipe under the scenes directory (omit to use "
+            "the inline --pane form)"
+        ),
+    )
+    # Shell tab-completion for the scene name: complete from the *.toml stems in
+    # the scenes directory (glob only — no TOML parse, so a malformed recipe
+    # never breaks completion).
+    p_scene_launch_name.completer = scenes.recipe.scene_name_completer  # type: ignore[attr-defined]
     p_scene_launch.add_argument(
         "--layout",
         type=str,
@@ -433,12 +428,29 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         metavar="SOCKET",
-        help=(
-            "kitty listen-on socket address, e.g. unix:/tmp/kitty; "
-            "overrides auto-discovery"
-        ),
+        help=("kitty listen-on socket address, e.g. unix:/tmp/kitty; " "overrides auto-discovery"),
     )
     p_scene_launch.set_defaults(func=scenes.launcher.cli_scene_launch)
+
+    # `scene list` is a SIBLING of `scene launch`, NOT `scene launch list`
+    # (which would parse as "launch a scene named list" under the positional).
+    p_scene_list = p_scene_sub.add_parser(
+        "list",
+        help="list the named TOML scene recipes in the scenes directory",
+        description=(
+            "Enumerate every *.toml recipe under the scenes directory "
+            "(~/.config/kitty-setup/scenes/), one per line, with its tab title "
+            "and pane count. A malformed recipe is reported with its parse "
+            "error rather than hidden."
+        ),
+    )
+    p_scene_list.add_argument(
+        "--names",
+        "-q",
+        action="store_true",
+        help="print only the bare scene names, one per line (for scripting)",
+    )
+    p_scene_list.set_defaults(func=scenes.recipe.cli_scene_list)
 
     def _help_handler(_args: argparse.Namespace) -> int:
         parser.print_help()

@@ -17,9 +17,7 @@ def _ok(stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
 
 
 def _err(returncode: int = 1, stderr: str = "boom\n") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        args=[], returncode=returncode, stdout="", stderr=stderr
-    )
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
 
 
 class _Recorder:
@@ -34,9 +32,7 @@ class _Recorder:
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append(((verb, *args), {"to": to}))
         if not self.results:
-            raise AssertionError(
-                f"Recorder exhausted; unexpected extra call: {verb=} {args=}"
-            )
+            raise AssertionError(f"Recorder exhausted; unexpected extra call: {verb=} {args=}")
         return self.results.pop(0)
 
 
@@ -51,9 +47,7 @@ def test_parse_single_key() -> None:
 
 def test_parse_multiple_keys() -> None:
     result = launcher.parse_pane_spec("title=docker,cmd=docker ps,cwd=/srv,bg=#001f3f")
-    assert result == launcher.Pane(
-        title="docker", cmd="docker ps", cwd="/srv", bg="#001f3f"
-    )
+    assert result == launcher.Pane(title="docker", cmd="docker ps", cwd="/srv", bg="#001f3f")
 
 
 def test_parse_value_contains_equals() -> None:
@@ -124,11 +118,11 @@ def test_launch_scene_argv_matches_h25_q5_six_call_sequence(
     recorder = _Recorder(
         [
             _ok(stdout="101\n"),  # launch --type=tab → win0 (p0 has no bg)
-            _ok(),                # goto-layout (focused tab)
+            _ok(),  # goto-layout (focused tab)
             _ok(stdout="102\n"),  # launch --type=window for p1
-            _ok(),                # set-colors for p1.bg
+            _ok(),  # set-colors for p1.bg
             _ok(stdout="103\n"),  # launch --type=window for p2 (no bg)
-            _ok(),                # set-tab-color for tab accent
+            _ok(),  # set-tab-color for tab accent
         ]
     )
     monkeypatch.setattr(launcher._client, "kitten_at", recorder)
@@ -194,17 +188,18 @@ def test_launch_scene_argv_matches_h25_q5_six_call_sequence(
 def test_launch_scene_accent_uses_recent_zero_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = _Recorder([_ok(stdout="101\n"), _ok()])
+    # Tab accent only applies to a multi-pane scene (which opens a new tab).
+    recorder = _Recorder([_ok(stdout="101\n"), _ok(stdout="102\n"), _ok()])
     monkeypatch.setattr(launcher._client, "kitten_at", recorder)
 
     launcher.launch_scene(
         layout=None,
         tab_title=None,
         tab_accent="#ff851b",
-        panes=[launcher.Pane(title="solo")],
+        panes=[launcher.Pane(title="p1"), launcher.Pane(title="p2")],
     )
-    assert len(recorder.calls) == 2
-    accent_call = recorder.calls[1][0]
+    assert len(recorder.calls) == 3
+    accent_call = recorder.calls[2][0]
     assert accent_call == (
         "set-tab-color",
         "--match",
@@ -212,6 +207,160 @@ def test_launch_scene_accent_uses_recent_zero_match(
         "active_bg=#ff851b",
         "inactive_bg=#ff851b",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Single-pane scene → current tab; launch-dir cwd default
+# --------------------------------------------------------------------------- #
+
+
+def test_single_pane_launches_window_into_current_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One pane → exactly one `launch --type=window`; tab title/layout/accent are
+    # NOT applied (the window joins the current tab, there is no new tab to style).
+    recorder = _Recorder([_ok(stdout="101\n")])
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    rc = launcher.launch_scene(
+        layout="tall",
+        tab_title="ignored",
+        tab_accent="#ff851b",
+        panes=[launcher.Pane(title="solo", cmd="echo hi")],
+    )
+    assert rc == 0
+    assert len(recorder.calls) == 1
+    argv = recorder.calls[0][0]
+    assert argv[0] == "launch"
+    assert "--type=window" in argv
+    assert "--type=tab" not in argv
+    assert not any(a.startswith("--tab-title") for a in argv)
+    assert "--title=solo" in argv
+
+
+def test_single_pane_with_bg_still_styles_the_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _Recorder([_ok(stdout="101\n"), _ok()])
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    launcher.launch_scene(
+        layout=None,
+        tab_title=None,
+        tab_accent=None,
+        panes=[launcher.Pane(title="solo", bg="#001f3f")],
+    )
+    assert len(recorder.calls) == 2
+    assert recorder.calls[1][0] == ("set-colors", "--match", "id:101", "background=#001f3f")
+
+
+def test_default_cwd_applies_to_panes_without_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _Recorder([_ok(stdout="101\n"), _ok(stdout="102\n")])
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    launcher.launch_scene(
+        layout=None,
+        tab_title=None,
+        tab_accent=None,
+        panes=[launcher.Pane(title="p1"), launcher.Pane(title="p2")],
+        default_cwd="/work/proj",
+    )
+    # Both the tab's first window and the additional window inherit the launch dir.
+    assert "--cwd=/work/proj" in recorder.calls[0][0]
+    assert "--cwd=/work/proj" in recorder.calls[1][0]
+
+
+def test_pane_cwd_overrides_default_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _Recorder([_ok(stdout="101\n")])
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    launcher.launch_scene(
+        layout=None,
+        tab_title=None,
+        tab_accent=None,
+        panes=[launcher.Pane(title="solo", cwd="/explicit")],
+        default_cwd="/work/proj",
+    )
+    argv = recorder.calls[0][0]
+    assert "--cwd=/explicit" in argv
+    assert "--cwd=/work/proj" not in argv
+
+
+def test_multipane_with_origin_window_fills_current_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Inside kitty ($KITTY_WINDOW_ID present), a multi-pane scene fills the
+    # CURRENT tab: pane 0 reuses the origin window (restyled in place), the rest
+    # open as splits, and layout/tab-title/tab-accent target the focused tab
+    # (no --type=tab, no recent:0).
+    recorder = _Recorder(
+        [
+            _ok(),  # set-window-title (pane0)
+            _ok(stdout="201\n"),  # launch git
+            _ok(),  # set-colors git bg
+            _ok(stdout="202\n"),  # launch watch
+            _ok(),  # goto-layout
+            _ok(),  # set-tab-title
+            _ok(),  # set-tab-color
+        ]
+    )
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    rc = launcher.launch_scene(
+        layout="tall",
+        tab_title="🛠️ dev",
+        tab_accent="#2ecc40",
+        panes=[
+            launcher.Pane(title="shell"),
+            launcher.Pane(title="git", bg="#0b1f0b"),
+            launcher.Pane(title="watch"),
+        ],
+        origin_window=7,
+    )
+    assert rc == 0
+    verbs = [c[0][0] for c in recorder.calls]
+    assert verbs == [
+        "set-window-title",
+        "launch",
+        "set-colors",
+        "launch",
+        "goto-layout",
+        "set-tab-title",
+        "set-tab-color",
+    ]
+    # Pane 0 reuses the origin window; no new tab is ever requested.
+    assert recorder.calls[0][0] == ("set-window-title", "--match", "id:7", "shell")
+    assert all("--type=tab" not in c[0] for c in recorder.calls)
+    # Tab styling targets the focused tab — no recent:0 match.
+    assert recorder.calls[-1][0] == (
+        "set-tab-color",
+        "active_bg=#2ecc40",
+        "inactive_bg=#2ecc40",
+    )
+
+
+def test_origin_window_ignored_for_single_pane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A single-pane scene keeps its window-into-current-tab behavior even inside
+    # kitty — it does not commandeer the origin shell.
+    recorder = _Recorder([_ok(stdout="101\n")])
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    launcher.launch_scene(
+        layout="tall",
+        tab_title="ignored",
+        tab_accent="#ff851b",
+        panes=[launcher.Pane(title="solo")],
+        origin_window=7,
+    )
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0][0][0] == "launch"
+    assert "--type=window" in recorder.calls[0][0]
 
 
 # --------------------------------------------------------------------------- #
@@ -240,11 +389,11 @@ def test_set_colors_failure_is_soft_and_remaining_calls_run(
 ) -> None:
     recorder = _Recorder(
         [
-            _ok(stdout="101\n"),                 # tab launch ok
-            _err(returncode=3, stderr="badcol"), # set-colors fails
-            _ok(),                               # goto-layout still runs
-            _ok(stdout="102\n"),                 # second pane launch
-            _ok(),                               # tab accent
+            _ok(stdout="101\n"),  # tab launch ok
+            _err(returncode=3, stderr="badcol"),  # set-colors fails
+            _ok(),  # goto-layout still runs
+            _ok(stdout="102\n"),  # second pane launch
+            _ok(),  # tab accent
         ]
     )
     monkeypatch.setattr(launcher._client, "kitten_at", recorder)

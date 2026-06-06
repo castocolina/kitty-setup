@@ -1,0 +1,13 @@
+# Sample scene — single pane (→ opens in your CURRENT tab, no new tab).
+#
+#   cp examples/scenes/edit.toml ~/.config/kitty-setup/scenes/
+#   my-kitty scene launch edit
+#
+# A one-pane scene joins the tab you're already in (a new split window) rather
+# than spawning a dedicated tab. tab_title / tab_accent / layout are ignored for
+# a single-pane scene (there is no new tab to style). The pane inherits the
+# directory you launched from unless it sets its own `cwd`.
+
+[[pane]]
+title = "edit"
+cmd   = "${EDITOR:-vim} . ; exec bash"

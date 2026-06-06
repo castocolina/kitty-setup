@@ -2,4 +2,12 @@
 
 # Expose each scene module as a `scenes.<name>` attribute so `cli.scenes.<name>`
 # resolves for `monkeypatch.setattr` targets in tests/unit/test_cli.py.
-from kitty_setup.scenes import accent, background, font, launcher, opacity, title  # noqa: F401
+from kitty_setup.scenes import (  # noqa: F401
+    accent,
+    background,
+    font,
+    launcher,
+    opacity,
+    recipe,
+    title,
+)
