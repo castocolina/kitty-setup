@@ -15,6 +15,7 @@ Gated by `KITTI_INTEGRATION=1` per `tests/conftest.py`.
 
 from __future__ import annotations
 
+import argparse
 import time
 
 import pytest
@@ -32,9 +33,7 @@ from tests.integration._kitty_subprocess import (
 )
 
 DYNAMIC_OPACITY_LINE = ("dynamic_background_opacity yes",)
-OPACITY_PRECONDITION_STDERR = (
-    "You must turn on the dynamic_background_opacity option in kitty.conf"
-)
+OPACITY_PRECONDITION_STDERR = "You must turn on the dynamic_background_opacity option in kitty.conf"
 
 
 def test_opacity_without_directive_errors_clearly(
@@ -53,9 +52,7 @@ def test_opacity_without_directive_errors_clearly(
     assert OPACITY_PRECONDITION_STDERR in err
 
 
-def test_set_tab_color_accepts_named_hex_NONE(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_set_tab_color_accepts_named_hex_NONE(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Covers tab_color_{named,hex,NONE}_accepted."""
     stub_config(monkeypatch, tmp_path)
     conf = draft_conf(tmp_path, extra_lines=DYNAMIC_OPACITY_LINE)
@@ -69,24 +66,23 @@ def test_set_tab_color_accepts_named_hex_NONE(
 
 
 def test_set_tab_color_rejects_invalid_color(
-    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Covers tab_color_invalid_rejected + tab_color_invalid_stderr_excerpt."""
-    stub_config(monkeypatch, tmp_path)
-    conf = draft_conf(tmp_path, extra_lines=DYNAMIC_OPACITY_LINE)
-    with spawn_kitty(conf, tmp_path) as pid:
-        wait_for_socket(pid)
-        time.sleep(0.4)
-        pin_pgrep_to_pid(monkeypatch, pid)
-        rc = accent.set_tab_accent("notacolor")
+    """Covers tab_color_invalid_rejected + tab_color_invalid_stderr_excerpt.
+
+    Updated by phase2-friendly-color-input: an invalid color is now rejected
+    CLIENT-SIDE by my-kitty (``normalize_color``) BEFORE any kitten call — no
+    kitty is even needed — replacing the former "rejected by kitten" contract.
+    """
+    rc = accent.cli_set_tab_accent(
+        argparse.Namespace(color="notacolor", active_fg=None, inactive_fg=None, match=None, to=None)
+    )
     assert rc != 0
     err = capsys.readouterr().err
-    assert "is not a valid color" in err
+    assert "not a recognized color" in err
 
 
-def test_set_colors_isolates_to_matched_pane(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_set_colors_isolates_to_matched_pane(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Covers launch_second_pane_ok, pane_count_after_launch, set_colors_per_pane_ok,
     pane_a_background_after, pane_b_background_after.
     """
@@ -103,9 +99,7 @@ def test_set_colors_isolates_to_matched_pane(
         time.sleep(0.4)
 
         # Probe-grounded: exactly 2 panes after launch.
-        windows = [
-            w for ostab in ls(socket) for tab in ostab["tabs"] for w in tab["windows"]
-        ]
+        windows = [w for ostab in ls(socket) for tab in ostab["tabs"] for w in tab["windows"]]
         assert len(windows) == 2, f"expected 2 panes, got {len(windows)}: {windows!r}"
         a_id = windows[0]["id"]
         b_id = windows[1]["id"]
@@ -120,9 +114,7 @@ def test_set_colors_isolates_to_matched_pane(
         assert get_color(socket, "background", f"id:{b_id}") == "#000000"
 
 
-def test_set_colors_accepts_named_color(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_set_colors_accepts_named_color(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Covers set_colors_named_ok + pane_b_background_named.
 
     Named color `darkblue` resolves via kitty's X11 rgb.txt table to `#00008b`.
@@ -139,9 +131,7 @@ def test_set_colors_accepts_named_color(
         assert get_color(socket, "background") == "#00008b"
 
 
-def test_set_font_size_absolute_relative_reset(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_set_font_size_absolute_relative_reset(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Covers font_set_14_ok, font_set_plus2_ok, font_set_reset_ok.
 
     kitten @ ls does NOT expose font_size, so exit code is the only observable.

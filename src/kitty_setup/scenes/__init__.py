@@ -5,6 +5,7 @@
 from kitty_setup.scenes import (  # noqa: F401
     accent,
     background,
+    colors,
     font,
     launcher,
     opacity,

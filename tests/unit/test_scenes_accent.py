@@ -15,12 +15,8 @@ import pytest
 from kitty_setup.scenes import _client, accent
 
 
-def _fake_run_returning(
-    returncode: int = 0, stderr: str = ""
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        args=[], returncode=returncode, stdout="", stderr=stderr
-    )
+def _fake_run_returning(returncode: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
 
 
 def test_set_tab_accent_hex_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,7 +47,9 @@ def test_set_tab_accent_named_with_active_fg(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(_client, "kitten_at", fake)
     accent.set_tab_accent("blue", active_fg="white")
-    assert "active_fg=white" in captured["call"]
+    # Colors are normalized to hex client-side: blue->#0000ff, white->#ffffff.
+    assert "active_bg=#0000ff" in captured["call"]
+    assert "active_fg=#ffffff" in captured["call"]
     assert "inactive_fg=" not in " ".join(captured["call"])
 
 
@@ -60,11 +58,10 @@ def test_set_tab_accent_propagates_nonzero(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         _client,
         "kitten_at",
-        lambda *a, **k: _fake_run_returning(
-            returncode=1, stderr="Error: notacolor is not a valid color\n"
-        ),
+        lambda *a, **k: _fake_run_returning(returncode=1, stderr="Error: no kitty process found\n"),
     )
-    assert accent.set_tab_accent("notacolor") == 1
+    # A valid (normalized) color still reaches kitten, whose nonzero propagates.
+    assert accent.set_tab_accent("#abcdef") == 1
 
 
 def test_set_tab_accent_match_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,10 +74,11 @@ def test_set_tab_accent_match_passed_through(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(_client, "kitten_at", fake)
     accent.set_tab_accent("red", match="recent:0")
+    # red normalizes to its X11 hex #ff0000 before the kitten call.
     assert captured["call"] == (
         "set-tab-color",
         "--match",
         "recent:0",
-        "active_bg=red",
-        "inactive_bg=red",
+        "active_bg=#ff0000",
+        "inactive_bg=#ff0000",
     )

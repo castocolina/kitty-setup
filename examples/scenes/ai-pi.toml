@@ -1,0 +1,21 @@
+# AI scene — pi (left) + shell (right), equal halves.
+#
+#   cp examples/scenes/ai-pi.toml ~/.config/kitty-setup/scenes/
+#   my-kitty scene launch ai-pi
+#
+# Two panes side by side at 50/50 (the `horizontal` layout). The agent pane is
+# pane 0; launched from inside kitty it reuses your current shell window.
+#
+# NOTE: confirm the exact binary name for your "pi" agent and adjust `cmd`
+# below — it was not on $PATH at authoring time.
+
+layout     = "horizontal"   # 50/50 columns side by side
+tab_title  = "🤖 pi"
+tab_accent = "#b10dc9"
+
+[[pane]]
+title = "pi"
+cmd   = "pi"
+
+[[pane]]
+title = "shell"

@@ -12,6 +12,7 @@ import sys
 
 from kitty_setup.scenes import _client
 from kitty_setup.scenes._client import SceneClientError
+from kitty_setup.scenes.colors import ColorError, normalize_color
 
 
 def set_tab_accent(
@@ -22,7 +23,15 @@ def set_tab_accent(
     match: str | None = None,
     to: str | None = None,
 ) -> int:
-    """Set tab accent (active_bg + inactive_bg); return kitten's exit code."""
+    """Set tab accent (active_bg + inactive_bg); return kitten's exit code.
+
+    The color and the optional fg overrides are normalized client-side
+    (:func:`.colors.normalize_color`) before the kitten call; an unrecognized
+    value raises :class:`.colors.ColorError` and makes no kitten call.
+    """
+    color = normalize_color(color) or color
+    active_fg = normalize_color(active_fg)
+    inactive_fg = normalize_color(inactive_fg)
     args: list[str] = []
     if match is not None:
         args.extend(("--match", match))
@@ -48,6 +57,9 @@ def cli_set_tab_accent(args: argparse.Namespace) -> int:
             match=args.match,
             to=args.to,
         )
+    except ColorError as exc:
+        sys.stderr.write(f"my-kitty tab accent: {exc}\n")
+        return 1
     except SceneClientError as exc:
         sys.stderr.write(f"{exc}\n")
         return 1

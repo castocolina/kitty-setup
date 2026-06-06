@@ -11,7 +11,8 @@
 
 layout     = "tall"
 tab_title  = "🐳 docker"
-tab_accent = "#ff851b"
+# Colors accept names (translated to hex by my-kitty) or hex with/without '#'.
+tab_accent = "orange"
 
 [[pane]]
 title = "shell"

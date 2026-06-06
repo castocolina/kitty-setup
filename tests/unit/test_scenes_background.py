@@ -15,12 +15,8 @@ import pytest
 from kitty_setup.scenes import _client, background
 
 
-def _fake_run_returning(
-    returncode: int = 0, stderr: str = ""
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        args=[], returncode=returncode, stdout="", stderr=stderr
-    )
+def _fake_run_returning(returncode: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
 
 
 def test_set_window_background_hex_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,7 +42,8 @@ def test_set_window_background_named_with_match(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(_client, "kitten_at", fake)
     background.set_window_background("red", match="id:5")
-    assert captured["call"] == ("set-colors", "--match", "id:5", "background=red")
+    # red normalizes to its X11 hex #ff0000 before the kitten call.
+    assert captured["call"] == ("set-colors", "--match", "id:5", "background=#ff0000")
 
 
 def test_set_window_background_propagates_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,6 +51,7 @@ def test_set_window_background_propagates_nonzero(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(
         _client,
         "kitten_at",
-        lambda *a, **k: _fake_run_returning(returncode=1, stderr="bad color\n"),
+        lambda *a, **k: _fake_run_returning(returncode=1, stderr="no kitty found\n"),
     )
-    assert background.set_window_background("notacolor") == 1
+    # A valid (normalized) color still reaches kitten, whose nonzero propagates.
+    assert background.set_window_background("#abcdef") == 1

@@ -20,10 +20,11 @@ import argparse
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from kitty_setup.scenes import _client
 from kitty_setup.scenes._client import SceneClientError
+from kitty_setup.scenes.colors import ColorError, normalize_color
 
 _RECOGNISED_KEYS: tuple[str, ...] = ("title", "cmd", "cwd", "bg")
 
@@ -299,6 +300,11 @@ def launch_scene(
     if not panes:
         raise ValueError("launch_scene requires at least one Pane")
 
+    # Normalize every color BEFORE the first kitten call — an unrecognized color
+    # raises ColorError here, so a scene is rejected without opening any window.
+    tab_accent = normalize_color(tab_accent)
+    panes = [replace(p, bg=normalize_color(p.bg)) for p in panes]
+
     first_error: int = 0
     single = len(panes) == 1
 
@@ -420,6 +426,9 @@ def _launch_named_scene(name: str, args: argparse.Namespace) -> int:
             default_cwd=os.getcwd(),
             origin_window=_origin_window(),
         )
+    except ColorError as exc:
+        sys.stderr.write(f"my-kitty scene launch: {exc}\n")
+        return 1
     except SceneClientError as exc:
         sys.stderr.write(f"my-kitty scene launch: {exc}\n")
         return 1
@@ -449,6 +458,9 @@ def _launch_inline_scene(args: argparse.Namespace) -> int:
             default_cwd=os.getcwd(),
             origin_window=_origin_window(),
         )
+    except ColorError as exc:
+        sys.stderr.write(f"my-kitty scene launch: {exc}\n")
+        return 1
     except SceneClientError as exc:
         sys.stderr.write(f"my-kitty scene launch: {exc}\n")
         return 1

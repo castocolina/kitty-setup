@@ -403,11 +403,11 @@ def test_set_colors_failure_is_soft_and_remaining_calls_run(
         tab_title="x",
         tab_accent="#fff",
         panes=[
-            launcher.Pane(title="p1", bg="not-a-color"),
+            launcher.Pane(title="p1", bg="#001f3f"),
             launcher.Pane(title="p2"),
         ],
     )
-    assert rc == 3  # first non-zero propagates
+    assert rc == 3  # first non-zero propagates (set-colors fails soft)
     assert len(recorder.calls) == 5  # all 5 calls executed; soft-fail did not abort
 
 
