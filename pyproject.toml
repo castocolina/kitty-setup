@@ -26,6 +26,11 @@ packages = ["src/kitty_setup"]
 # and does NOT trigger force-include — the installer falls back to the
 # repo-root config/kitty/ via Path(__file__).parents[2] in that case.
 "config/kitty" = "kitty_setup/_payload/kitty"
+# Ship the example scene recipes so `my-kitty install` can seed them into the
+# user scenes dir (copy-if-absent) from the installed binary, without the repo.
+# Editable `uv sync` skips force-include; the installer falls back to repo-root
+# examples/scenes/ the same way the payload does.
+"examples/scenes" = "kitty_setup/_scenes"
 
 [dependency-groups]
 dev = [

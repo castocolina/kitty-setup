@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from collections.abc import Iterable
 
@@ -299,6 +300,7 @@ def test_multipane_with_origin_window_fills_current_tab(
     # (no --type=tab, no recent:0).
     recorder = _Recorder(
         [
+            _ok(_ls_json([7])),  # ls: origin tab is solo (only window 7)
             _ok(),  # set-window-title (pane0)
             _ok(stdout="201\n"),  # launch git
             _ok(),  # set-colors git bg
@@ -324,6 +326,7 @@ def test_multipane_with_origin_window_fills_current_tab(
     assert rc == 0
     verbs = [c[0][0] for c in recorder.calls]
     assert verbs == [
+        "ls",  # solo-tab check precedes the fill
         "set-window-title",
         "launch",
         "set-colors",
@@ -333,7 +336,7 @@ def test_multipane_with_origin_window_fills_current_tab(
         "set-tab-color",
     ]
     # Pane 0 reuses the origin window; no new tab is ever requested.
-    assert recorder.calls[0][0] == ("set-window-title", "--match", "id:7", "shell")
+    assert recorder.calls[1][0] == ("set-window-title", "--match", "id:7", "shell")
     assert all("--type=tab" not in c[0] for c in recorder.calls)
     # Tab styling targets the focused tab — no recent:0 match.
     assert recorder.calls[-1][0] == (
@@ -464,3 +467,93 @@ def test_cli_scene_client_error_surfaces_with_exit_1(
     assert rc == 1
     captured = capsys.readouterr()
     assert "no kitty process found" in captured.err
+
+
+# --------------------------------------------------------------------------- #
+# phase2-scene-polish #2 — _origin_tab_is_solo (fill current tab only if solo)
+# --------------------------------------------------------------------------- #
+
+
+def _ls_json(*tabs_window_ids: list[int]) -> str:
+    """Build a `kitten @ ls` JSON tree: one OS window, one tab per id-list."""
+    tabs = [{"windows": [{"id": wid} for wid in ids]} for ids in tabs_window_ids]
+    return json.dumps([{"tabs": tabs}])
+
+
+def test_origin_tab_is_solo_true_for_single_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _ok(_ls_json([7])))
+    assert launcher._origin_tab_is_solo(7, None) is True
+
+
+def test_origin_tab_is_solo_false_for_two_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Origin window 7 shares its tab with window 8 -> not solo.
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _ok(_ls_json([7, 8])))
+    assert launcher._origin_tab_is_solo(7, None) is False
+
+
+def test_origin_tab_is_solo_false_when_origin_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The origin id is in a different tab's window set than queried -> still found
+    # there; but if absent everywhere, fail-safe False.
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _ok(_ls_json([1], [2, 3])))
+    assert launcher._origin_tab_is_solo(99, None) is False
+
+
+def test_origin_tab_is_solo_false_on_ls_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _err())
+    assert launcher._origin_tab_is_solo(7, None) is False
+
+
+def test_origin_tab_is_solo_false_on_garbage_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _ok("not json{"))
+    assert launcher._origin_tab_is_solo(7, None) is False
+
+
+def test_origin_tab_is_solo_finds_the_right_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Origin 5 sits in a solo tab even though another tab has two windows.
+    monkeypatch.setattr(launcher._client, "kitten_at", lambda *a, **k: _ok(_ls_json([2, 3], [5])))
+    assert launcher._origin_tab_is_solo(5, None) is True
+
+
+def test_multipane_with_origin_but_nonsolo_tab_opens_new_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Inside kitty but the origin tab already holds 2 windows -> do NOT fill it;
+    # fall through to the new-tab path (launch --type=tab + recent:0 accent).
+    recorder = _Recorder(
+        [
+            _ok(_ls_json([7, 8])),  # ls: origin tab is NOT solo
+            _ok(stdout="300\n"),  # launch p0 as a new TAB
+            _ok(),  # goto-layout
+            _ok(stdout="301\n"),  # launch git (window)
+            _ok(),  # set-colors git bg
+            _ok(stdout="302\n"),  # launch watch (window)
+            _ok(),  # set-tab-color recent:0
+        ]
+    )
+    monkeypatch.setattr(launcher._client, "kitten_at", recorder)
+
+    rc = launcher.launch_scene(
+        layout="tall",
+        tab_title="DEV",
+        tab_accent="#2ecc40",
+        panes=[
+            launcher.Pane(title="shell"),
+            launcher.Pane(title="git", bg="#0b1f0b"),
+            launcher.Pane(title="watch"),
+        ],
+        origin_window=7,
+    )
+    assert rc == 0
+    verbs = [c[0][0] for c in recorder.calls]
+    assert verbs[0] == "ls"
+    # The first pane opened a NEW tab (not a reused origin window).
+    assert "--type=tab" in recorder.calls[1][0]
+    assert all(c[0][0] != "set-window-title" for c in recorder.calls)
+    # New-tab accent targets recent:0 (not the focused-tab default).
+    assert recorder.calls[-1][0] == (
+        "set-tab-color",
+        "--match",
+        "recent:0",
+        "active_bg=#2ecc40",
+        "inactive_bg=#2ecc40",
+    )

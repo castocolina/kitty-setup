@@ -1,8 +1,7 @@
 # Sample scene — a 3-pane dev workspace.
 #
-# Copy into your scenes directory and launch by name:
-#   mkdir -p ~/.config/kitty-setup/scenes
-#   cp examples/scenes/dev.toml ~/.config/kitty-setup/scenes/
+# `my-kitty install` seeds this into ~/.config/kitty-setup/scenes/ (copy-if-absent;
+# your edits are never overwritten). Edit it there, then launch by name:
 #   my-kitty scene launch dev
 #
 # Scene name = file stem (this file → "dev"). Top-level keys map to the tab;

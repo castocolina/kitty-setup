@@ -1,6 +1,7 @@
 # Sample scene — Docker dashboard (multi-pane → opens a NEW tab).
 #
-#   cp examples/scenes/docker.toml ~/.config/kitty-setup/scenes/
+# `my-kitty install` seeds this into ~/.config/kitty-setup/scenes/ (copy-if-absent;
+# your edits are never overwritten). Edit it there, then launch by name:
 #   my-kitty scene launch docker
 #
 # Panes with no `cwd` inherit the directory you launched from. In TOML a literal
@@ -12,16 +13,18 @@
 layout     = "tall"
 tab_title  = "🐳 docker"
 # Colors accept names (translated to hex by my-kitty) or hex with/without '#'.
-tab_accent = "orange"
+tab_accent = "blue"
 
 [[pane]]
 title = "shell"
+bg    = "cyan"
 
 [[pane]]
 title = "docker-ps"
-cmd   = "docker ps ; exec bash"
+bg    = "orange"
+cmd   = "docker-ps ; exec bash"
 
 [[pane]]
 title = "docker-memory"
-bg    = "#001f3f"
-cmd   = "docker stats ; exec bash"
+bg    = "teal"
+cmd   = "docker-memory ; exec bash"

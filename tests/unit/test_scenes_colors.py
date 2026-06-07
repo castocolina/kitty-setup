@@ -31,11 +31,28 @@ def test_hex_normalisation(value: str, expected: str) -> None:
     assert normalize_color(value) == expected
 
 
-@pytest.mark.parametrize("value", ["#ffzz", "abcd", "12345", "#12", "ggg"])
+@pytest.mark.parametrize("value", ["#ffzz", "12345", "#12", "ggg", "abcde"])
 def test_not_hex_falls_through_to_name_or_error(value: str) -> None:
-    # 4/5-char or non-hex-digit tokens are NOT treated as hex; none are names.
+    # Only 3/4/6/8-digit all-hex tokens are hex; 2/5-char or non-hex-digit
+    # tokens are not, and none of these are names.
     with pytest.raises(ColorError):
         normalize_color(value)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("#001f3faa", "#001f3f"),  # 8-digit: drop the alpha byte
+        ("001f3faa", "#001f3f"),  # hashless 8-digit
+        ("#001F3FAA", "#001f3f"),  # case-insensitive
+        ("#f007", "#f00"),  # 4-digit: drop the alpha nibble
+        ("f007", "#f00"),  # hashless 4-digit
+        ("abcd", "#abc"),  # 4-digit is hex+alpha, not an error
+        ("#ffffffff", "#ffffff"),  # opaque white + alpha -> solid
+    ],
+)
+def test_alpha_hex_is_stripped_to_solid(value: str, expected: str) -> None:
+    assert normalize_color(value) == expected
 
 
 # --------------------------------------------------------------------------- #
@@ -190,3 +207,33 @@ def test_scene_bg_name_is_normalised_in_argv(monkeypatch: pytest.MonkeyPatch) ->
     launcher.launch_scene(None, None, None, [launcher.Pane(title="solo", bg="teal")])
     setcolors = next(c for c in calls if c[0] == "set-colors")
     assert "background=#008080" in setcolors
+
+
+# --------------------------------------------------------------------------- #
+# phase2-scene-polish #1 — color_completer
+# --------------------------------------------------------------------------- #
+
+
+def test_color_completer_matches_prefix() -> None:
+    from kitty_setup.scenes.colors import color_completer
+
+    out = color_completer(prefix="te")
+    assert "teal" in out
+    assert all(name.startswith("te") for name in out)
+
+
+def test_color_completer_includes_none_and_base_gray_excludes_numbered() -> None:
+    from kitty_setup.scenes.colors import color_completer
+
+    out = color_completer(prefix="")
+    assert "NONE" in out
+    assert "gray" in out and "grey" in out
+    assert "gray50" not in out and "grey50" not in out
+    assert "teal" in out
+
+
+def test_color_completer_none_only_when_prefix_matches() -> None:
+    from kitty_setup.scenes.colors import color_completer
+
+    assert "NONE" in color_completer(prefix="N")
+    assert "NONE" not in color_completer(prefix="te")

@@ -1,6 +1,7 @@
 # Sample scene — single pane (→ opens in your CURRENT tab, no new tab).
 #
-#   cp examples/scenes/edit.toml ~/.config/kitty-setup/scenes/
+# `my-kitty install` seeds this into ~/.config/kitty-setup/scenes/ (copy-if-absent;
+# your edits are never overwritten). Edit it there, then launch by name:
 #   my-kitty scene launch edit
 #
 # A one-pane scene joins the tab you're already in (a new split window) rather

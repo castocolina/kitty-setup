@@ -190,10 +190,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "background",
         help="set the per-pane background color (named, #rrggbb, or NONE)",
     )
-    p_window_background.add_argument(
+    p_window_background_color = p_window_background.add_argument(
         "color",
         help="color: named (blue), hex (#001a33), or NONE to reset",
     )
+    p_window_background_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
     p_window_background.add_argument(
         "--match",
         type=str,
@@ -242,10 +243,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "accent",
         help="set the kitty tab accent color (active+inactive bg in one call)",
     )
-    p_tab_accent.add_argument(
+    p_tab_accent_color = p_tab_accent.add_argument(
         "color",
         help="color: named (blue), hex (#0066cc), or NONE to reset",
     )
+    p_tab_accent_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
     p_tab_accent.add_argument(
         "--active-fg",
         type=str,
@@ -409,7 +411,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "accent color for the new tab (named, #rrggbb); applies "
             "only to the focused-tab background"
         ),
-    )
+    ).completer = scenes.colors.color_completer  # type: ignore[attr-defined]
     p_scene_launch.add_argument(
         "--pane",
         dest="panes",

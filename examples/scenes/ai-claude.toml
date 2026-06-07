@@ -1,19 +1,25 @@
-# AI scene — claude (left) + shell (right), equal halves.
+# AI scene — Claude planning + exec + shell (3 columns, horizontal).
 #
-#   cp examples/scenes/ai-claude.toml ~/.config/kitty-setup/scenes/
+# `my-kitty install` seeds this into ~/.config/kitty-setup/scenes/ (copy-if-absent;
+# your edits are never overwritten). Edit it there, then launch by name:
 #   my-kitty scene launch ai-claude
 #
-# Two panes side by side at 50/50 (the `horizontal` layout). The agent pane is
-# pane 0, so when launched from inside kitty it reuses the window you ran the
-# command in — your interactive shell, where your `claude` alias applies.
+# Three equal columns (the `horizontal` layout). Pane 0 is reused from the window
+# you launched in when inside kitty. The accent is a TAB property (one value, at
+# the recipe root) — kitty has no per-pane accent, so `tab_accent` only lives here.
 
 layout     = "horizontal"   # 50/50 columns side by side
-tab_title  = "🤖 claude"
-tab_accent = "#d97757"
+tab_title  = "🤖 AI"
+tab_accent = "#e2663d"
 
 [[pane]]
-title = "claude"
-cmd   = "claude"
+title = "Claude Planning"
+cmd   = "claude-opus"
+
+[[pane]]
+title = "Claude Exec"
+cmd   = "claude-sonnet"
 
 [[pane]]
 title = "shell"
+bg = "#464343c8"

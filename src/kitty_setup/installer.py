@@ -44,6 +44,8 @@ class InstallReport:
     version: str
     skipped_kitty_install: bool
     config_result: config_updater.InstallResult
+    scenes_seeded: int = 0
+    scenes_kept: int = 0
 
 
 def _repo_root() -> Path:
@@ -67,6 +69,48 @@ def _payload_source() -> Path:
     if bundled.is_dir():
         return bundled
     return _repo_root() / "config" / "kitty"
+
+
+def _scenes_source() -> Path:
+    """Resolve the bundled example-scenes directory.
+
+    Wheel install: hatch force-includes ``examples/scenes`` as
+    ``kitty_setup/_scenes`` next to this module. Editable ``uv sync``: the
+    bundled dir is absent — fall back to the repo-root ``examples/scenes/``.
+    Mirrors :func:`_payload_source`.
+    """
+    bundled = Path(__file__).resolve().parent / "_scenes"
+    if bundled.is_dir():
+        return bundled
+    return _repo_root() / "examples" / "scenes"
+
+
+def seed_scenes() -> tuple[int, int]:
+    """Copy bundled example recipes into the user scenes dir, copy-if-absent.
+
+    Each bundled ``*.toml`` is copied only when a file of that name does not
+    already exist in ``scenes_dir()`` — an existing (possibly user-edited) file
+    is NEVER overwritten. The directory is created if missing. Returns
+    ``(seeded, kept)``: how many recipes were newly copied vs left untouched.
+    Idempotent. Seeded files become user data; uninstall never removes them.
+    """
+    # Local import avoids a load-time cycle (recipe imports from scenes.launcher).
+    from kitty_setup.scenes.recipe import scenes_dir
+
+    source = _scenes_source()
+    target = scenes_dir()
+    if not source.is_dir():
+        return (0, 0)
+    target.mkdir(parents=True, exist_ok=True)
+    seeded = kept = 0
+    for recipe in sorted(source.glob("*.toml")):
+        dest = target / recipe.name
+        if dest.exists():
+            kept += 1
+            continue
+        shutil.copy(recipe, dest)
+        seeded += 1
+    return (seeded, kept)
 
 
 def _kitty_bin(dest: Path) -> Path:
@@ -182,6 +226,8 @@ def install(
             parse_ok=None,
         )
 
+    scenes_seeded, scenes_kept = seed_scenes()
+
     return InstallReport(
         kitty_app_dir=dest / KITTY_APP_DIRNAME,
         symlink=SYMLINK_PATH,
@@ -189,6 +235,8 @@ def install(
         version=version,
         skipped_kitty_install=skipped,
         config_result=config_result,
+        scenes_seeded=scenes_seeded,
+        scenes_kept=scenes_kept,
     )
 
 
@@ -254,6 +302,7 @@ def _print_install_report(report: InstallReport) -> None:
         print(f"config:        already up to date ({cfg.conf_file})")
     if cfg.parse_ok is False:
         print("config:        WARNING — parse-check failed (rolled back)")
+    print(f"scenes:        seeded {report.scenes_seeded}, " f"kept {report.scenes_kept} existing")
 
 
 def _print_path_result(result: path_integration.PathEditResult) -> None:

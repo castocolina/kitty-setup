@@ -17,6 +17,7 @@ argv composition explicit and probe-traceable here.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -171,6 +172,32 @@ def _origin_window() -> int | None:
     return int(raw) if raw and raw.isdigit() else None
 
 
+def _origin_tab_is_solo(origin_window: int, to: str | None) -> bool:
+    """True only when the origin window's tab holds exactly one window.
+
+    Queries ``kitten @ ls`` and counts the windows of the tab that contains
+    ``origin_window``. Returns ``False`` on ANY uncertainty — a non-zero ``ls``,
+    unparseable JSON, or an origin id absent from the tree. Fail-safe by design:
+    we only fill the current tab when we can *prove* it holds exactly the origin
+    window, so an ambiguous state opens a fresh tab rather than risk piling new
+    windows onto a populated one (the probe-observable lesson: verify the tab's
+    window count, don't infer it from "inside kitty").
+    """
+    result = _client.kitten_at("ls", to=to)
+    if result.returncode != 0:
+        return False
+    try:
+        tree = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        return False
+    for osw in tree:
+        for tab in osw.get("tabs", []):
+            windows = tab.get("windows", [])
+            if any(w.get("id") == origin_window for w in windows):
+                return len(windows) == 1
+    return False
+
+
 def _fill_current_tab(
     layout: str | None,
     tab_title: str | None,
@@ -259,11 +286,15 @@ def launch_scene(
     """Materialise a scene on the running kitty; return the first non-zero exit.
 
     When ``origin_window`` is set (the id of the window the scene is launched
-    from — ``$KITTY_WINDOW_ID``) and the scene has **two or more panes**, the
-    scene is built INTO the current tab: the origin window becomes pane 0 and
-    the rest open as splits beside it (see :func:`_fill_current_tab`). No new
-    tab is created. This is the in-kitty path, so a multi-pane scene launched
-    from a shell never steals a separate tab.
+    from — ``$KITTY_WINDOW_ID``), the scene has **two or more panes**, AND the
+    origin window's tab holds **exactly one window** (`_origin_tab_is_solo`), the
+    scene is built INTO the current tab: the origin window becomes pane 0 and the
+    rest open as splits beside it (see :func:`_fill_current_tab`). No new tab is
+    created. If the current tab already holds other windows (or the count cannot
+    be determined), the scene falls through to the new-tab path below — so it
+    never piles panes onto a populated tab. This is the in-kitty path, so a
+    multi-pane scene launched from a shell in a solo tab never steals a separate
+    tab.
 
     Otherwise (``origin_window`` is ``None`` — e.g. driven over a socket from
     another terminal):
@@ -308,8 +339,11 @@ def launch_scene(
     first_error: int = 0
     single = len(panes) == 1
 
-    # In-kitty multi-pane: fill the CURRENT tab, reusing the origin window.
-    if origin_window is not None and not single:
+    # In-kitty multi-pane: fill the CURRENT tab ONLY when it holds exactly the
+    # origin window (a "solo" tab). If the tab already has other windows — or we
+    # cannot prove it is solo — fall through to the new-tab path so we never pile
+    # the scene's panes onto a populated tab.
+    if origin_window is not None and not single and _origin_tab_is_solo(origin_window, to):
         return _fill_current_tab(
             layout,
             tab_title,
