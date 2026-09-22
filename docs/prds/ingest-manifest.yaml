@@ -1,0 +1,6 @@
+# gsd-ingest-docs manifest — only the remediation PRD is ingested.
+# The OpenSpec specs are frozen history and intentionally excluded (see PRD R0.2).
+docs:
+  - path: docs/prds/kitty-setup-remediation-v1.0-prd.md
+    type: PRD
+    precedence: 0

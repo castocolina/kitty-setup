@@ -1,0 +1,28 @@
+{
+  "source_path": "/var/home/bazzite/git/personal/kitty-setup/docs/prds/kitty-setup-remediation-v1.0-prd.md",
+  "type": "PRD",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "kitty-setup Remediation & Cross-OS Harmonization — PRD",
+  "summary": "PRD for kitty-setup remediation, defect fixes, cross-OS keybinding harmonization, foundation/scenes separation, color cycling, and presets.",
+  "scope": [
+    "kitty-setup",
+    "keybindings",
+    "macOS",
+    "Linux",
+    "cross-OS harmonization",
+    "color cycling",
+    "scenes",
+    "presets",
+    "health check",
+    "integration tests"
+  ],
+  "cross_refs": [
+    "docs/agent-iteration.md",
+    "docs/research/kitty-default-chords.md",
+    "CLAUDE.md",
+    ".claude/conventions.md"
+  ],
+  "locked": false,
+  "precedence": 0
+}
