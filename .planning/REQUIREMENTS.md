@@ -86,7 +86,9 @@ Each defect is a requirement with a regression test.
       teardown `close-os-window`; doctor "skipped" → real SKIP state; PATH-migration messages
       printed as specified; unsupported-shell hint prints both lines.
 - [ ] **R1.8**: Introspection macOS attribution — normalise payload chords through kitty's own
-      parser so `cmd+k` ≡ `super+k` attributes to our file.
+      `parse_shortcut` (in the same `+runpy` call) so `cmd+k` ≡ `super+k` attributes to our file
+      (mechanism decided 2026-09-22, phase-3 discussion D-06; both verified to parse to
+      `mods=8, key_name='k'`). Owned by Phase 3, not Phase 2.
 
 ### R2 — Cross-OS keybinding harmonization
 
