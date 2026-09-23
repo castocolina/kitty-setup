@@ -213,6 +213,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   1. CLI help text, docstrings, README, scene example headers, and the `CLAUDE.md` "Stack" section all match current behaviour — every claim checkable against a command's actual output.
   2. Every behaviour changed in Phases 2-7 has a repro doc carrying both a Linux status section (filled with recorded evidence) and a macOS status section (filled, or explicitly marked pending Phase 10 rather than left blank or assumed).
   3. Frozen `openspec/` specs are left unrewritten, with the freeze banner from Phase 1 still the only change to them.
+  4. `.claude/conventions.md` and the `Makefile` agree on which targets exist: `make validate`, `make format`, `make test-unit` and `make test-integration` each either exist and run, or are removed from `.claude/conventions.md` — verified by invoking all four, not by reading either file (R6.3). Added 2026-09-23 by plan 01-06: Phase 8 declared R6.3 but wrote no criterion for it, so it would have run ungated — `/gsd-verify-work` confirmed all four targets are absent from the `Makefile` while `.claude/conventions.md` requires them, including "never commit code that fails `make validate`".
 
 **Plans**: TBD
 

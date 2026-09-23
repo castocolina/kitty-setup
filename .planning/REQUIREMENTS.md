@@ -352,8 +352,13 @@ phase can be called done. Sourced from the PRD's "Quality Standards" and "Constr
   key-auth only.
 - **Binding gate**: any phase that touches bindings re-runs the R2.8 oracle test on Linux
   (Phases 3, 4, 7; macOS in Phase 10).
-- **Git gate**: commit per task, push branch `gsd/<phase>`; never merge to `master`, force-push,
-  amend pushed commits, or push `master` (R0.4).
+- **Git gate**: each phase runs in its own git worktree on branch `gsd/phase-{phase}-{slug}`; work
+  lands at the granularity `AGENTS.md`'s commit-granularity rule states — that bullet is the only
+  place in the repo where the rule is written, so it is pointed at rather than repeated here; at
+  phase end, once `make doctor` and `make test` are green, merge into `master` and push; never
+  force-push or amend pushed commits (R0.4 as reworded per D-06, with its granularity half
+  reworded per D-16). Structurally enforced by `tools/hooks/pre-push`, whose every limit is
+  disclosed in `AGENTS.md`'s git-policy bullet and in the hook's own header.
 
 ## Edge Cases To Cover
 
@@ -389,7 +394,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | kitty auto-upgrade on reinstall | Upgrading kitty stays the user's action; doctor only reports a too-old version (R3.4) |
 | Kitten promotion | Deferred; the CLI + `kitten @` remote control covers everything in scope here |
 | Rewriting frozen OpenSpec specs | `openspec/` is history-only after R0.2; correcting stale specs has no payoff now that `.planning/` is authoritative |
-| Merging to `master` | Agents push a feature branch only; integration is the owner's call (R0.4) |
+| Merging to `master` outside a green phase boundary | Merging **at** a green phase boundary is in scope per D-06: the phase-end flow merges into `master` and pushes once `make doctor` and `make test` are green. What stays out of scope is any merge, force-push or amend of pushed commits outside that boundary — `tools/hooks/pre-push` rejects it (R0.4 as reworded) |
 
 ## Traceability
 

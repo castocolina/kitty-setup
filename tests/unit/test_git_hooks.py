@@ -433,6 +433,39 @@ def test_master_to_new_remote_ref_name_rejected(tmp_path: Path) -> None:
     )
 
 
+def test_clean_master_to_renamed_remote_ref_allowed(tmp_path: Path) -> None:
+    """The negative control for the two cases above: clean provenance passes under any name.
+
+    A guard that rejected every renamed-ref push would satisfy both rejection tests while
+    breaking a legitimate one, so the allow case is asserted too: master carrying nothing
+    but a merged ``gsd/*`` branch, fast-forwarded onto an existing ``RENAMED_REF``. This is
+    also the proof that the widened guard **enumerates** provenance rather than keying on
+    the ref name — scenario S6b of the probe matrix in ``tmp/h06-prepush-refspec/``.
+    """
+    with _sandbox(tmp_path) as (_remote, clone):
+        _bootstrap_renamed_ref(clone)
+        _check(_git("checkout", "-b", "gsd/phase-5-sandbox", cwd=clone), "git checkout -b")
+        _commit(clone, "work\n", "work on gsd/phase-5-sandbox")
+        _check(_git("checkout", "master", cwd=clone), "git checkout master")
+        _check(
+            _git(
+                "merge",
+                "--no-ff",
+                "-m",
+                "merge gsd/phase-5-sandbox",
+                "gsd/phase-5-sandbox",
+                cwd=clone,
+            ),
+            "git merge --no-ff",
+        )
+        result = _git("push", "origin", f"master:{RENAMED_REF}", cwd=clone)
+
+    assert (
+        result.returncode == 0
+    ), f"a provenance-clean master -> {RENAMED_REF} push was rejected:\n{result.stderr}"
+    assert not _rejections(result), f"unexpected {HOOK_TAG} diagnostic:\n{result.stderr}"
+
+
 def test_phase_branch_merge_to_master_allowed(tmp_path: Path) -> None:
     """A --no-ff merge of a gsd/phase-* branch into master is allowed."""
     result = _merge_branch_to_master_push(tmp_path, "gsd/phase-7-sandbox")
@@ -558,21 +591,43 @@ def test_post_checkout_indexes_new_worktree(tmp_path: Path) -> None:
 
 
 def test_post_checkout_ignores_ordinary_branch_switch(tmp_path: Path) -> None:
-    """An ordinary same-worktree branch switch rebuilds nothing.
+    """An ordinary same-worktree branch switch rebuilds nothing, while a first checkout does.
 
     The distinguishing signal is the previous-HEAD argument: git passes the
     all-zero SHA only on a first checkout (a new worktree or clone); an ordinary
     switch passes a real commit.
+
+    Both halves are asserted here on purpose. ``assert not initialised`` is an absence
+    claim, and an absence claim holds **vacuously** when there is no hook at all — which is
+    exactly the state of ``706a694``, the RED commit this case was introduced in, and what
+    MEDIUM 8 of the phase's verification report records: seven of that commit's eight cases
+    failed and this one passed with no implementation whatsoever. The second half is the
+    liveness control. The same clone, the same PATH and the same recording shim must produce
+    ``init -y`` when the first-checkout marker **is** present, so the absence above can only
+    pass because the hook read the marker and declined. Two shim logs, because one would
+    conflate the two phases' invocations.
     """
-    shim_log = tmp_path / "shim.log"
     shim = _shim_dir(tmp_path, "codegraph", _RECORDING_SHIM)
-    env = _path_env(shim, overrides={SHIM_LOG_ENV: str(shim_log)})
+    switch_log = tmp_path / "switch-shim.log"
+    first_checkout_log = tmp_path / "first-checkout-shim.log"
+    worktree = tmp_path / "wt"
     with _sandbox(tmp_path) as (_remote, clone):
+        env = _path_env(shim, overrides={SHIM_LOG_ENV: str(switch_log)})
         _check(_git("checkout", "-b", "other", cwd=clone, env=env), "git checkout -b other")
         _check(_git("checkout", "master", cwd=clone, env=env), "git checkout master")
+        control = _worktree_add(
+            clone, worktree, _path_env(shim, overrides={SHIM_LOG_ENV: str(first_checkout_log)})
+        )
 
-    initialised = [argv for argv in _argvs(_shim_rows(shim_log)) if argv.startswith("init")]
+    initialised = [argv for argv in _argvs(_shim_rows(switch_log)) if argv.startswith("init")]
     assert not initialised, "an ordinary branch switch triggered an index build: " f"{initialised}"
+    assert control.returncode == 0, f"the control worktree add failed:\n{control.stderr}"
+    control_argvs = _argvs(_shim_rows(first_checkout_log))
+    assert "init -y" in control_argvs, (
+        "control: the hook did not run `codegraph init -y` on a first checkout either, so the "
+        "absence asserted above proves nothing — it would hold with no hook installed at all. "
+        f"Recorded invocations were: {control_argvs or '(none at all)'}"
+    )
 
 
 def test_post_checkout_codegraph_failure_leaves_worktree_intact(tmp_path: Path) -> None:

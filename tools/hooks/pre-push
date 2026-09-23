@@ -17,10 +17,16 @@
 #   tip — force-push, amend-after-push, rebase-after-push. Verified live in
 #   .planning/phases/01-governance-freeze/01-RESEARCH.md Pattern 2. Unconditional: this is
 #   the T-1-01 control and has no escape hatch.
-# Guard 2 (master provenance): a push to refs/heads/master must carry only non-merge
-#   commits that some `gsd/*` branch contains. The hook cannot see how a commit was
-#   produced (01-RESEARCH.md "Open Questions" 1), so it judges provenance by reachability.
-#   Skippable with KITTI_ALLOW_MASTER_PUSH=1, which is announced whenever honoured.
+# Guard 2 (master provenance): a push that names refs/heads/master on EITHER side of its
+#   refspec must carry only non-merge commits that some `gsd/*` branch contains. Both
+#   sides, because keyed on the remote side alone the guard never saw
+#   `git push origin master:refs/heads/main` — which carries the very commit
+#   `git push origin master` is rejected for. Measured, both before and after, in
+#   tmp/h06-prepush-refspec (plan 01-06; probe 01 recorded local_ref=refs/heads/master
+#   and remote_ref=refs/heads/main for that form, probe 02 the 11-scenario matrix).
+#   The hook cannot see how a commit was produced (01-RESEARCH.md "Open Questions" 1),
+#   so it judges provenance by reachability. Skippable with KITTI_ALLOW_MASTER_PUSH=1,
+#   which is announced whenever honoured.
 #
 # LIMITS — every one of these was established by execution, not guessed. If you hit one,
 # this hook is behaving exactly as designed; do not "fix" it.
@@ -34,9 +40,23 @@
 #   5. A `gsd/*` branch deleted BEFORE its merge is pushed makes the guard reject a
 #      legitimate post-merge push. Verified by execution.
 #   6. The first-ever push of master to an empty remote ref is REJECTED: with no remote tip
-#      there is no range to enumerate, so provenance cannot be established at all.
+#      there is no range to enumerate, so provenance cannot be established at all. Widened
+#      2026-09-23 (plan 01-06) from `refs/heads/master` to an empty remote ref of ANY name,
+#      which is the only behaviour change the guard-2 keying fix makes beyond closing the
+#      bypass: `git push origin master:refs/heads/main` used to be waved through silently.
 #   7. Deleting refs/heads/master on the remote is REJECTED. Deleting any other ref,
 #      including a merged `gsd/*` phase branch, is allowed.
+#   8. Guard 2 is keyed on ref NAMES, so master's content pushed from some other local ref
+#      name is not seen: `git push origin <other-branch>:refs/heads/main` and
+#      `git push origin HEAD:refs/heads/main` both skip provenance even when that content
+#      is a commit authored on master. Reproduced (probe 02 scenario S7), and left open
+#      deliberately: the only content-based alternative — enumerating every push against
+#      the local master tip — would reject the first push of a legitimate `gsd/*` branch,
+#      which has no remote tip to enumerate against either (limit 6's cause). Guard 1 still
+#      applies to such a ref, so it cannot afterwards be rewritten, and the integration
+#      branch is master, so the residue is a stray remote branch. Same class as the
+#      reachability caveat on guard 2 above: a fabricated `gsd/*` branch pointer at a
+#      master-authored commit also satisfies provenance.
 # For 3-6 the sanctioned route is KITTI_ALLOW_MASTER_PUSH=1.
 # This is a compliance guard for cooperating agents, not a security boundary.
 
@@ -52,6 +72,14 @@ log() { printf '[pre-push] %s\n' "$*"; }
 err() { printf '[pre-push] %s\n' "$*" >&2; }
 
 ZERO_SHA="0000000000000000000000000000000000000000"
+MASTER_REF="refs/heads/master"
+
+# True when either side of the refspec names master: "$1" = local_ref, "$2" = remote_ref.
+# A deletion arrives with local_ref "(delete)", which matches neither side, and is decided
+# by the deletion branch below on the remote ref alone — what is deleted IS the remote ref.
+names_master() {
+    [[ "$1" == "${MASTER_REF}" || "$2" == "${MASTER_REF}" ]]
+}
 
 # Every nested git call below takes its stdin from /dev/null: git supplies the ref list
 # on fd 0, and a nested command that read stdin would silently swallow the remaining
@@ -65,7 +93,7 @@ while read -r local_ref local_sha remote_ref remote_sha || [[ -n "${local_ref:-}
     # routine and stays allowed; deleting master is not. Decided explicitly rather than
     # left to `git merge-base` erroring on a zero sha.
     if [[ "${local_sha}" == "${ZERO_SHA}" ]]; then
-        if [[ "${remote_ref}" == "refs/heads/master" ]]; then
+        if [[ "${remote_ref}" == "${MASTER_REF}" ]]; then
             err "REJECTED deletion of ${remote_ref}: master is not a deletable ref"
             printf '  deleting a merged gsd/* branch is routine; deleting master is not\n' >&2
             exit 1
@@ -78,9 +106,9 @@ while read -r local_ref local_sha remote_ref remote_sha || [[ -n "${local_ref:-}
     # "Limits" — a brand-new branch push is normal, not a bypass) and the provenance guard
     # has no range to enumerate.
     if [[ "${remote_sha}" == "${ZERO_SHA}" ]]; then
-        # A brand-new NON-master ref is the phase-branch first push; the whole workflow
-        # depends on it being allowed.
-        if [[ "${remote_ref}" != "refs/heads/master" ]]; then
+        # A brand-new ref naming master on neither side is the phase-branch first push;
+        # the whole workflow depends on it being allowed.
+        if ! names_master "${local_ref}" "${remote_ref}"; then
             continue
         fi
         if [[ "${KITTI_ALLOW_MASTER_PUSH:-}" == "1" ]]; then
@@ -106,7 +134,7 @@ while read -r local_ref local_sha remote_ref remote_sha || [[ -n "${local_ref:-}
     fi
 
     # ---- Guard 2: master provenance ----
-    if [[ "${remote_ref}" != "refs/heads/master" ]]; then
+    if ! names_master "${local_ref}" "${remote_ref}"; then
         continue
     fi
 

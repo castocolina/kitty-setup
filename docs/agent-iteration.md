@@ -1,31 +1,51 @@
 # Agent Iteration Playbook
 
 This is the operating manual for advancing kitty-setup one behavior at a time.
-Read this before opening another OpenSpec change or picking the next item from
-[docs/requirements.md](requirements.md). The rules here are not aspirational; they
-are how the previous attempt did not fail again.
+Read this before opening another phase plan or picking the next requirement from
+[.planning/REQUIREMENTS.md](../.planning/REQUIREMENTS.md), in the phase order
+[.planning/ROADMAP.md](../.planning/ROADMAP.md) sets. The rules here are not aspirational;
+they are how the previous attempt did not fail again.
+
+`AGENTS.md` is the canonical rule file. Where a rule appears both there and here, that file
+states it and this one points at it; where they disagree, `AGENTS.md` wins. What this
+playbook owns is the *hypothesis and probe layer* — the mechanics no rule file describes.
 
 ## Operating principles
 
 ### R1 — Investigate first
 
-No code lands in `src/`, `config/`, or `tests/integration/` until a hypothesis run
-in `tmp/h<NN>-<slug>/` is green against a real kitty session. The hypothesis directory
-is the only place where speculative code is allowed to live.
+The rule is `AGENTS.md`'s "Hypothesis before implementation" bullet. What R1 adds is its
+scope: no code lands in `src/`, `config/`, or `tests/integration/` until a hypothesis run in
+`tmp/h<NN>-<slug>/` is green against a real kitty session, and that directory is the only
+place where speculative code is allowed to live.
 
 ### R2 — Verify before declaring done
 
-A behavior is "ready" only when `make doctor` and `KITTI_INTEGRATION=1 make test`
-both exit 0 and their output is captured into the change's PR description or handoff.
-"Should work", "compiles", "looks right" are not evidence. The output of the verifying
-command, with its exit code, is.
+The rule is `AGENTS.md`'s "Verify before declaring done" bullet and is not restated here:
+`make doctor` and `make test`, both **captured** rather than green, with their exit codes.
+"Should work", "compiles", "looks right" are not evidence; the output of the verifying
+command is. Capturing is the evidence duty, and it is a separate thing from the merge
+precondition — `AGENTS.md`'s git policy additionally requires both commands to be green
+before a phase branch merges, so a captured-but-red run satisfies this rule and still blocks
+the merge.
+
+What this playbook adds: for a hypothesis, the capture goes into the plan's SUMMARY beside
+the green `actual.json`, so the next agent reads what was observed rather than what was
+expected. Integration cases do not run at all without `KITTI_INTEGRATION=1`
+(`tests/conftest.py`), so a capture that is meant to cover `tests/integration/` says which
+form produced it — a bare `make test` reports green while skipping every one of them.
 
 ### R3 — Makefile is thin
 
-Each Make target is at most five lines, including its banner. Anything longer is
-extracted into `tools/<name>.sh` (bash, only allowed in bootstrap territory) or a
-`[project.scripts]` entry point under `src/kitty_setup/`. The Makefile is glue, not
-logic.
+Each Make target is at most five lines, including its banner. Anything longer is extracted
+into a `my-kitty` subcommand under `src/kitty_setup/cli.py`, the single
+`[project.scripts]` entry point — or into shell only where `AGENTS.md`'s `## Stack`
+allow-list permits shell at all, which is the bootstrap pair `tools/setup.sh` /
+`tools/uninstall.sh` and the git-invoked hook entry points under `tools/hooks/`. That
+allow-list is stated once, in `AGENTS.md`, and is pointed at here rather than repeated, so
+it cannot go stale in two places at once — it already had, which is how the hook files
+Phase 1 added came to sit outside the allow-list as this document stated it. The Makefile is
+glue, not logic.
 
 ### R4 — Dogfood the bootstrap
 
@@ -46,18 +66,18 @@ gate. The hypothesis directory is then deleted.
 Any task that depends on the behavior of an external CLI, an external API, an
 OS-level contract, or the syntax / semantics of a configuration file format that
 the repo does not own requires a probe artefact in
-`tmp/probes/<change-id>/<NN>-<slug>.md` *before* the task is executed. Probes
-live in a per-change subdirectory so concurrent in-flight changes don't collide
-on `01-*.md`; the `<NN>` ordinal restarts at `01` inside each change. The probe
+`tmp/probes/<phase>-<plan>/<NN>-<slug>.md` *before* the task is executed. Probes
+live in a per-plan subdirectory so concurrent in-flight plans don't collide
+on `01-*.md`; the `<NN>` ordinal restarts at `01` inside each plan. The probe
 captures six fields: assumption (one line), command, exit code, relevant
 output, verdict (`holds` / `fails` / `partial-with-workaround`), and the design
 decision or code path that uses it. See
 [docs/probe-template.md](probe-template.md) for the canonical shape.
 
-Probes are scratch evidence. Their findings flow into `Why:` lines on `design.md`
-decisions, into commit messages, or into source-code comments at the call site
+Probes are scratch evidence. Their findings flow into the decisions section of the plan's
+SUMMARY, into commit messages, or into source-code comments at the call site
 that depends on them. Once a probe's finding is so encoded, the probe artefact
-itself can be deleted with the rest of `tmp/` at the change's archive time.
+itself can be deleted with the rest of `tmp/` when the phase closes.
 
 The bootstrap change paid the cost of skipping this rule three times: the
 non-existent `kitty --debug-config` flag, the surprising relative-include
@@ -76,12 +96,12 @@ contracts only when both of the following hold:
 The stub itself MUST carry a reference to the probe — either by a `_per_probe_<NN>`
 suffix on the stub function name or by a one-line docstring naming the probe.
 A future reader of the stub can then grep for the probe name and find the
-evidence (in `tmp/probes/` while the change is live, or in the change's
-`## Probes` section in `design.md` after archive).
+evidence (in `tmp/probes/` while the plan is live, or in the plan's SUMMARY
+`## Probes` section after the phase closes).
 
 If an integration test cannot be written today (the external system is not
 available in the test environment, or its behavior cannot be triggered
-synthetically), the stub is *provisional* and the change's task list MUST
+synthetically), the stub is *provisional* and the plan's task list MUST
 include "build probe + integration test before promotion."
 
 The bootstrap change's `tests/unit/test_config_updater.py` stubbed `kitty` with a
@@ -95,7 +115,7 @@ These are peers, not the same thing:
 
 | Question shape | Artefact | Lives in | Size |
 |---|---|---|---|
-| "Does this CLI flag exist? What does this command return?" | **Probe** (R6) | `tmp/probes/<change-id>/<NN>-<slug>.md` | One screen, six fields |
+| "Does this CLI flag exist? What does this command return?" | **Probe** (R6) | `tmp/probes/<phase>-<plan>/<NN>-<slug>.md` | One screen, six fields |
 | "Does this configuration produce this user-observable behavior?" | **Hypothesis** (R1) | `tmp/h<NN>-<slug>/` (directory) | repro.md + run.py + actual.json + draft.conf |
 
 A probe answers a narrow factual question about external-system shape. A
@@ -106,28 +126,32 @@ it to `tmp/h<NN>-<slug>/`.
 
 ## The loop
 
-For every Phase 1 item (after items 1 and 2, which are covered by the bootstrap
-change), repeat:
+For every requirement a phase owns, repeat:
 
-1. **Pick the next item** from [docs/requirements.md](requirements.md), in the
-   easy-to-hard order it documents. Skip an item only with a written reason in the
-   OpenSpec proposal.
+1. **Pick the next requirement** from [.planning/REQUIREMENTS.md](../.planning/REQUIREMENTS.md),
+   in the phase order [.planning/ROADMAP.md](../.planning/ROADMAP.md) sets. Skip one only with
+   a written reason in the phase's CONTEXT or in the plan that should have carried it.
 
-2. **Open an OpenSpec change** for the item. One change per Phase 1 item. Use
-   `openspec new change <kebab-case-name>` and the `/opsx:propose` skill to scaffold
-   `proposal.md`, `design.md`, the per-capability `specs/`, and `tasks.md`. Each item
-   gets its own capability under `openspec/specs/` once the change is archived.
+2. **Open a phase plan** for it, under `.planning/phases/<NN>-<slug>/`. `/gsd-discuss-phase`
+   then `/gsd-plan-phase` scaffold the artifacts that directory holds — CONTEXT (intent and
+   locked decisions), RESEARCH and PATTERNS (the evidence), VALIDATION (the per-task
+   verification map), and `<phase>-<plan>-PLAN.md` (the tasks) — and each plan carries
+   `cross_ai: true` per `AGENTS.md`. The requirements a plan satisfies are named in its
+   frontmatter, which is what makes `.planning/REQUIREMENTS.md`'s traceability table
+   checkable. There is no separate capability spec to maintain: `.planning/` is the single
+   source of truth, and `.planning/legacy/openspec/` is frozen history that is never a
+   destination.
 
 3. **Probe any external assumption first.** Before the hypothesis directory is
    populated, walk the planned tasks and identify every external-system
    assumption (a CLI flag exists, a config directive accepts these values, an
    API returns this JSON shape). For each one, write a probe at
-   `tmp/probes/<active-change>/<NN>-<slug>.md` per R6 and the
+   `tmp/probes/<phase>-<plan>/<NN>-<slug>.md` per R6 and the
    [probe template](probe-template.md). The probe pass writes into the
-   per-change subdirectory `tmp/probes/<active-change>/`. Wrong-shape probes
+   per-plan subdirectory `tmp/probes/<phase>-<plan>/`. Wrong-shape probes
    get fixed here, in minutes, instead of getting fossilised into code or
-   hypotheses that have to be ripped out later. Add a `## Probes` section to
-   `design.md` listing each probe + verdict.
+   hypotheses that have to be ripped out later. List each probe and its verdict in a
+   `## Probes` section of the plan's SUMMARY.
 
 4. **Drop scratch** into `tmp/h<NN>-<slug>/`:
    - `repro.md` — what the behavior is, the manual repro steps, the expected
@@ -152,22 +176,28 @@ change), repeat:
    - Move `repro.md` into `docs/repro/h<NN>-<slug>.md`.
    - Rewrite `run.py` as `tests/integration/test_h<NN>_<slug>.py` using pytest
      fixtures and the `KITTI_INTEGRATION` gate.
-   - Encode every probe finding from step 3 into a durable location (`Why:` line
-     in `design.md`, inline comment in source, or commit-message paragraph) per
-     R6. The probe artefacts themselves stay in `tmp/probes/` and disappear with
-     the rest of `tmp/` when the change archives.
+   - Encode every probe finding from step 3 into a durable location (a `Why:` line in the
+     plan's SUMMARY, an inline comment at the dependent call site, or a commit-message
+     paragraph) per R6. The probe artefacts themselves stay in `tmp/probes/` and disappear
+     with the rest of `tmp/` when the phase closes.
    - Delete the `tmp/h<NN>-<slug>/` directory.
 
-7. **Verify** end-to-end: `make doctor` exits 0 and `KITTI_INTEGRATION=1 make test`
-   exits 0. Capture both outputs into the change's eventual PR description.
+7. **Verify** end-to-end per R2: run `make doctor` and `make test`, and capture both
+   outputs with their exit codes into the plan's SUMMARY. `KITTI_INTEGRATION=1 make test`
+   is the form that actually executes `tests/integration/`, so a promotion that added an
+   integration test says which form it ran. Green is the merge precondition `AGENTS.md`'s
+   git policy states; capturing is this rule.
 
-8. **Archive** the OpenSpec change with `openspec archive <name>`. The capability
-   spec moves from `openspec/changes/<name>/specs/` into `openspec/specs/`.
+8. **Close the plan**: write `.planning/phases/<NN>-<slug>/<phase>-<plan>-SUMMARY.md` —
+   what landed, every deviation from the plan, the captured evidence — then advance
+   `.planning/STATE.md` and the phase's row in `.planning/ROADMAP.md`. The phase directory
+   *is* the archive; nothing is moved anywhere else.
 
 ## Hand-off across agents
 
-The agent that writes a hypothesis is *not* the same agent that promotes it. This
-is the planning-primacy rule (AGENTS.md) applied to the hypothesis layer. Concretely:
+The agent that writes a hypothesis is *not* the same agent that promotes it. This is
+`AGENTS.md`'s primacy of the planning artifacts — they are authoritative and are never
+rewritten to match what drifted — applied to the hypothesis layer. Concretely:
 
 - The agent that authors `tmp/h<NN>-<slug>/run.py` and gets it green leaves the
   green `actual.json` and an updated `repro.md` describing what it observed.
@@ -175,7 +205,7 @@ is the planning-primacy rule (AGENTS.md) applied to the hypothesis layer. Concre
   evidence justifies promotion, and performs the manual rewrite into `src/`,
   `config/`, `docs/repro/`, and `tests/integration/`.
 - If the second agent disagrees with the hypothesis, it amends `repro.md` with
-  the disagreement and the change goes back to step 4 with a new hypothesis.
+  the disagreement and the work goes back to step 4 with a new hypothesis.
 
 ## What to do when the harness disagrees with the manual repro
 
@@ -188,7 +218,9 @@ manual repro is documentation; the probe is the gate.
 
 Some behaviors are reachable only through the boss API (in-process), not through
 `kitty @` (out-of-process). When `run.py` cannot reach the surface from outside
-kitty, capture the gap in `repro.md`, archive the hypothesis as
-`tmp/h<NN>-<slug>/blocked.md`, and open a follow-up OpenSpec change that scopes a
-kitten promotion for that one capability — per the roadmap's Phase 3 promotion
-criteria. Do not paper over the gap with a wrapper script.
+kitty, capture the gap in `repro.md`, park the hypothesis as
+`tmp/h<NN>-<slug>/blocked.md`, and record the gap where the next milestone will see it — a
+requirement candidate in `.planning/REQUIREMENTS.md`, or a phase via `/gsd-phase`. Kitten
+promotion is explicitly out of scope for this milestone (`.planning/PROJECT.md`,
+`.planning/REQUIREMENTS.md` "Out of Scope"), so promoting one is a new-milestone decision,
+not a mid-phase one. Do not paper over the gap with a wrapper script.

@@ -46,14 +46,19 @@ to match drifted code.
   1's branch merges after Phase 2's R1.1 turns `make doctor` green. Never
   force-push or amend pushed commits. Enforced by `tools/hooks/pre-push`, wired once via
   `core.hooksPath` by `make hooks`; the hook rejects any push whose remote tip is not an
-  ancestor of the local tip, plus any `master` push carrying a non-merge commit that no
-  `gsd/*` branch contains. All its limits disclosed, from the hook's own header: `git push
+  ancestor of the local tip, plus any push naming `refs/heads/master` on either side of its
+  refspec that carries a non-merge commit no `gsd/*` branch contains. All its limits
+  disclosed, from the hook's own header: `git push
   --no-verify` bypasses any client-side hook; `KITTI_ALLOW_MASTER_PUSH=1` deliberately
   skips the `master` provenance guard; a squash merge into `master` is rejected;
   cherry-picked or rebased commits landing on `master` are rejected; a `gsd/*` branch
   deleted before its merge is pushed makes the guard reject a legitimate post-merge push;
-  the first-ever push of `master` to an empty remote ref is rejected; a deletion of
-  `refs/heads/master` is rejected. `KITTI_ALLOW_MASTER_PUSH=1` is the sanctioned route for
+  the first push of `master` to an empty remote ref of **any** name is rejected; a deletion of
+  `refs/heads/master` is rejected; and the provenance guard is keyed on ref **names**, so
+  master's content pushed from some other local ref name — `git push origin
+  <other-branch>:refs/heads/main`, or `HEAD:` — is not seen, the same way a fabricated
+  `gsd/*` pointer at a master-authored commit satisfies provenance by reachability.
+  `KITTI_ALLOW_MASTER_PUSH=1` is the sanctioned route for
   the by-design rejections. This is a compliance guard for cooperating agents, not a
   security boundary.
 - **Commit granularity.** Work lands as one commit per plan, not one per task. An executor
