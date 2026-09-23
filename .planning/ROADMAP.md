@@ -89,16 +89,21 @@ discuss-phase.
 **Plans**: 5 plans in 5 waves (serial — the chain is forced by the archive → move → banner →
 instruction-file ordering constraint plus the tracer-first lead, not by a lack of parallelism)
 
-- [ ] 01-01-PLAN.md — TRACER: `tools/hooks/pre-push` force/rewrite + direct-to-master guard, wired
-      via one shared `core.hooksPath`, regression-tested in a disposable sandbox (R0.4)
+- [ ] 01-01-PLAN.md — TRACER: widen the shell allow-list in all four places that state it, then
+      `tools/hooks/pre-push` force/rewrite + `master`-provenance guard with every limit disclosed,
+      wired via one shared `core.hooksPath`, regression-tested in a disposable sandbox (R0.4)
 - [ ] 01-02-PLAN.md — CodeGraph index lifecycle: `post-checkout` indexes a new worktree,
-      `post-commit` syncs incrementally, neither can abort a git operation (R0.6)
-- [ ] 01-03-PLAN.md — Archive the pending change with `--skip-specs`, `git mv openspec/` under
-      `.planning/legacy/`, FROZEN banners on the three history files (R0.2)
+      `post-commit` syncs incrementally, neither can abort a git operation — absence, failure and
+      hang each tested, each hook logging a tagged success line (R0.6)
+- [ ] 01-03-PLAN.md — Archive the pending change with `--skip-specs`, stage the archive's own
+      effects, `git mv openspec/` under `.planning/legacy/` as a pure rename, FROZEN banners on the
+      three history files (R0.2)
 - [ ] 01-04-PLAN.md — `AGENTS.md` as the canonical rule set, `CLAUDE.md` reduced to `@AGENTS.md`,
-      `claude_md_path` repointed (R0.1, R0.3, R0.4, R0.5, R0.7, R0.8, R0.9, R0.10)
-- [ ] 01-05-PLAN.md — `agent-md-refactor` validation pass, ROADMAP/PROJECT git-policy alignment,
-      and the phase governance gate run and recorded (R0.4, R0.9, R0.10)
+      `claude_md_path` and every stale `CLAUDE.md` pointer repointed (R0.1, R0.3, R0.4, R0.5, R0.7,
+      R0.8, R0.9, R0.10)
+- [ ] 01-05-PLAN.md — `agent-md-refactor` validation pass, ROADMAP/PROJECT git-policy alignment
+      including the out-of-scope merge bullet, and the phase governance gate run and recorded. The
+      phase-end merge to `master` is Universal Phase Gate step 6, not a plan task (R0.4, R0.9, R0.10)
 
 ### Phase 2: Defect Remediation
 
@@ -198,7 +203,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
 
 **Goal**: Nothing a user or a future agent reads about this project is a lie — the docs describe the code as it now is, and where macOS is still unproven they say so rather than guessing.
 **Depends on**: Phase 7
-**Requirements**: R6.1, R6.2
+**Requirements**: R6.1, R6.2, R6.3
 **Success Criteria** (what must be TRUE):
 
   1. CLI help text, docstrings, README, scene example headers, and the `CLAUDE.md` "Stack" section all match current behaviour — every claim checkable against a command's actual output.

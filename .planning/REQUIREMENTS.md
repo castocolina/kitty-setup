@@ -250,6 +250,15 @@ Each defect is a requirement with a regression test.
       "Stack" section match actual behaviour.
 - [ ] **R6.2**: Every changed behaviour has a repro doc with both a Linux status section and a
       macOS status section.
+- [ ] **R6.3**: **`.claude/conventions.md` and the `Makefile` agree on which targets exist**
+      (added 2026-09-23; surfaced by the Phase 1 replan as genuinely unowned, distinct from the
+      quality-tool gap R0.11/R0.12 now own). `.claude/conventions.md:60-69` requires
+      `make validate`, `make format`, `make test-unit` and `make test-integration`, and says
+      "Never commit code that fails `make validate`" — **none of those four targets exist in the
+      `Makefile`**. Resolve in whichever direction is true: add the targets (subject to the
+      five-line-per-target stack rule) or rewrite the conventions text to name the commands that
+      really work. A convention nobody can run is worse than no convention, because it reads as
+      satisfied.
 
 ### R7 — macOS end-to-end verification and remediation over SSH
 
@@ -401,6 +410,7 @@ Every v1 requirement maps to exactly one phase.
 | R5.3 | Phase 7 | Pending |
 | R6.1 | Phase 8 | Pending |
 | R6.2 | Phase 8 | Pending |
+| R6.3 | Phase 8 | Pending |
 | R7.1 | Phase 10 | Pending |
 | R7.2 | Phase 10 | Pending |
 | R7.3 | Phase 10 | Pending |

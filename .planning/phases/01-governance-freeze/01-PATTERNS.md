@@ -15,7 +15,7 @@
 | `tools/hooks/post-commit` (new) | middleware | event-driven (fire-and-forget) | `tools/setup.sh` | role-match |
 | `tools/hooks/post-checkout` (new) | middleware | event-driven (argv flags) | `tools/setup.sh` | role-match |
 | `Makefile` `hooks:` target (modified) | config glue | request-response | `Makefile` existing `doctor`/`test`/`prune` targets | exact |
-| `tests/integration/test_git_hooks.py` (new) | test | file-I/O + subprocess | `tests/integration/test_h21_doctor_remote_control.py` + `tests/integration/_kitty_subprocess.py` | role-match (subprocess harness; git instead of kitty) |
+| `tests/unit/test_git_hooks.py` (new) | test | file-I/O + subprocess | `tests/integration/test_h21_doctor_remote_control.py` + `tests/integration/_kitty_subprocess.py` | role-match (subprocess harness; git instead of kitty) |
 | `tests/conftest.py` (unmodified, consumed) | test fixture/gate | — | itself — the `KITTI_INTEGRATION` gate | exact |
 | `.planning/config.json` (modified) | config | — | itself, line 69 | exact |
 | `docs/requirements.md`, `docs/propossal_roadmap.md` (banners) | doc | — | each other (identical opening shape) | exact |
@@ -277,7 +277,7 @@ Invariants for a new `hooks:` target: (a) add `hooks` to the `.PHONY` list; (b) 
 
 ---
 
-### `tests/integration/test_git_hooks.py` (test, subprocess + disposable filesystem)
+### `tests/unit/test_git_hooks.py` (test, subprocess + disposable filesystem)
 
 **Analogs (three, each contributing a different piece):**
 - `/var/home/bazzite/git/personal/kitty-setup/tests/conftest.py` — the `KITTI_INTEGRATION` gate and the `scratch_dir` fixture (tracked)
@@ -297,7 +297,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         if str(item.path).startswith(str(integration_dir)):
             item.add_marker(skip)
 ```
-with `tests/conftest.py:18` `INTEGRATION_ENV_VAR = "KITTI_INTEGRATION"`. **Consequence for the planner: placing the file at `tests/integration/test_git_hooks.py` auto-gates it — add nothing.** But `pyproject.toml` declares a marker `"integration: requires KITTI_INTEGRATION=1 and a real kitty install"` that no integration test actually applies (`grep pytest.mark tests/integration/*.py` → only a `parametrize` hit), so do not add `@pytest.mark.integration` "for consistency"; it would be the only such usage. Second consequence worth flagging: git-hook tests need **no kitty and no `KITTI_INTEGRATION` semantics** (they only need `git`) — yet living in `tests/integration/` means they are skipped by default and excluded from `make test`'s effective coverage. VALIDATION.md's commands assume `uv run pytest tests/integration/test_git_hooks.py`, which under the gate **silently skips unless `KITTI_INTEGRATION=1` is exported**. The planner must either (a) require `KITTI_INTEGRATION=1` in the verify command, or (b) consciously decide these belong in `tests/unit/` (fast, hermetic, no kitty) and say so. Do not leave this ambiguous — an all-skipped run reports green.
+with `tests/conftest.py:18` `INTEGRATION_ENV_VAR = "KITTI_INTEGRATION"`. **Consequence for the planner: placing the file at `tests/integration/test_git_hooks.py` auto-gates it — add nothing.** But `pyproject.toml` declares a marker `"integration: requires KITTI_INTEGRATION=1 and a real kitty install"` that no integration test actually applies (`grep pytest.mark tests/integration/*.py` → only a `parametrize` hit), so do not add `@pytest.mark.integration` "for consistency"; it would be the only such usage. Second consequence worth flagging: git-hook tests need **no kitty and no `KITTI_INTEGRATION` semantics** (they only need `git`) — yet living in `tests/integration/` means they are skipped by default and excluded from `make test`'s effective coverage. A verify command aimed at `tests/integration/test_git_hooks.py` **silently skips unless `KITTI_INTEGRATION=1` is exported**. The planner must either (a) require `KITTI_INTEGRATION=1` in the verify command, or (b) consciously decide these belong in `tests/unit/` (fast, hermetic, no kitty) and say so. Do not leave this ambiguous — an all-skipped run reports green.
+
+> **RESOLVED 2026-09-23 — the planner chose (b): `tests/unit/test_git_hooks.py`.** Every other reference
+> to this file in this document was corrected to `tests/unit/` on 2026-09-23 after the cross-AI review
+> (`56f9df1`) noted that four of them (`:18`, `:280`, `:523`, `:549`) still carried the pre-decision
+> `tests/integration/` path while the plans and `01-VALIDATION.md` correctly said `tests/unit/`. This
+> document is loaded as `@context` by both hook plans, so a stale heading was the first thing an
+> executor would read about where the file lives. The paragraph above is deliberately left in its
+> original wording, because it is the record of a real choice and its reasoning — the two
+> `tests/integration/` mentions in it are the *rejected* option, not a stale path.
 
 **Fixture style — pytest fixtures + `contextlib.contextmanager`, and `tmp_path`, NOT `tempfile.TemporaryDirectory`.** `grep -rn "TemporaryDirectory" tests/` returns **zero hits** across the whole suite; every disposable-filesystem test takes pytest's `tmp_path: Path` or the `scratch_dir` fixture. VALIDATION.md and RESEARCH.md both say "`tempfile.TemporaryDirectory`" — that is the research's own sandbox vocabulary, not this repo's. **Recommend `tmp_path` to match house style** (it is auto-cleaned, and pytest retains the last few runs' dirs for post-mortem, which is strictly better for debugging a git-hook failure). `tests/conftest.py:87-92` is the derived-scratch pattern to copy for a `git_repo` fixture:
 ```python
@@ -473,7 +482,19 @@ D-04 fixes the phrase "FROZEN — history only; source of truth is `.planning/`"
 
 ### `CLAUDE.md` (modified) and `.planning/config.json` (modified)
 
-`CLAUDE.md` becomes exactly `@AGENTS.md`. VALIDATION.md:62 asserts `test "$(cat CLAUDE.md)" = '@AGENTS.md'` — `$(…)` strips trailing newlines, so a single trailing `\n` is fine, but **no comment line, no H1, and no blank-line-before** may be added; the file is one line of nine characters.
+`CLAUDE.md` becomes exactly `@AGENTS.md` plus a single trailing newline: **no comment line, no H1, no blank line before, no extra blank lines after.**
+
+> **Corrected 2026-09-23 after the cross-AI review (`56f9df1`).** This paragraph previously
+> prescribed `test "$(cat CLAUDE.md)" = '@AGENTS.md'` as the proof and called the file "one line of
+> nine characters". Both were wrong:
+> - **The test does not enforce one line.** `$(…)` strips *every* trailing newline, so
+>   `printf '@AGENTS.md\n\n\n'` — a three-line file — passes it. Execution confirmed this. The
+>   `max_lines: 1` artifact constraint was therefore ungated. The gate is now
+>   `printf '@AGENTS.md\n' | cmp -s - CLAUDE.md`, a byte-for-byte comparison that accepts exactly one
+>   trailing newline (`01-04-PLAN.md` task 3).
+> - **`@AGENTS.md` is ten characters, not nine** (`printf '@AGENTS.md' | wc -c` → 10). Every
+>   character-count claim has been removed from the plans rather than corrected, because `cmp` already
+>   asserts the exact bytes and a hand-maintained count is one more thing to get wrong.
 
 `.planning/config.json` — current value at **line 69** (not line 62 as RESEARCH.md states):
 ```json
@@ -520,7 +541,7 @@ The `KITTI_*` prefix is the repo's env-var namespace (`KITTI_FORCE`, `KITTI_INTE
 
 ### Integration-test gate
 **Source:** `tests/conftest.py:18, 44-53`
-**Apply to:** `tests/integration/test_git_hooks.py`
+**Apply to:** `tests/unit/test_git_hooks.py`
 Path-based; nothing to add in the test file. But every verify command for it must export `KITTI_INTEGRATION=1` or the test silently skips (green-but-empty). See the flagged decision above.
 
 ### subprocess invocation + assertion
@@ -546,7 +567,7 @@ H1 on line 1, blank line, then an orienting paragraph (provenance date for `docs
 |------|------|-----------|--------|
 | `CLAUDE.md` (as reduced 1-line stub) | config shim | — | Nothing in the repo is a single-line import file; the form is dictated by Claude Code's `@path` syntax, not by a local pattern. `01-RESEARCH.md:307-311` is the reference. |
 | `tools/hooks/*` — the *domain logic* (pre-push stdin protocol, `merge-base --is-ancestor`, zeroed-prev-HEAD detection, `codegraph` invocation) | middleware | event-driven | No git hook, and no `codegraph` call, exists anywhere in this repo (`tools/` has exactly two files; neither touches git). The **style** comes from `tools/*.sh` as mapped above; the **logic** must come from `01-RESEARCH.md` Patterns 1–3 (lines 162-232), all of which were live-verified. |
-| `tests/integration/test_git_hooks.py` — the git-sandbox mechanics | test | file-I/O | No existing test creates a git repo, and `grep -rn TemporaryDirectory tests/` → 0 hits. The harness *shape* comes from `test_h21_doctor_remote_control.py`; the git command sequences come from `01-RESEARCH.md`'s reproduced sandbox transcripts (Patterns 1-3). |
+| `tests/unit/test_git_hooks.py` — the git-sandbox mechanics | test | file-I/O | No existing test creates a git repo, and `grep -rn TemporaryDirectory tests/` → 0 hits. The harness *shape* comes from `test_h21_doctor_remote_control.py`; the git command sequences come from `01-RESEARCH.md`'s reproduced sandbox transcripts (Patterns 1-3). |
 
 ---
 
