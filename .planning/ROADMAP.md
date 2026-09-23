@@ -273,7 +273,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Governance & Freeze | 0/5 | Planned | - |
+| 1. Governance & Freeze | 5/5 | Complete (merge deferred) | 2026-09-23 |
 | 2. Defect Remediation | 0/TBD | Not started | - |
 | 3. Keybinding Research & Oracle | 0/TBD | Not started | - |
 | 4. Keybinding Harmonization | 0/TBD | Not started | - |

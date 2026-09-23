@@ -55,7 +55,7 @@
     "cross_ai_execution": true,
     "cross_ai_command": "opencode run --auto --model router-env/my-coding",
     "live_dom_uat": false,
-    "cross_ai_timeout": 3600
+    "cross_ai_timeout": 7200
   },
   "ship": {
     "pr_body_sections": []
