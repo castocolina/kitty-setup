@@ -33,7 +33,7 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       process references are retired (the hypothesis playbook `docs/agent-iteration.md` stays).
 - [ ] **R0.4**: Git policy written into `CLAUDE.md` (replacing "No auto-commit"), reworded
       2026-09-22 per phase-1 discussion D-06: each phase runs in its own git worktree on branch
-      `gsd/phase-{phase}-{slug}`; agents commit per task, and at phase end — once `make doctor`
+      `gsd/phase-{phase}-{slug}`; agents commit per plan (see R0.10), and at phase end — once `make doctor`
       and `make test` are green — merge into `master` and push. Agents MUST NOT force-push or
       amend pushed commits. A pre-push hook under `tools/hooks/`, wired via `core.hooksPath`,
       enforces this structurally rather than by acknowledgment (D-07/D-08).
@@ -56,6 +56,13 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       `AGENTS.md` (validated with `agent-md-refactor`), project information for humans lives in
       `README.md` (validated with `crafting-effective-readmes`), and stack/tooling conventions stay
       in `.claude/conventions.md`. A rule belongs in exactly one file and is moved, never copied.
+- [ ] **R0.10**: A commit-granularity rule is written into `AGENTS.md` (added 2026-09-22 at the
+      user's request): **one commit per plan**, not one per task. An executor squashes a plan's
+      work into a single logical commit whose message names the plan and the requirements it
+      satisfies. A plan is split into more than one commit only when the changes are genuinely
+      independent (e.g. an unrelated drive-by fix), and the reason is stated in the second
+      commit's message. This supersedes "agents commit per task" in R0.4 — R0.4 keeps the worktree,
+      merge, push and no-force-push half of the policy.
 
 ### R1 — Defect remediation
 
@@ -137,14 +144,40 @@ Each defect is a requirement with a regression test.
 
 - [ ] **R3.1**: Foundation and scenes are installable/uninstallable independently
       (`my-kitty install/uninstall --component foundation|scenes|all`, default `all`);
-      `install --no-config` does not seed scenes unless the scenes component is selected.
-- [ ] **R3.2**: Scenes keep working after a foundation uninstall only if `remote-control.conf` is
-      owned by scenes, or scenes fail with an actionable error — decided by experiment.
-- [ ] **R3.3**: Cross-imports removed (`doctor.py`→`scenes._client`,
-      `installer.py`→`scenes.recipe`, `scenes/_client.py`→`config_updater`/`installer`) via a
-      shared neutral module; an import-boundary check is added as a pre-commit / `make test` gate.
-- [ ] **R3.4**: Doctor enforces a minimum supported kitty version (a constant; FAIL below it with
-      an upgrade hint).
+      `install --no-config` does not seed scenes unless the scenes component is selected (today
+      `seed_scenes()` runs unconditionally at `installer.py:229` — a live bug). Mechanism decided
+      2026-09-22 (phase-5 discussion D-01): the payload splits into `foundation/` and `scenes/`
+      **subdirectories**, each with its own entry file, included from the payload-root
+      `kitty-setup.conf`. `--component` and the existing `--keep-*` flags are **orthogonal** axes,
+      and a `--keep-*` that cannot apply to the selected component is a no-op the output states
+      explicitly (D-06). A scenes uninstall **never deletes user data**: only the payload subdir and
+      seeded examples still byte-identical to what we shipped are removed (D-07).
+- [ ] **R3.2**: Scenes keep working after a foundation uninstall, because `remote-control.conf` and
+      `dynamic-opacity.conf` are **scenes-owned** (decided 2026-09-22, phase-5 discussion D-02 —
+      both files' own headers already declare the dependency, so no new error path is needed). The
+      honest converse: a foundation-only install has no remote control, and `doctor`'s
+      remote-control check must report that as a SKIP naming the scenes component rather than
+      telling the user to run `make install`.
+- [ ] **R3.3**: Cross-imports removed (`doctor.py:18`→`scenes._client`,
+      `installer.py:98`→`scenes.recipe`, `scenes/_client.py:18`→`config_updater`/`installer`) via
+      shared neutral module(s) — recommended split: path resolution and socket discovery, separated
+      by reason to change (D-12). Enforcement decided 2026-09-22 (phase-5 discussion D-11): a
+      **pytest test walking the AST of `src/`**, which catches deferred in-function imports (the
+      form `installer.py:98` uses to dodge a load-time cycle) and also asserts the neutral module
+      imports neither side. It gates both `make test` and the `tools/hooks/` pre-commit hook. Ruff
+      cannot express the rule — its `banned-api` is global and `per-file-ignores` filters by rule
+      code, not by banned name.
+- [ ] **R3.4**: Doctor enforces a minimum supported kitty version — the constant is **0.49**
+      (decided 2026-09-22, phase-5 discussion D-09: the only version the oracle, chord matrix and
+      payload were verified against; 0.46 is provably wrong on action text since `scroll_line_*`
+      became `smooth` in ≥0.47). FAIL below it with an upgrade hint, PASS at or above it, and FAIL
+      explicitly when the version string cannot be parsed. Detection parses the `kitty --version`
+      string `_check_kitty_binary` already captures rather than adding a `+runpy` round trip (D-10).
+- [ ] **R3.5**: The payload walk is **recursive** (`binding_introspection.py:183` `glob`→`rglob`),
+      so `my-kitty keys` still attributes every payload binding to its own file after the R3.1 move
+      (added 2026-09-22, phase-5 discussion D-03). Non-negotiably in the same plan as the move: the
+      non-recursive glob would silently report 0 ours / 101 defaults and 0 conflicts — vacuously
+      true, and exactly the R2.8 class. The Phase 3 oracle must be green after it.
 
 ### R4 — Pane color cycle
 
@@ -299,6 +332,7 @@ Every v1 requirement maps to exactly one phase.
 | R0.7 | Phase 1 | Pending |
 | R0.8 | Phase 1 | Pending |
 | R0.9 | Phase 1 | Pending |
+| R0.10 | Phase 1 | Pending |
 | R1.1 | Phase 2 | Pending |
 | R1.2 | Phase 2 | Pending |
 | R1.3 | Phase 2 | Pending |
@@ -319,6 +353,7 @@ Every v1 requirement maps to exactly one phase.
 | R3.2 | Phase 5 | Pending |
 | R3.3 | Phase 5 | Pending |
 | R3.4 | Phase 5 | Pending |
+| R3.5 | Phase 5 | Pending |
 | R4.1 | Phase 6 | Pending |
 | R4.2 | Phase 6 | Pending |
 | R4.3 | Phase 6 | Pending |

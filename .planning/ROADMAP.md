@@ -62,11 +62,11 @@ discuss-phase.
 
 **Goal**: An agent opening this repo finds exactly one authoritative source of intent and one set of non-negotiable process rules, so an autonomous run never has to re-litigate how work happens.
 **Depends on**: Nothing (first phase)
-**Requirements**: R0.1, R0.2, R0.3, R0.4, R0.5, R0.6, R0.7, R0.8, R0.9
+**Requirements**: R0.1, R0.2, R0.3, R0.4, R0.5, R0.6, R0.7, R0.8, R0.9, R0.10
 **Success Criteria** (what must be TRUE):
 
   1. `CLAUDE.md` states, as a non-negotiable rule, that research and a recorded real-kitty-session experiment precede any decision to remove or replace a config line, chord, or code path.
-  2. `CLAUDE.md` states the git policy explicitly: commit per task, push feature branch `gsd/<phase>`, never merge to `master`, force-push, amend pushed commits, or push `master`.
+  2. The canonical instruction file states the git policy explicitly: each phase runs in its own worktree on `gsd/phase-{phase}-{slug}`, work lands as **one commit per plan** (split only when changes are genuinely independent, with the reason in the message), and the phase merges into `master` and pushes once `make doctor` and `make test` are green; force-pushing and amending pushed commits are forbidden, enforced by the pre-push hook rather than by acknowledgment.
   3. `CLAUDE.md`'s authoritative-sources list points at `.planning/` with no OpenSpec process references remaining, while still pointing at `docs/agent-iteration.md`.
   4. `phase1-curated-bindings-revert-defaults` is retired via `openspec archive --skip-specs` (main specs untouched — the delta is never fixed), and the tree now lives at `.planning/legacy/openspec/` with no `openspec/` directory at the repo root.
   5. FROZEN banners ("FROZEN — history only; source of truth is `.planning/`") open `.planning/legacy/openspec/README.md`, `docs/requirements.md`, and `docs/propossal_roadmap.md`.
@@ -75,6 +75,7 @@ discuss-phase.
   8. The canonical instruction file states that every new GSD plan carries `cross_ai: true` in its frontmatter.
   9. `AGENTS.md` is the canonical instruction file holding every rule, `CLAUDE.md` is the single line `@AGENTS.md`, and `.planning/config.json`'s `claude_md_path` points at the canonical file — so Claude, codex, and opencode all read the same rules.
   10. `AGENTS.md` states the placement rule: rules in `AGENTS.md` (validated with `agent-md-refactor`), project information in `README.md` (validated with `crafting-effective-readmes`), stack conventions in `.claude/conventions.md`; each rule in exactly one file.
+  11. `AGENTS.md` states the commit-granularity rule (one commit per plan, squashed logically; a split is justified in the message), and it appears in exactly one file — R0.4's text points at it rather than repeating it.
 
 **Plans**: TBD
 
@@ -129,14 +130,15 @@ discuss-phase.
 ### Phase 5: Component Separation & Version Floor
 
 **Goal**: Foundation and scenes are genuinely two components rather than one tangled install, and doctor stops implying an unsupported kitty is fine.
-**Depends on**: Phase 4 (PRD execution order; technically requires only Phase 2's installer/doctor fixes)
-**Requirements**: R3.1, R3.2, R3.3, R3.4
+**Depends on**: Phase 4 — a real dependency as of the phase-5 discussion (D-01): Phase 4 creates the per-OS variant files at the payload root and generalises the selector to find them there; this phase moves them under `foundation/` and re-points it.
+**Requirements**: R3.1, R3.2, R3.3, R3.4, R3.5
 **Success Criteria** (what must be TRUE):
 
   1. `my-kitty install` and `my-kitty uninstall` accept `--component foundation|scenes|all` (default `all`) and each component installs and uninstalls without disturbing the other; `install --no-config` seeds no scenes unless the scenes component is selected.
-  2. After a foundation-only uninstall, scenes behave exactly as the recorded experiment decided — either still working because `remote-control.conf` is owned by scenes, or failing with an actionable error that names what to reinstall.
-  3. The `doctor.py`→`scenes._client`, `installer.py`→`scenes.recipe`, and `scenes/_client.py`→`config_updater`/`installer` cross-imports are gone, replaced by a shared neutral module, and an import-boundary check fails `make test` (and pre-commit) if any of them returns.
-  4. `my-kitty doctor` FAILs with an upgrade hint when kitty is below the declared minimum-version constant, and PASSes at or above it.
+  2. After a foundation-only uninstall, scenes still work, because `remote-control.conf` and `dynamic-opacity.conf` are scenes-owned (decided in the phase-5 discussion, D-02). Correspondingly, a foundation-only install has no remote control, and `doctor` reports that as a SKIP naming the scenes component rather than telling the user to run `make install`.
+  3. The `doctor.py`→`scenes._client`, `installer.py`→`scenes.recipe`, and `scenes/_client.py`→`config_updater`/`installer` cross-imports are gone, replaced by shared neutral module(s), and a pytest AST boundary check fails `make test` (and the `tools/hooks/` pre-commit hook) if any of them returns — including in deferred, in-function form, which is how `installer.py:98` currently evades notice.
+  4. `my-kitty doctor` FAILs with an upgrade hint when kitty is below the declared minimum-version constant (**0.49**, per D-09 — the only version verified), PASSes at or above it, and FAILs explicitly rather than silently passing when the version string cannot be parsed.
+  5. `my-kitty keys` still attributes every payload binding to its own file after the move — the payload walk is recursive — and the Phase 3 oracle is green. (Guards D-03: a non-recursive glob would report 0 ours / 101 defaults and 0 conflicts, vacuously.)
 
 **Plans**: TBD
 
