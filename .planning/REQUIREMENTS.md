@@ -184,16 +184,36 @@ Each defect is a requirement with a regression test.
 - [ ] **R4.1**: `ctrl+shift+alt+c` (both OSes) rotates the **focused pane's background AND its tab
       accent** through the palette, using exactly the existing behaviours of
       `my-kitty window background <color>` and `my-kitty tab accent <color>` (no color
-      transformation).
+      transformation). The chord **always sets both**, last-write-wins when a tab holds several
+      panes (decided 2026-09-22, phase-6 discussion D-04): `set-tab-color` is tab-scoped in kitty,
+      so some pane must win, and a solo-tab guard would make one chord behave two ways depending on
+      pane count.
 - [ ] **R4.2**: Default palette = existing color names, in order: `blue, green, red, yellow,
-      purple, teal, orange, gray, none` (`none` resets both). Stored in an editable user file
-      (seeded copy-if-absent next to scenes); names validated with `normalize_color`.
+      purple, teal, orange, gray, none` (`none` resets both). Stored in an editable user file —
+      decided 2026-09-22 (phase-6 D-05): **TOML** at `$XDG_CONFIG_HOME/kitty-setup/palette.toml`,
+      beside `scenes/` and seeded copy-if-absent via `seed_scenes()`'s existing contract, so a
+      user-edited palette is never overwritten. TOML was chosen for alignment with R5.1's preset
+      TOML — one format, one loader. Entries validate through `normalize_color` **at load time**,
+      with an error naming file/entry/line; a missing or empty palette falls back to the built-in
+      default order, because the chord has nowhere to show a parse error (D-06). All nine entries
+      were verified to resolve already.
 - [ ] **R4.3**: Stateless — the next color is derived from the pane's current background
-      (`kitten @ get-colors`); an unknown current color → first entry.
-- [ ] **R4.4**: New CLI `my-kitty window cycle-color [--reverse] [--match] [--to]`; the chord
-      invokes it with the focused window id (mechanism chosen by experiment:
-      `launch --type=background` with `@active-kitty-window-id` vs `remote_control_script`).
-      Latency target ≤300 ms per press on Linux.
+      (`kitten @ get-colors --match`), and any background not matching a palette entry advances to
+      the **first** entry, so a reset pane and a never-cycled pane behave identically (phase-6 D-01).
+      Additionally (D-02): if the user's *configured* default background equals a palette entry's
+      hex, that entry is unreachable and the cycle would silently skip it — detect that collision and
+      surface it rather than misbehaving quietly. Matching compares `normalize_color`-normalised
+      values, and the exact `get-colors` output format is pinned by experiment before the comparison
+      is written (D-03).
+- [ ] **R4.4**: New CLI `my-kitty window cycle-color [--reverse] [--match] [--to]`; the chord is a
+      **`launch --type=background`** map line invoking that CLI (decided 2026-09-22, phase-6 D-07 —
+      the only option where chord and shell share one code path, which is what makes the criterion
+      testable; `remote_control_script` was rejected as a second implementation inside kitty's
+      runtime). Open item for the experiment (D-08): whether `KITTY_WINDOW_ID` and socket resolution
+      reach a `--type=background` launch, with `--match id:@active-kitty-window-id` as the fallback.
+      The chord's `map` line lands under the payload's `scenes/` subdir (Phase 5 D-01/D-02), since it
+      depends on remote control. Latency target ≤300 ms per press on Linux — measured non-binding
+      (`kitten` spawns in ~10 ms, `my-kitty` starts in ~45 ms), so it is asserted, not designed around.
 
 ### R5 — Presets + chord→scene
 

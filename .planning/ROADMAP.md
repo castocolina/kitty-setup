@@ -149,10 +149,12 @@ discuss-phase.
 **Requirements**: R4.1, R4.2, R4.3, R4.4
 **Success Criteria** (what must be TRUE):
 
-  1. Pressing `ctrl+shift+alt+c` rotates the focused pane's background **and** its tab accent together to the next palette entry using exactly the existing `my-kitty window background <color>` and `my-kitty tab accent <color>` behaviours with no color transformation, and `none` resets both.
-  2. The palette lives in an editable user file seeded copy-if-absent next to scenes, defaulting to `blue, green, red, yellow, purple, teal, orange, gray, none` in that order, with entries validated through `normalize_color`.
-  3. The next color is derived from the pane's current background via `kitten @ get-colors` with no persisted state, and a pane whose current background is not a palette entry jumps to the first entry.
-  4. `my-kitty window cycle-color [--reverse] [--match] [--to]` works from the shell, the chord invokes it against the focused window id, and an integration test measures ≤300 ms per press on Linux — including with multiple kitty instances running (socket disambiguated).
+  1. Pressing `ctrl+shift+alt+c` rotates the focused pane's background **and** its tab accent together to the next palette entry using exactly the existing `my-kitty window background <color>` and `my-kitty tab accent <color>` behaviours with no color transformation, and `none` resets both. Both are always set (last-write-wins in a multi-pane tab, D-04), and the two-call update is fail-soft like `launcher._apply_bg`.
+  2. The palette lives at `$XDG_CONFIG_HOME/kitty-setup/palette.toml` (D-05), seeded copy-if-absent next to scenes, defaulting to `blue, green, red, yellow, purple, teal, orange, gray, none` in that order, with entries validated through `normalize_color` **at load time** and a missing or empty file falling back to the built-in order.
+  3. The next color is derived from the pane's current background via `kitten @ get-colors --match` with no persisted state, comparing `normalize_color`-normalised values, and a pane whose current background is not a palette entry jumps to the first entry. A configured default background that collides with a palette entry's hex is detected and surfaced rather than silently skipped (D-02).
+  4. `my-kitty window cycle-color [--reverse] [--match] [--to]` works from the shell, and the chord invokes **that same CLI** via a `launch --type=background` map line under the payload's `scenes/` subdir (D-07) — so chord and shell are provably one code path. An integration test measures ≤300 ms per press on Linux, including with multiple kitty instances running (socket disambiguated).
+  5. The recorded experiments exist: `get-colors`' exact output format for a set pane and a just-reset pane (D-03), and whether `KITTY_WINDOW_ID` plus socket resolution reach a `--type=background` launch (D-08). Neither is assumed in code before its experiment is recorded.
+  6. `my-kitty keys` lists the new chord, `doctor`'s `<N> ours` count matches, and the Phase 3 oracle is green.
 
 **Plans**: TBD
 
