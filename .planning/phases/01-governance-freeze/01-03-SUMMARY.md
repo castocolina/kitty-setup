@@ -376,3 +376,44 @@ in this plan, and `pre-push` is live.
   `FROZEN — history only` phrase, each with its H1 on line 1 and banner on line 3.
 - **R0.2 / RESEARCH Open Question 2** — closed by recorded experiment: `codegraph sync -q` follows
   the bulk rename.
+
+---
+
+## Orchestrator addendum: why the archive was already committed, and whose fault that is
+
+The executor's deviation 1 reports that `openspec archive` had nothing to do because the change was
+already archived on the phase branch. That is correct, and the cause is an orchestrator error, not a
+pre-existing repository condition.
+
+**Root cause, traced.** `git log --diff-filter=A` puts the first appearance of
+`openspec/changes/archive/2026-09-23-phase1-curated-bindings-revert-defaults/` in commit **`f606a8a`**
+("docs(01): cross-AI review round 4"). That commit contains **8 `openspec/` files** as pure renames
+(0 insertions, 0 deletions) alongside its 3 intended `.planning/` files. The cycle-4 cross-AI reviewer
+ran `openspec archive` against the primary working tree while grounding its review in execution, and
+left the result staged. My commit command was `git add -A .planning` followed by a bare `git commit` —
+and `git commit` commits the **whole index**, not only what the preceding `git add` touched. So eight
+files I never inspected were swept into a commit whose message describes only review findings.
+
+**Blast radius, measured.** Exactly one commit is affected: auditing every orchestrator commit in
+`5452f54..HEAD` for paths outside `.planning/` returns `f606a8a` and nothing else. The end state is
+nevertheless correct, and verified independently after the merge rather than assumed:
+
+| Check | Result |
+|---|---|
+| Moved-file count | 145 before → 145 after |
+| Blob-hash set (excluding the new README) | `bfed9c99…` both sides — every moved blob byte-identical |
+| Rename detection | 145 × `R100`, 1 × `A` (the new `README.md`), no other status |
+| `specs/` tree checksum | `f18528c5…` before and after — `--skip-specs` semantics held |
+| FROZEN banners | line 3 in all three files, and a real CommonMark parser confirms the `Date:` paragraph is **not** absorbed into the blockquote |
+| Suite | 311 passed, 70 skipped |
+
+**What was lost.** The plan's step 2 gate — `openspec archive … --skip-specs -y` exiting 0 and printing
+"Skipping spec updates" — could not be observed, because the operation had already happened. The
+`--skip-specs` *effect* is proven by the unchanged `specs/` checksum, which is the property the gate
+exists to establish, but the transcript itself is gone. That is a real loss of evidence caused by the
+contamination.
+
+**Process rule adopted.** Stage with an explicit pathspec **and** commit with one
+(`git commit -- <pathspec>`), or check `git diff --cached --name-only` before committing. A review agent
+told "do not edit or commit anything" can still leave the index dirty, and a bare `git commit` will
+carry it.
