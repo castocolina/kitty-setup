@@ -2,6 +2,22 @@
 phase: 1
 reviewers: [opencode]
 reviewed_at: 2026-09-23T00:00:00Z
+rounds:
+  - round: 1
+    reviewed_at: 2026-09-23T00:00:00Z
+    plans_at: 31ce2f9
+    lane: opencode
+    lane_status: completed
+    verdict: REVISE
+    verdicts: { verified: 103, missing: 5, ambiguous: 1, uncheckable: 8 }
+  - round: 2
+    reviewed_at: 2026-09-23T08:30:00Z
+    plans_at: d75bb1a
+    lane: opencode
+    lane_status: failed
+    lane_failure: "router-env resource pressure — 7 attempts over ~34 min, no reviewer output; all round-2 findings are first-party orchestrator execution"
+    verdict: REVISE
+    verdicts: { verified: 26, missing: 6, ambiguous: 1, uncheckable: 8 }
 plans_reviewed:
   - .planning/phases/01-governance-freeze/01-01-PLAN.md
   - .planning/phases/01-governance-freeze/01-02-PLAN.md
@@ -13,9 +29,9 @@ models:
 model_sources:
   opencode: "pinned"
 source_grounding:
-  authority: "grep"
-  performed_by: "opencode + orchestrator"
-  verdicts: { verified: 103, missing: 5, ambiguous: 1, uncheckable: 8 }
+  authority: "grep + execution"
+  performed_by: "round 1: opencode + orchestrator; round 2: orchestrator only (lane failed)"
+  verdicts: { verified: 129, missing: 11, ambiguous: 2, uncheckable: 8 }
 ---
 
 # Cross-AI Plan Review — Phase 1
@@ -845,6 +861,541 @@ tree), `.planning/legacy/openspec/README.md`, `AGENTS.md`.
 
 Nothing was passed over silently: every symbol, path, line range, CLI flag and command the five
 plans cite outside their own `<artifacts_this_phase_produces>` tables appears above with a verdict.
+
+
+---
+
+# Review Round 2 — 2026-09-23
+
+Plans revised at `d75bb1a` ("docs(01): revise plans from review round 1 — 64 findings
+dispositioned"). Round 1's architectural verdict was **accepted**; this round is deliberately
+narrow. It asks four questions and nothing else:
+
+1. did the round-1 blockers actually get **fixed**, or only described as fixed;
+2. did any fix introduce a **new** defect;
+3. are the three orchestrator-side corrections sound;
+4. are the planner's four **rejections** defensible.
+
+Everything settled in round 1 is out of scope here. Round 1's "Verification coverage" section
+already carries 103 verified items; this round appends only what is **new or changed** since.
+
+**Counting note.** A round-1 finding that now appears in a task, action, acceptance criterion,
+`<verify>` block, `must_haves`, threat model or artifact list is RESOLVED. A round-1 finding with an
+explicit rationale in a plan's `## Review Dispositions Ledger` is RESOLVED for counting purposes
+**even where this round disagrees with the rationale** — the disagreement is stated in prose and not
+counted. Only genuinely new defects, claimed-fixed-but-not items, and findings absent from every
+ledger are counted.
+
+## Lane Failure — round 2
+
+> **The `opencode` lane did not run in round 2.** No external reviewer output was obtained, and
+> nothing in the round-2 sections below is attributed to one. Every round-2 finding is first-party
+> orchestrator execution on this host, clearly marked as such.
+
+Attempts, in order, all against `router-env/my-plan-review` at
+`/home/bazzite/.opencode/bin/opencode` (v1.18.32 — note the installed binary is one patch ahead of
+the v1.18.31 recorded in round 1):
+
+| # | time | call | result |
+|---|---|---|---|
+| 1 | 07:55 | one-line probe, `--model router-env/my-plan-review` | `Error: Service temporarily unavailable due to resource pressure. Retry shortly.` |
+| 2 | 07:56 | one-line probe, `--model router-env/my-planning` (control) | same error — so the failure is **router-wide**, not specific to the pinned review model |
+| 3 | 07:56 | full round-2 prompt (7.7 KB — deliberately one-eighth of round 1's ~61 KB, with a hard read budget of 6 tool calls and no `.planning/**` reads) | hung; killed at the 600 s timeout with **zero bytes on both stdout and stderr** |
+| 4 | 08:07 | same prompt, retry | hung; killed at 600 s; zero bytes |
+| 5 | 08:12 | one-line probe again | `Service temporarily unavailable due to resource pressure` |
+| 6 | 08:19 | same prompt, third and final retry | still hung at 08:24 with zero bytes; cancelled |
+| 7 | 08:23 | one-line probe, final | `Service temporarily unavailable due to resource pressure` |
+
+Diagnosis, following round 1's own playbook for distinguishing the two failure modes:
+
+- This is **not** the `Chat admission capacity is temporarily unavailable` size cap that cost round 1
+  most of its attempts. The prompt was sized specifically to stay well under it (7.7 KB versus the
+  ~9 KB per-plan prompts the provider admitted in round 1), and the error text never appeared.
+- It is **not** specific to `router-env/my-plan-review`. A one-line probe to
+  `router-env/my-planning` returned the identical `resource pressure` error, so the router is not
+  admitting requests on any model.
+- The invocation shape was correct and is not the cause: `opencode run --model … "<prompt>"`
+  invoked directly, never through `review-lane invoke`, so round 1's `stubbed: true` failure mode
+  (tool calls not auto-approved) could not recur.
+- The two long attempts produced **zero bytes on stderr as well as stdout**, which is a different
+  signature from the fast `resource pressure` rejection: the CLI accepted the request and then
+  waited on a provider that never streamed a first token.
+
+Round 1's operational budget was explicitly set at "~35 minutes or ~12 attempts, then stop and
+report truthfully rather than fabricate". Round 2 spent ~34 minutes and 7 attempts and stopped.
+**No cross-AI review was performed in round 2.** A fabricated clean bill of health would have been
+worse than none, so none is recorded.
+
+### What this costs, stated plainly
+
+Round 2's four questions split unevenly across what execution can and cannot answer:
+
+- **Answerable, and answered, without a reviewer** — "did the blockers actually get fixed" and
+  "did any fix introduce a new defect". Both are empirical: the corrected `git mv` sequence was
+  reproduced in a throwaway clone, the `R100` gate was tested with a negative control, `make test`
+  was run, every gate's command form was executed. Six defects were found this way, three of them
+  blocking. This is the part of round 2 that mattered most, and losing the lane did not cost it.
+- **Answerable without a reviewer** — the three orchestrator-side corrections. All three were
+  verified against the files on disk.
+- **Degraded** — "are the four rejections defensible" and the two overturnable decisions. These are
+  judgement calls, and the value of putting them to the model that *raised* the original findings is
+  that it can say whether its point was understood or sidestepped. What is recorded below is the
+  orchestrator's judgement instead. It is a considered view, but it is the same party that wrote the
+  round-1 questions grading the answers, and it should be read with that in mind.
+- **Lost** — an independent second look for defects this orchestrator did not think to test for.
+  Round 1's own coverage note already named a single lane as "the largest remaining coverage
+  limitation"; in round 2 that limitation is total.
+
+If a third round is run, the lane should be retried first, and only the two judgement sections
+(rejections, overturnable decisions) need re-asking — the empirical sections are settled by
+execution and do not need a model's opinion.
+
+## Orchestrator first-party execution — round 2
+
+Every item below was executed on this host (git 2.55.0, GNU coreutils, Linux), most of it in a
+throwaway `git clone --no-hardlinks` of the phase branch so nothing touched the working tree.
+
+### Confirmed fixed — by execution, not by reading the ledger
+
+**`01-03` task 1's corrected sequence runs end to end.** In the throwaway clone, on the phase
+branch (301 tracked files):
+
+| step | result |
+|---|---|
+| `git ls-files openspec \| wc -l` | `145` |
+| specs checksum before archive | `a5668d625cab0413…` |
+| `openspec archive phase1-curated-bindings-revert-defaults --skip-specs -y` | exit 0; printed `Skipping spec updates (--skip-specs flag provided.)` and `archived as '2026-09-23-phase1-…'` |
+| specs checksum after archive | `a5668d625cab0413…` — **byte-identical**, so `--skip-specs` behaves as the plan states |
+| `git status --porcelain openspec` before staging | 8 ` D` rows + 1 `??` archive directory — exactly what the plan's step 4 predicts |
+| `git add -A openspec` | exit 0; `git diff --cached --stat HEAD` → `8 files changed, 0 insertions(+), 0 deletions(-)`, all 8 rows `R` |
+| `mkdir -p .planning/legacy` | exit 0 (and the directory genuinely does not exist today) |
+| `git mv openspec .planning/legacy/openspec` | **exit 0** — the round-1 CRITICAL (`fatal: bad source`) is fixed |
+| `git ls-files .planning/legacy/openspec \| wc -l` | `145` — preserved |
+| whole-repo `git ls-files \| wc -l` | `301` → `301` — preserved |
+| `test ! -e openspec` | pass |
+| `test -f .planning/legacy/openspec/config.yaml && test -d …/specs` | pass |
+| the `find … -type d -name '*-phase1-…'` count gate | pass (`1`) |
+| `test ! -d …/changes/phase1-curated-bindings-revert-defaults` | pass |
+
+**The R100 rename proof gate works, and it discriminates.** The gate as written —
+`STATUS="$(git diff --cached --name-status HEAD -- openspec .planning/legacy/openspec)" && test -n
+"$STATUS" && ! printf '%s\n' "$STATUS" | rg -qv '^R100'` — returned `145 R100` rows and passed.
+Negative control: appending one byte to `.planning/legacy/openspec/config.yaml` and re-staging
+turned the tally into `1 R098 / 144 R100` and the gate **correctly failed**. The round-1 note that
+both sides of the move must be in the pathspec is honoured, and the deleted
+`git diff --name-only HEAD -- .planning/legacy/openspec/specs` form is genuinely gone.
+
+**Per-task RED/GREEN commits are gone.** No task action in any of the five plans contains a `git
+commit` instruction. The only surviving `git commit` occurrences are inside test bodies
+(`01-01-PLAN.md:198`, `01-02-PLAN.md:252-255`), a `must_haves.prohibition` about timing labels
+(`01-02-PLAN.md:66`), and ledger rows. Each plan carries the message-scoped gate
+`BASE="$(git merge-base master HEAD)" && test "$(git rev-list --count --grep='01-0N' "$BASE"..HEAD)"
+= '1'` (`01-01:558`, `01-02:396`, `01-03:394`, `01-04:494`, `01-05:505`). That gate is **satisfiable**:
+the phase branch already carries planning commits that do not name a plan id, and message scoping
+excludes them; `git rev-list --count` cannot have its status swallowed by a pipeline stage; and the
+count carries no `wc` padding. Round-1 HIGH blocker 1: **fixed**.
+
+**`01-01` Step 0 precedes the first hook byte.** Task 1 of plan `01-01` (wave 1) opens with
+"**Step 0 — widen the shell allow-list in all four places, before writing any shell file**" and its
+`<files>` list is `CLAUDE.md, README.md, .planning/PROJECT.md, tools/setup.sh, tools/hooks/pre-push,
+…`. All four statements of the old allow-list were confirmed present on disk:
+`CLAUDE.md` `## Stack`; `README.md:165-166` ("Bash exists only inside `tools/setup.sh` and
+`tools/uninstall.sh`"); `.planning/PROJECT.md:99-103`; and `tools/setup.sh:2-3`, which reads
+verbatim "**The only bash logic in this repo** (paired with tools/uninstall.sh)". Nothing in wave 1
+cites a rule that does not exist at that point. Round-1 HIGH blocker 3: **fixed**.
+
+**`01-05` neither merges nor pushes to `master`.** `rg 'git push|git merge'` over `01-05-PLAN.md`
+returns only `git merge-base` uses. The merge/push is reassigned to Universal Phase Gate step 6
+(`01-05-PLAN.md:534`), a gate `test "$(git rev-parse --abbrev-ref HEAD)" != 'master'` was added, and
+the phase-scope diff now uses a **recorded literal** base SHA (`5452f54`) instead of a recomputed
+merge-base, so it does not go vacuous after the gate's merge. The round-1 CRITICAL
+"cannot record post-push output in its single commit" is **structurally gone** — there is no
+post-push step left inside the plan. Round-1 CRITICALs 3 and 4: **fixed**.
+
+**The absence idiom.** No `| wc -l | rg -x '0'` pipeline survives as a **gate** anywhere in the five
+plans. The only occurrences of that string are inside `<fails_when>` prose explaining what was
+replaced and why (`01-02:235,316`, `01-03:293`, `01-04:266`, `01-05:238`). The surviving `rg -c` uses
+are all of the shape `test "$(rg -c PAT file)" = 'N'` with N ≥ 1 — sound, because zero matches makes
+the substitution empty and the comparison fails, which is the intended direction. Round-1
+MEDIUM/LOW idiom findings: **fixed**.
+
+**The pytest gate *form* is correct.** `OUT="$(cmd 2>&1)" && printf '%s\n' "$OUT" | rg -q
+'(^|[^0-9])N passed'` behaves as claimed: the assignment's exit status **is** the command
+substitution's status, so a red run short-circuits before the grep; the `(^|[^0-9])` anchor rejects
+`118 passed` (verified — the character before `18` is a digit, and `^` cannot match mid-line); and
+`N-1 passed, 1 skipped` fails the grep. The **file-scoped counts are right**: `01-01-PLAN.md` names
+10 distinct `test_*` cases and gates `3` → `7` → `10`; `01-02-PLAN.md` adds 4 post-checkout and 4
+post-commit cases and gates `14` → `18` → `18`. 10 + 4 + 4 = 18. ✅
+
+**The widened `gsd/*` glob does not admit a new class.** `git branch --list 'gsd/*' --contains HEAD`
+executes correctly and is pattern-scoped. The widening is motivated by two facts verified on disk:
+`gsd/planning-bootstrap` exists as a local branch, and `.planning/config.json` sets
+`git.milestone_branch_template` to `gsd/{milestone}-{slug}` — neither matches the old `gsd/phase-*`.
+A commit authored directly on `master` is still contained in no `gsd/*` branch and is still
+rejected. The one weakening — someone may create `gsd/anything` pointing at a master-only commit to
+launder it — applied equally to `gsd/phase-*` and is already disclosed verbatim in the hook header's
+seven-item limits block and in `01-01-PLAN.md:582` ("a compliance guard for cooperating agents, not
+a security boundary"). **Not a new defect.**
+
+**`01-02`'s `timeout`-absent skip is reconciled, not glossed.** `01-02-PLAN.md:306` states the gate
+reads `17 passed, 1 skipped` **only** on a host without `timeout`, and `:312` states the gate fails
+on that skip on purpose so the executor records the deviation rather than letting a green gate hide
+it. `timeout` is present on this host, so 18 is the correct expectation here.
+
+**`01-04`'s uniqueness gate is sound.** `test "$(rg -l --glob '!.planning/**' -- 'one commit per
+plan' .)" = './AGENTS.md'` was executed against a decoy file: it returned exactly one path and
+nothing else outside `.planning/` carries the phrase today. The `--glob` is correctly placed after
+the `--` -consuming form that round 1 showed breaks. `jq` is present and
+`jq -r .claude_md_path .planning/config.json` returns `./CLAUDE.md`, so the repoint gate is real.
+
+### The three orchestrator-side corrections — all three verified
+
+| claim | verdict | evidence |
+|---|---|---|
+| (a) The ROADMAP Progress list **has** eleven rows including Phase 8.5 | **VERIFIED** | `rg -c '^\| [0-9]' .planning/ROADMAP.md` → `11`; the rows run `1. Governance & Freeze` … `8. Live-Doc Hygiene`, `8.5. Test-Suite Type & Lint Cleanup`, `9. Distribution & Release Channels`, `10. macOS E2E Over SSH`, and the Execution Order line at `:268` reads `… 8 → 8.5 → 9 → 10` |
+| (b) `test "$(rg -c '^### Phase [0-9]+(\.[0-9]+)?:' .planning/ROADMAP.md)" = '11'` returns 11 | **VERIFIED** | executed → `11`. The eleven detail headings are at `:70,108,124,141,157,172,188,202,215,232,247`; `:215` is `### Phase 8.5: Test-Suite Type & Lint Cleanup`, which the old `^### Phase [0-9]+:` pattern missed |
+| (c) R6.3 exists and its four Makefile targets are genuinely absent | **VERIFIED** | `REQUIREMENTS.md:253` — "**R6.3**: `.claude/conventions.md` and the `Makefile` agree on which targets exist"; `REQUIREMENTS.md:413` maps R6.3 → Phase 8 → Pending; `ROADMAP.md:206` lists `R6.1, R6.2, R6.3` under Phase 8. The Makefile's complete target set is `help install setup clean doctor test uninstall prune` — **no** `validate`, `format`, `test-unit` or `test-integration` — while `.claude/conventions.md:62,63,65,66,69` requires all four and says "Never commit code that fails `make validate`". The mismatch is real and unowned before R6.3 |
+
+### NEW defects introduced by the revisions
+
+These are the round-2 findings. All four of the first were reproduced by execution.
+
+#### N1 — HIGH — the `make test` gate hardcodes a count that can never occur
+
+`01-05-PLAN.md:489` (and its restatement at `:551`):
+
+```
+OUT="$(make test 2>&1)" && printf '%s\n' "$OUT" | rg -q '(^|[^0-9])18 passed'
+```
+
+Measured on this host, right now:
+
+```
+$ make test
+…
+======================= 293 passed, 70 skipped in 0.25s ========================
+```
+
+`make test` is `@uv run pytest tests/` (`Makefile:33-34`) — the **whole** tree. `18` is the case
+count of the single new file `tests/unit/test_git_hooks.py` (10 from plan 01-01 + 4 + 4 from plan
+01-02), which `01-05-PLAN.md:406` itself describes as "`tests/unit/test_git_hooks.py` collected and
+its **18** cases passing". The two were conflated when the gate was rewritten. As written the gate
+**cannot pass**, before or after the phase: the correct whole-suite figure after Phase 1 is
+`311 passed, 70 skipped`.
+
+The `<fails_when>` reasoning is also broken by the same conflation: "A skipped governance test shows
+as `17 passed, 1 skipped` and fails this gate". `make test` already reports **70** pre-existing
+skips (the `KITTI_INTEGRATION` gate at `tests/conftest.py:44-53`), so a whole-suite form can never
+be a zero-skip assertion, and one extra skip would read `310 passed, 71 skipped`.
+
+This is the round-1 "pytest exit status does not enforce a count" finding **claimed fixed but not
+fixed at the 01-05 layer** — the form was corrected, the subject was not.
+
+*Required change:* either scope the command to the file it is counting —
+`OUT="$(uv run pytest tests/unit/test_git_hooks.py -q 2>&1)" && printf '%s\n' "$OUT" | rg -q
+'(^|[^0-9])18 passed'`, matching `01-02-PLAN.md:388` — **and** keep a separate un-counted
+`make test` gate for the whole suite; or keep `make test` and assert `311 passed` while dropping the
+zero-skip claim. The first is preferable: it is the only form whose count the plan actually derives.
+
+#### N2 — HIGH — `01-03` task 1's own `<verify>` gate fails after a correct execution
+
+`01-03-PLAN.md`, task 1 `<verify>`: `test -z "$(git status --porcelain openspec)"`, with a
+`<fails_when>` that reads "something is still unstaged or untracked under the old `openspec` path,
+**which after a correct sequence cannot happen**".
+
+It can, and it does. Reproduced in the throwaway clone immediately after the plan's own step 6:
+
+```
+$ git mv openspec .planning/legacy/openspec     # exit 0
+$ git status --porcelain openspec
+D  openspec/changes/archive/2026-05-03-bootstrap-foundation-phase1-popos/.openspec.yaml
+D  openspec/changes/archive/2026-05-03-bootstrap-foundation-phase1-popos/design.md
+…                                               # 145 staged-deletion rows
+```
+
+`git status --porcelain <pathspec>` matches the **index** as well as the worktree, and after a
+`git mv` the 145 old paths are staged deletions that still match the pathspec `openspec`. The gate
+is guaranteed to fail on a correct execution — exactly the failure class round 1 kept flagging
+("fails in exactly its passing state"), reintroduced by the fix for round-1 blocker 2.
+
+The **acceptance criterion** is worded correctly — "`git status --porcelain openspec` was empty
+**after step 4 and before step 6**" — so the intent is unambiguous; only the `<verify>` placement is
+wrong, because `<verify>` runs at task end.
+
+*Required change:* move the emptiness assertion into the action as a step-4 check (where it is both
+true and load-bearing) and drop it from `<verify>`; `test ! -e openspec` plus the `R100` gate already
+prove the end state. If a task-end form is wanted, it must exclude rename rows, e.g.
+`test -z "$(git status --porcelain -- openspec .planning/legacy/openspec | rg -v '^R')"`.
+
+#### N3 — MEDIUM — `01-03` step 7's normalised index-hash comparison cannot match
+
+Step 7's third check hashes `git ls-files -s .planning/legacy/openspec`, "normalise by stripping the
+`.planning/legacy/` prefix from the post-move listing before hashing", compares with the pre-state
+hash, and asserts: "**If the normalised hashes match, every blob is byte-identical.**"
+
+Measured:
+
+```
+pre   (git ls-files -s openspec, prefix-stripped)                  e243979f98a11cb4…
+post  (git ls-files -s .planning/legacy/openspec, prefix-stripped) 45ee4691f2b1e36c…
+```
+
+They do not match, and cannot. `openspec archive` **itself renames** paths inside the tree —
+`openspec/changes/phase1-…/*` → `openspec/changes/archive/2026-09-23-phase1-…/*` — and
+`git ls-files -s` prints `<mode> <blob> <stage>\t<path>`, so the path change propagates into the
+hash. Stripping only the `.planning/legacy/` prefix cannot undo the archive's own rename. An
+executor following step 7 literally would hit a mismatch on a **correct** run and, per step 3's
+precedent, "stop and report a deviation".
+
+The invariant the check is reaching for does hold. Verified: comparing the sorted **blob-hash set**
+instead of the path-bearing listing gives an exact match —
+
+```
+$ git ls-files -s .planning/legacy/openspec | awk '{print $2}' | sort | sha256sum
+bfed9c9924695e5d431677ce393df08d620139cf1afe8a9bd86baa21f77140de  -
+$ git ls-tree -r HEAD openspec      | awk '{print $3}' | sort | sha256sum
+bfed9c9924695e5d431677ce393df08d620139cf1afe8a9bd86baa21f77140de  -
+```
+
+*Required change:* replace the normalised-listing comparison with the sorted blob-hash-set form
+above, or delete the check and rely on the `R100` gate, which already proves byte-identity per file
+and is the stronger statement.
+
+#### N4 — HIGH — `01-05`'s retained `TBD` regression guard fails today
+
+`01-05-PLAN.md:497` keeps a `TBD` check "deliberately as a **guard against regression** rather than
+as evidence of progress: **the file has no `TBD` today**, so this gate cannot detect an
+under-resolved map".
+
+```
+$ V=.planning/phases/01-governance-freeze/01-VALIDATION.md
+$ test -f "$V" && ! rg -q 'TBD' "$V"; echo $?
+1
+```
+
+The file has **two** occurrences of `TBD`, at `01-VALIDATION.md:141` and `:143` — and both were
+introduced by this very revision, in the prose that explains why the old
+`test "$(rg -nic 'TBD' "$V" | wc -l)" = '0'` gate was retired. The explanation of the retired gate
+quotes the token the surviving gate forbids. The guard therefore fails unconditionally at task 3,
+and its `<fails_when>` premise is false on disk.
+
+The two **substantive** replacements are fine and were verified non-vacuous: `⬜ pending` occurs 25
+times today so `! rg -q '⬜ pending' "$V"` genuinely fails before the work is done, and
+`rg -c '^\| 01-0' "$V"` returns exactly `23`, matching both count gates.
+
+*Required change:* make the guard structural rather than lexical — e.g. `! rg -q '^\|.*\bTBD\b' "$V"`,
+scoped to table rows — or write the retired pattern in the prose in a form the guard does not match.
+
+#### N5 — LOW — `01-03` step 7 mislabels the 145 count
+
+Step 7 says the tracked-count comparison "execution measured 145 → 145 **for the whole repo**".
+`git ls-files openspec | wc -l` is `145`; the whole repo is **301** tracked files (also preserved,
+301 → 301). The command and the comparison are correct and correctly scoped to `openspec`; only the
+parenthetical is wrong, and an executor reconciling `145` against a whole-repo count would be
+chasing a phantom.
+
+#### N7 — MEDIUM — the new "positive half" of the map-completeness gate is itself vacuous
+
+`01-05-PLAN.md:497` adds, alongside the row count:
+
+```
+test "$(rg -c '^\| 01-0.*(✅|❌|⚠️)' "$V")" = '23'
+```
+
+with a `<fails_when>` explaining it is "the **positive half** of the completeness check: the
+pending-marker gate alone would pass on a row whose status cell was simply blanked".
+
+It does not do that. Measured now, before any Phase 1 work has been done:
+
+```
+$ rg -c '^\| 01-0' "$V"                       → 23
+$ rg -c '^\| 01-0.*(✅|❌|⚠️)' "$V"            → 23
+```
+
+`01-VALIDATION.md`'s table has **ten** columns (`:68`), of which the ninth is `File Exists` and the
+tenth is `Status`. Every row already carries a `✅` or `❌ W0` in the *File Exists* cell while its
+*Status* cell reads `⬜ pending` — e.g. `:70` ends `… | ✅ | ⬜ pending |`. The unanchored `.*` lets
+the File Exists marker satisfy the pattern, so the gate passes today and would keep passing with
+every Status cell blanked. It is precisely the vacuous-gate class round 1 flagged, added as the fix
+for a vacuous gate.
+
+*Required change:* anchor the match to the last cell, e.g.
+`test "$(rg -c '^\| 01-0.*\|[^|]*(✅|❌|⚠️)[^|]*\|\s*$' "$V")" = '23'`, or assert per-row with
+`awk -F'|' '$2 ~ /01-0/ {print $11}'` and require every value to be one of the three markers. The
+`! rg -q '⬜ pending'` half of the check **is** substantive and was verified non-vacuous (25
+occurrences today), so it is the only one of the three currently carrying weight.
+
+#### N6 — LOW — `README.md`'s repo tree will not name `AGENTS.md`, and the diff budget forbids adding it
+
+`README.md:176` lists `CLAUDE.md` in the repo-tree block. After plan `01-04` that entry stays
+*true* — `CLAUDE.md` survives as the one-line `@AGENTS.md` pointer — but the new canonical
+`AGENTS.md` never appears in the tree, so the README's own map omits the repo's most important
+governance file. `01-05-PLAN.md:233` budgets `README.md` to **exactly one** diff hunk for the whole
+phase ("One hunk is the whole README budget for this phase"), which plan `01-01` Step 0 spends on
+the Stack paragraph at `:163-169`. There is no room left to add the tree entry.
+
+*Required change:* either widen the budget to two hunks and add `├── AGENTS.md` to the tree, or
+record the omission explicitly and hand it to Phase 8 / R6.1 alongside the other README staleness
+that phase already owns.
+
+### On the planner's four rejections — all four defensible
+
+**R1 — gating on `make doctor`: DEFENSIBLE, and the better call.** The reasoning is not an excuse.
+Three things make it sound. (i) The blocker is *named and owned elsewhere*: `REQUIREMENTS.md`'s R1.1
+belongs to Phase 2 and its criterion 1 is "`my-kitty doctor` exits 0 with every check PASS or SKIP",
+so doctor-green is somebody's acceptance criterion, not a wish. (ii) The plan **measures instead of
+assuming** — `01-05` task 2 Step 0 runs `make doctor`, captures the output and exit status, and
+*branches* on it; round 1 declined to run doctor, so the planner was right that the precondition's
+satisfiability was unknown to the reviewer. (iii) The narrowing is a *named, dated, expiring*
+carve-out written into all three documents, reported as a deviation with the alternative spelled out
+so the user can overturn it. That is the second of the two remedies round 1 itself offered
+("define a narrowly scoped, authoritative Phase 1 exception before execution").
+One reservation, recorded and **not** counted: nothing machine-checks that the carve-out is later
+removed. Its expiry is honoured only by prose. R1.1 should inherit "the Phase 1 carve-out is deleted"
+as an acceptance criterion — see the actionable list.
+
+**R2 — the "unintended fourth banner" concern, scoped away: DEFENSIBLE.** D-04 enumerates exactly
+three banner targets and `01-03`'s acceptance wording is scoped to those three, so a fourth banner is
+out of scope rather than undetected. Round 1 said as much itself ("acceptable if stated that way"),
+and it is now stated that way. A repo-wide `rg -l 'FROZEN — history only'` returning `3` would be a
+cheap strengthening rather than a fix; its absence is not a defect.
+
+**R3 — partially rejecting a parse of `codegraph status`, moving it to a Manual-Only human check:
+DEFENSIBLE, and the most disciplined of the four.** Round 1's own dominant theme was gates that
+assert more than their command can enforce. Inventing a parse of a JSON shape the plan has not
+pinned down would have manufactured exactly that failure mode, with a brittle dependency on a
+third-party tool's output format on top. Declaring the check human-owned is the honest option. It
+does cost automated coverage of "the index actually contains files", which is why round 1 raised it —
+but the trade is correctly made and correctly documented.
+
+**R4 — the BSD `wc` finding as unobserved-but-adopted-precautionarily: DEFENSIBLE.** Round 1
+simulated the padding (`printf '       0\n' | rg -x '0'` → exit 1) rather than observing it on a
+macOS host, and classified the finding LOW for that reason. The planner adopted the mitigation
+anyway — `tr -d '[:space:]'` on the surviving count comparisons (`01-03-PLAN.md:229`) — while
+declining to upgrade the severity. Adopting a fix while refusing to overstate the evidence for it is
+the right posture for a repo whose Phase 10 is "macOS E2E Over SSH".
+
+### On the two decisions flagged as overturnable
+
+**O1 — `01-01` editing `README.md` and `.planning/PROJECT.md` against `01-CONTEXT.md:77`: KEEP the
+edits, fix the CONTEXT line.** `01-CONTEXT.md:77` says "`README.md` — not edited here; named only so
+the placement rule in D-15 can point at it." But `README.md:165-166` states the same two-file Bash
+allow-list the phase must widen, `.planning/PROJECT.md:99-103` states it a third time, and
+`tools/setup.sh:2-3` a fourth. The phase's entire purpose is that the repo's stated rules be true;
+creating `tools/hooks/pre-push` while two authoritative files say no such file may exist would leave
+Phase 1 shipping the contradiction it exists to remove. Round 1 flagged precisely this as HIGH
+("existing documentation becomes false"). The drift is in the *context note*, not the plans.
+`01-CONTEXT.md:77` should be amended to "edited once, in `01-01` Step 0, to widen the shell
+allow-list" so the phase's file inventory stops contradicting its plans.
+
+**O2 — `01-05` writing a dated, expiring carve-out narrowing R0.4's literal text: KEEP, with one
+addition.** The alternative on offer — defer Phase 1's merge until Phase 2 makes doctor green — is
+worse, and not marginally: the governance rules would sit unmerged on a feature branch while Phase 2
+executes, so the hooks, the one-commit rule and the canonical-file policy would not be in force
+during the very phase that follows. That inverts the phase's purpose. A narrowing that is named,
+dated, owner-attributed (R1.1) and reported as an overturnable deviation is the lesser evil, and it
+is honest in a way "evidence-only doctor with the policy left as written" was not. The missing piece
+is enforcement of the expiry: the carve-out's removal must be somebody's acceptance criterion, or it
+becomes permanent by neglect. That is the one change this round asks for on O2.
+
+### Verification coverage — round 2 addendum
+
+Appended to round 1's 103 items. Scope: symbols, paths, commands and counts that are **new or
+changed** since round 1. Authority: first-party execution on this host, in a throwaway clone where
+the check mutates state.
+
+| new/changed item | verdict |
+|---|---|
+| `openspec archive … --skip-specs -y` leaves the specs tree byte-identical (`a5668d62…` both sides) | VERIFIED |
+| `git add -A openspec` → `8 files changed, 0 insertions(+), 0 deletions(-)`, all rows `R` | VERIFIED |
+| `mkdir -p .planning/legacy` then `git mv openspec .planning/legacy/openspec` → exit 0 | VERIFIED |
+| tracked count preserved: `openspec` 145 → 145, whole repo 301 → 301 | VERIFIED |
+| `git diff --cached --name-status HEAD -- openspec .planning/legacy/openspec` → `145 R100` | VERIFIED |
+| the same gate **fails** on a one-byte rewrite (`1 R098 / 144 R100`) — the proof gate discriminates | VERIFIED |
+| `find …/changes/archive -mindepth 1 -maxdepth 1 -type d -name '*-phase1-…' \| wc -l \| tr -d '[:space:]'` → `1` | VERIFIED |
+| `test -z "$(git status --porcelain openspec)"` **fails** at task end after a correct `git mv` (145 staged `D` rows) | **MISSING** (N2) |
+| normalised `git ls-files -s` hash comparison: `e243979f…` vs `45ee4691…` — cannot match | **MISSING** (N3) |
+| sorted blob-hash set identical across the move (`bfed9c99…` both sides) — the invariant does hold | VERIFIED |
+| `make test` → `293 passed, 70 skipped in 0.25s`; `make test` is `@uv run pytest tests/` (whole tree) | VERIFIED |
+| `01-05`'s `rg -q '(^\|[^0-9])18 passed'` against `make test` output | **MISSING** (N1) |
+| `OUT="$(cmd)" && printf … \| rg -q '(^\|[^0-9])N passed'` — assignment carries the status; `118 passed` rejected | VERIFIED |
+| planned case counts: 10 distinct `test_*` in `01-01`; +4 post-checkout, +4 post-commit in `01-02` = 18 | VERIFIED |
+| `01-02`'s `timeout`-absent skip is explicitly reconciled at `:306,312` | VERIFIED |
+| `git rev-list --count --grep='01-0N' "$BASE"..HEAD` — message-scoped, satisfiable, status not swallowed | VERIFIED |
+| no `git commit` instruction survives in any task action across the five plans | VERIFIED |
+| no `\| wc -l \| rg -x '0'` gate survives; remaining occurrences are `<fails_when>` prose only | VERIFIED |
+| surviving `rg -c` uses are all `test "$(rg -c PAT f)" = 'N'`, N ≥ 1 — fails closed on zero matches | VERIFIED |
+| `tools/setup.sh:2-3` reads "The only bash logic in this repo" — Step 0's fourth target exists | VERIFIED |
+| `README.md:165-166` and `.planning/PROJECT.md:99-103` carry the same two-file claim | VERIFIED |
+| `01-01` Step 0 is the first step of the first task of wave 1, before any `tools/hooks/*` byte | VERIFIED |
+| `rg -c '^### Phase [0-9]+(\.[0-9]+)?:' .planning/ROADMAP.md` → `11`; `:215` is `### Phase 8.5:` | VERIFIED |
+| ROADMAP Progress table → 11 phase rows incl. `8.5. Test-Suite Type & Lint Cleanup`; `:268` order line includes 8.5 | VERIFIED |
+| `REQUIREMENTS.md:253` R6.3 exists; `:413` maps it to Phase 8; `ROADMAP.md:206` lists it | VERIFIED |
+| Makefile target set is `help install setup clean doctor test uninstall prune` — the four R6.3 targets are absent | VERIFIED |
+| `.claude/conventions.md:62,63,65,66,69` requires `make format/validate/test-unit/test-integration` | VERIFIED |
+| `git branch --list 'gsd/*' --contains <sha>` works; `gsd/planning-bootstrap` exists; `milestone_branch_template` = `gsd/{milestone}-{slug}` | VERIFIED |
+| `test "$(rg -l --glob '!.planning/**' -- 'one commit per plan' .)" = './AGENTS.md'` returns exactly one path | VERIFIED |
+| `jq` present; `jq -r .claude_md_path .planning/config.json` → `./CLAUDE.md` (the repoint target is real) | VERIFIED |
+| `.claude/conventions.md:5` still names `CLAUDE.md`, so `01-04`'s `! rg -q 'CLAUDE'` gate has work to do | VERIFIED |
+| `01-VALIDATION.md`: `rg -c '^\| 01-0'` → `23`; `⬜ pending` → 25 occurrences (that gate non-vacuous) | VERIFIED |
+| `rg -c '^\| 01-0.*(✅\|❌\|⚠️)' "$V"` → `23` **already**, matching the `File Exists` column not `Status` | **MISSING** (N7) |
+| `01-VALIDATION.md` contains `TBD` twice (`:141,:143`), so `! rg -q 'TBD'` fails today | **MISSING** (N4) |
+| `README.md:176` lists `CLAUDE.md`; the tree gains no `AGENTS.md` entry and the diff budget is one hunk | AMBIGUOUS (N6) |
+| `01-03` step 7's "145 … for the whole repo" label (145 is openspec-scoped; the repo is 301) | **MISSING** (N5) |
+
+Round-2 verdicts: **26 VERIFIED, 6 MISSING, 1 AMBIGUOUS.** Cumulative across both rounds:
+**129 VERIFIED, 11 MISSING, 2 AMBIGUOUS, 8 UNCHECKABLE.**
+
+### Still UNCHECKABLE in round 2 — unchanged from round 1
+
+`pyright`'s 571-error baseline, `--force-with-lease`'s stdin signature, the `codex` CLI's
+nearest-file-wins behaviour, `codegraph sync` after a bulk `git mv`, `agent-md-refactor` against a
+file this phase creates, BSD/macOS `wc` padding as a field failure, and a genuinely independent
+second reviewer model. `make doctor`'s current state remains unrun for the same reason as round 1
+(it invokes `my-kitty` against the live kitty install) — and that is precisely why `01-05` task 2
+Step 0 measuring it, rather than the review asserting it, is the right division of labour.
+
+## Round 2 verdict
+
+The five round-1 blockers are **genuinely fixed**, four of them confirmed by execution rather than
+by reading the ledger: the `git mv` sequence runs, the `R100` proof gate discriminates, per-task
+commits are gone with a satisfiable count gate in their place, the allow-list amendment precedes the
+first hook byte, and no plan touches `master`. The three orchestrator-side corrections are all true
+on disk. All four rejections are defensible; none is an excuse.
+
+The revisions did, however, introduce **three blocking gates that fail on a correct execution or can
+never pass** — N1 (`make test` counted as 18 when it reports 293), N2 (`git status --porcelain
+openspec` at task end after a `git mv`), N4 (the `TBD` guard defeated by the prose that explains it)
+— plus N7, a replacement for a vacuous gate that is itself vacuous, and three smaller items. Every
+one of them is the same shape as round 1's dominant theme: **a gate whose command does not measure
+what its prose claims**. That pattern surviving a revision round specifically aimed at it is the one
+systemic signal worth acting on: before the next execution attempt, every `<automated>` command in
+the five plans should simply be *run* against the current tree and its exit status compared with
+what the plan expects at that point — the four blocking defects above were all found that way, in
+minutes, and none of them needed a reviewer.
+
+**REVISE** — one more narrow pass over the nine items below, then execute.
+
+### Round-2 change list, in the order a reviser should work it
+
+| # | severity | file | change |
+|---|---|---|---|
+| N1 | **HIGH** | `01-05-PLAN.md:489,551` | scope the counted gate to `uv run pytest tests/unit/test_git_hooks.py -q` (count 18), keep `make test` as a separate un-counted gate; drop the zero-skip claim from the whole-suite form (70 skips are structural) |
+| N2 | **HIGH** | `01-03-PLAN.md` task 1 `<verify>` | move `test -z "$(git status --porcelain openspec)"` out of `<verify>` into the action as a step-4 assertion; it cannot hold after step 6's `git mv` |
+| N4 | **HIGH** | `01-05-PLAN.md:497` | make the `TBD` guard structural (`! rg -q '^\|.*\bTBD\b'`) or stop writing the literal token in `01-VALIDATION.md`'s prose at `:141,:143` |
+| N7 | MEDIUM | `01-05-PLAN.md:497` | anchor the status-marker count to the `Status` cell; as written it matches the `File Exists` column and already returns 23 |
+| N3 | MEDIUM | `01-03-PLAN.md` task 1 step 7 | replace the normalised `git ls-files -s` hash comparison with a sorted blob-hash set, or delete it in favour of the `R100` gate |
+| N5 | LOW | `01-03-PLAN.md` task 1 step 7 | "145 … for the whole repo" → 145 is the `openspec`-scoped count; the repo is 301 |
+| N6 | LOW | `01-05-PLAN.md:233` + `01-01-PLAN.md` Step 0b | widen the README diff budget to two hunks and add `├── AGENTS.md` to the tree block, or hand the omission to Phase 8 / R6.1 in writing |
+| O1 | LOW | `01-CONTEXT.md:77` | amend "README.md — not edited here" to match what `01-01` Step 0b actually does; the plans are right and the context note is stale |
+| O2 | LOW | `01-05-PLAN.md` carve-out text, or `REQUIREMENTS.md` R1.1 | make "the Phase 1 doctor carve-out is deleted" an acceptance criterion of R1.1, so the expiry is enforced by something other than prose |
+
+One caution that is **not** counted as a defect, recorded so it is not rediscovered: `01-05-PLAN.md:233`
+measures the README budget with `git diff -U0`, under which any unchanged line *between* two changed
+lines splits the hunk. `01-01` Step 0b is explicitly instructed to rewrite one contiguous sentence
+and is told about the gate, so the two are self-consistent — but the gate constrains the *shape* of a
+legitimate edit rather than its content, and a reflow that skips a line would fail it. If it fires
+during execution, that is the reason.
 
 ---
 
