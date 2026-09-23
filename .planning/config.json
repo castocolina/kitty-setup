@@ -53,9 +53,9 @@
     "use_worktrees": true,
     "plan_review_convergence": true,
     "cross_ai_execution": true,
-    "cross_ai_command": "opencode run --model router-env/my-coding",
+    "cross_ai_command": "opencode run --auto --model router-env/my-coding",
     "live_dom_uat": false,
-    "cross_ai_timeout": 900
+    "cross_ai_timeout": 3600
   },
   "ship": {
     "pr_body_sections": []
