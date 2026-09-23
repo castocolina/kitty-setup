@@ -64,6 +64,22 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       commit's message. This supersedes "agents commit per task" in R0.4 — R0.4 keeps the worktree,
       merge, push and no-force-push half of the policy.
 
+- [ ] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
+      vulture (added 2026-09-23 at the user's direction after the gate's claim was measured and
+      found false). Owned by **Phase 2**, the earliest phase that already edits these files.
+      Measured baseline at `5452f54`: `src/` carries **19** of pyright's 571 errors; ruff's 28 and
+      black's 11 files span `src`+`tests`+`tools`; bandit reports **0 high** (8 medium, 19 low —
+      an earlier report of "20 high" misread bandit's *confidence* column as severity). From the
+      moment this lands, "src clean" is a hard gate in the Universal Phase Gate step 5.
+- [ ] **R0.12**: **`tests/` type-checks and lints clean**, so a real defect in a test is visible
+      rather than buried in ~580 pre-existing findings. Owned by **Phase 8.5**. 96% of the debt is
+      `typeCheckingMode = "strict"` applied to pytest bodies (`reportUnknownVariableType`,
+      `reportUnknownArgumentType`, `reportUnknownLambdaType` dominate), which is noisy by nature
+      and not evidence of broken tests — so a **deliberate, justified narrowing** of pyright's
+      scope or mode for `tests` satisfies this requirement as fully as driving the count to zero.
+      A silent scope reduction does not. No test's behaviour may change to satisfy a type checker:
+      the suite's pass/fail set must be identical before and after, evidenced by both runs.
+
 ### R1 — Defect remediation
 
 Each defect is a requirement with a regression test.
@@ -353,6 +369,8 @@ Every v1 requirement maps to exactly one phase.
 | R0.8 | Phase 1 | Pending |
 | R0.9 | Phase 1 | Pending |
 | R0.10 | Phase 1 | Pending |
+| R0.11 | Phase 2 | Pending |
+| R0.12 | Phase 8.5 | Pending |
 | R1.1 | Phase 2 | Pending |
 | R1.2 | Phase 2 | Pending |
 | R1.3 | Phase 2 | Pending |
