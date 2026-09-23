@@ -18,16 +18,32 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       decide, then implement."* Any removal or replacement of behaviour (config line, chord, code
       path) requires (a) documented research (kitty docs/source/introspection) and (b) an
       experiment on a real kitty session with recorded evidence, **before** the decision.
-- [ ] **R0.2**: `openspec/changes/phase1-curated-bindings-revert-defaults` is archived after
-      fixing its delta so it syncs cleanly (ADDED vs MODIFIED/REMOVED targets that don't exist in
-      main; keep `layout` in the categories list; `scroll_line_* smooth`). Then `openspec/` is
-      frozen: `openspec/README.md` carries a "FROZEN — history only; source of truth is
-      `.planning/`" banner.
+- [ ] **R0.2**: `openspec/changes/phase1-curated-bindings-revert-defaults` is retired with
+      `openspec archive --skip-specs` — the delta is NOT fixed and the main specs are NOT synced
+      (reworded 2026-09-22, phase-1 discussion D-01/D-03: `openspec validate --strict` reports 7
+      errors that will never be fixed because rewriting frozen specs is out of scope). The whole
+      tree then moves to `.planning/legacy/openspec/` (D-02), and FROZEN banners land on
+      `.planning/legacy/openspec/README.md`, `docs/requirements.md`, and
+      `docs/propossal_roadmap.md` — each reading "FROZEN — history only; source of truth is
+      `.planning/`".
 - [ ] **R0.3**: `CLAUDE.md` and its authoritative-sources list point to `.planning/`; OpenSpec
       process references are retired (the hypothesis playbook `docs/agent-iteration.md` stays).
-- [ ] **R0.4**: Git policy written into `CLAUDE.md` (replacing "No auto-commit"): agents MAY
-      commit per task and push a feature branch (`gsd/<phase>`); MUST NOT merge to `master`,
-      force-push, amend pushed commits, or push `master`.
+- [ ] **R0.4**: Git policy written into `CLAUDE.md` (replacing "No auto-commit"), reworded
+      2026-09-22 per phase-1 discussion D-06: each phase runs in its own git worktree on branch
+      `gsd/phase-{phase}-{slug}`; agents commit per task, and at phase end — once `make doctor`
+      and `make test` are green — merge into `master` and push. Agents MUST NOT force-push or
+      amend pushed commits. A pre-push hook under `tools/hooks/`, wired via `core.hooksPath`,
+      enforces this structurally rather than by acknowledgment (D-07/D-08).
+- [ ] **R0.5**: `CLAUDE.md` carries a research-tooling rule (D-12): prefer `codegraph_explore` /
+      `codegraph explore` before opening files; when a file must be read directly, size it first
+      (`wc -l`, `rg -n '<symbol>'`) and read only the relevant range; prefer `rg`, `fd`, `wc`,
+      `bat`, `sd`, `eza` over slower or more verbose equivalents.
+- [ ] **R0.6**: The CodeGraph index lifecycle is automated (D-13): a newly created phase worktree
+      gets an index built automatically (`.codegraph/` is gitignored, so a fresh worktree has
+      none), and every commit refreshes it (`codegraph sync` preferred over a full rebuild). A
+      CodeGraph failure warns and never aborts the commit or the worktree creation.
+- [ ] **R0.7**: Every new GSD plan carries `cross_ai: true` in its frontmatter (D-10), so
+      cross-AI execution is the default rather than per-plan opt-in.
 
 ### R1 — Defect remediation
 
@@ -158,6 +174,17 @@ Each defect is a requirement with a regression test.
 - [ ] **R7.3**: Anything not automatable (physical keypress feel) becomes a short manual UAT
       checklist.
 
+### R8 — Distribution (added 2026-09-22)
+
+- [ ] **R8.1**: `tools/install.sh` installs kitty-setup end-to-end on a clean host via
+      `curl -fsSL <raw-url> | bash`, with no prior repo clone, and its trust model is documented
+      the way `../wezterm-setup/docs/install.md` documents its own.
+- [ ] **R8.2**: The installer accepts a channel selection (rolling vs pinned release) and installs
+      the selected channel; the default is stated explicitly in `--help` and in the README.
+- [ ] **R8.3**: After a `curl | bash` install, `my-kitty uninstall` still leaves no trace —
+      verified on a host that never had the repo — and the macOS path is exercised over the
+      Phase 9 SSH harness with recorded evidence.
+
 ## Cross-Cutting Gates
 
 These are not phase-scoped requirements; they apply to **every** phase and are verified before a
@@ -223,6 +250,9 @@ Every v1 requirement maps to exactly one phase.
 | R0.2 | Phase 1 | Pending |
 | R0.3 | Phase 1 | Pending |
 | R0.4 | Phase 1 | Pending |
+| R0.5 | Phase 1 | Pending |
+| R0.6 | Phase 1 | Pending |
+| R0.7 | Phase 1 | Pending |
 | R1.1 | Phase 2 | Pending |
 | R1.2 | Phase 2 | Pending |
 | R1.3 | Phase 2 | Pending |
@@ -255,6 +285,9 @@ Every v1 requirement maps to exactly one phase.
 | R7.1 | Phase 9 | Pending |
 | R7.2 | Phase 9 | Pending |
 | R7.3 | Phase 9 | Pending |
+| R8.1 | Phase 10 | Pending |
+| R8.2 | Phase 10 | Pending |
+| R8.3 | Phase 10 | Pending |
 
 **Note on R1.8 and R2.8:** R1.8 (chord normalisation through kitty's parser) sits in Phase 3, not
 Phase 2, because it is a prerequisite of the R2.8 oracle's attribution assertion. R2.8's oracle
