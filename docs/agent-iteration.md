@@ -167,7 +167,7 @@ change), repeat:
 ## Hand-off across agents
 
 The agent that writes a hypothesis is *not* the same agent that promotes it. This
-is the spec-first rule (CLAUDE.md) applied to the hypothesis layer. Concretely:
+is the planning-primacy rule (AGENTS.md) applied to the hypothesis layer. Concretely:
 
 - The agent that authors `tmp/h<NN>-<slug>/run.py` and gets it green leaves the
   green `actual.json` and an updated `repro.md` describing what it observed.
