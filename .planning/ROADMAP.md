@@ -85,11 +85,11 @@ discuss-phase.
 **Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7
 **Success Criteria** (what must be TRUE):
 
-  1. `my-kitty doctor` exits 0 with every check PASS or SKIP on a fresh Bazzite uv-tool install: the shell-completion check resolves `register-python-argcomplete`, and checks that previously printed "skipped" now report a real SKIP state.
+  1. `my-kitty doctor` exits 0 with every check PASS or SKIP on a fresh Bazzite uv-tool install: completion works via an install-generated static completion file that the rc block sources (no runtime `register-python-argcomplete` PATH lookup), and checks that previously printed "skipped" now report a real SKIP state.
   2. `make clean` never removes `kitty.app` or backups and its help text matches what it does; `tools/uninstall.sh` logs `resolve_binary` failures to stderr where they are visible and its legacy-binary branch works — both branches covered by tests.
   3. A scene whose `cwd` contains spaces fills the current tab correctly (pane-0 `cwd` shell-quoted), and pane 0 honours the same `bash -lc` semantics as every other pane.
   4. A failing config-parse check reports the actual command it ran, surfaces the parser's stderr, rolls the payload directory back, and is labelled correctly in doctor; the integration suite passes when run from inside a kitty window (`KITTY_WINDOW_ID` stripped in h25 and `scene_recipe_e2e`).
-  5. Every remaining minor defect has a regression test: install log written outside the uv venv recording path + version, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors rejected and passthrough restricted to `rgb:`/functional forms, `prune --keep <0` raising an argparse error, harness teardown issuing `close-os-window`, and the PATH-migration and unsupported-shell hint messages printed exactly as specified (both lines).
+  5. Every remaining minor defect has a regression test: the install log removed outright, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors treated as absent and passthrough restricted to real `rgb:`/`rgba:`/functional forms, `prune --keep <0` raising an argparse error, harness teardown issuing `close-os-window`, and the PATH-migration and unsupported-shell hint messages printed exactly as specified (both lines).
 
 **Plans**: TBD
 

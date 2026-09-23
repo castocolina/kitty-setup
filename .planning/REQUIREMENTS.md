@@ -61,9 +61,12 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
 
 Each defect is a requirement with a regression test.
 
-- [ ] **R1.1**: `my-kitty doctor`'s shell-completion check passes on a uv-tool install — expose or
-      locate `register-python-argcomplete` (e.g. `uv tool install --with argcomplete` + PATH, or
-      detect the helper inside the tool venv). Mechanism chosen by experiment.
+- [ ] **R1.1**: `my-kitty doctor`'s shell-completion check passes on a uv-tool install. Mechanism
+      decided 2026-09-22 (phase-2 discussion D-01): install generates a **static completion file**
+      (`register-python-argcomplete --shell bash|zsh my-kitty`) under
+      `~/.local/share/kitty-setup/` and the rc block sources it, so no runtime PATH lookup is
+      needed; doctor checks the generated file plus the rc source line. Root cause confirmed: the
+      helper exists inside the uv tool venv but `uv tool install` exposes only `my-kitty`.
 - [ ] **R1.2**: `make clean` behaviour and help text agree; `clean` MUST NOT delete `kitty.app` or
       backups.
 - [ ] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary
@@ -74,11 +77,14 @@ Each defect is a requirement with a regression test.
       failure, and rolls back the payload dir on failure; the doctor label is fixed.
 - [ ] **R1.6**: Integration tests strip `KITTY_WINDOW_ID` (h25, `scene_recipe_e2e`) so results do
       not depend on being run inside kitty.
-- [ ] **R1.7**: Minor defects: install log location/content (outside the uv venv, records path +
-      version); guard `int(stdout)` in the launcher → clean error; reject empty/whitespace colors
-      and restrict passthrough to `rgb:`/functional forms; `prune --keep <0` → argparse error;
-      harness teardown `close-os-window`; doctor "skipped" → real SKIP state; PATH-migration
-      messages printed as specified; unsupported-shell hint prints both lines.
+- [ ] **R1.7**: Minor defects: the install log is **removed** entirely (reworded 2026-09-22,
+      phase-2 discussion D-11 — nothing reads it and the spec that required it is frozen history;
+      it was previously specified as "relocate outside the uv venv"); guard `int(stdout)` in the
+      launcher → clean error; an empty/whitespace color is treated as **absent** (no kitten
+      argument emitted, matching the recipe loader's convention) and passthrough is narrowed to
+      real `rgb:`/`rgba:`/functional forms (D-12); `prune --keep <0` → argparse error; harness
+      teardown `close-os-window`; doctor "skipped" → real SKIP state; PATH-migration messages
+      printed as specified; unsupported-shell hint prints both lines.
 - [ ] **R1.8**: Introspection macOS attribution — normalise payload chords through kitty's own
       parser so `cmd+k` ≡ `super+k` attributes to our file.
 
