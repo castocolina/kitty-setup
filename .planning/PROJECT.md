@@ -71,8 +71,11 @@ session.
   sufficient for everything in scope here
 - **Rewriting frozen OpenSpec specs** — `openspec/` becomes history-only (R0.2); correcting its
   stale contents would be archaeology with no payoff now that `.planning/` is authoritative
-- **Merging to `master`** — agents push a feature branch only; integration is the owner's call
-  (R0.4)
+- **Merging to `master`** — merging at a green phase boundary is in scope per D-06: the
+  phase-end flow merges into `master` and pushes once `make doctor` and `make test` are green,
+  and no force-push or amend of pushed commits is ever allowed. What stays out of scope is any
+  merge or force-push outside that boundary — the pre-push guard rejects it, and this phase
+  defers its own merge until Phase 2's R1.1 makes `make doctor` green.
 
 ## Context
 
@@ -124,7 +127,7 @@ session.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Every phase follows **research → experiment (real kitty session, recorded evidence in `tmp/h<NN>-<slug>/`) → decide → implement → verify with `make doctor` + `make test` output**. No removal or replacement of a config line, chord, or code path without documented research and a recorded experiment first. | The previous attempt's failures all trace to deciding before knowing. "Should work" is not evidence; `<command>` → `<output>` is. | — Pending |
-| **Git policy** (revised 2026-09-22, phase-1 discussion D-06): each phase runs in its own git worktree on branch `gsd/phase-{phase}-{slug}`; agents commit per task and, at phase end with `make doctor` + `make test` green, merge into `master` and push. Agents MUST NOT force-push or amend pushed commits. A `tools/hooks/` pre-push guard enforces it structurally. | Per-task commits make an autonomous run auditable and bisectable; worktrees keep phases isolated; merging at a green phase boundary keeps the owner's history linear without making every integration manual. | — Pending |
+| **Git policy** (revised 2026-09-23, phase-1 discussion D-06/D-16): each phase runs in its own git worktree on branch `gsd/phase-{phase}-{slug}`; work lands as **one commit per plan** (the granularity rule lives in `AGENTS.md` and is pointed to, not restated here) and, at phase end with `make doctor` + `make test` green, merge into `master` and push. Phase 1's branch merges after Phase 2's R1.1 turns `make doctor` green. Agents MUST NOT force-push or amend pushed commits. A `tools/hooks/` pre-push guard enforces it structurally, with all its limits disclosed in `AGENTS.md`. | A plan-sized commit is a coherent unit of review, and the plan boundary is where the requirements a change satisfies are already enumerated; worktrees keep phases isolated; merging at a green phase boundary keeps the owner's history linear without making every integration manual. | — Pending |
 | **Execution is autonomous — no clarifying questions during execute phases.** Anything ambiguous is resolved in discuss-phase, before a plan exists. | An autonomous run that stops to ask has failed at its one job. Ambiguity is a planning defect, not a runtime event. | — Pending |
 | **`.planning/` is the single source of truth. `openspec/` is frozen as history-only.** | Two authoritative spec systems produced the stale, self-contradictory state this milestone exists to fix. | — Pending |
 | **Keybinding model is native per-OS**: kitty's own defaults are authoritative on each OS. The payload adds or overrides a chord only for (a) a new action, (b) a behaviour change, or (c) a conflict with a chord our helper owns — each justified in the allow-list. | Organic kitty chords mean nothing to relearn and nothing to maintain. Curated rebinds existed to prettify `my-kitty keys` output, which is exactly the wrong reason. | — Pending |

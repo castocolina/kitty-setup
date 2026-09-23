@@ -37,9 +37,13 @@ repeated in each phase's success criteria — they are preconditions for calling
      remainder down.
    - A phase that *adds* a file owns that file being clean, wherever it lives.
 6. **Commit + merge + push** — each phase runs in its own git worktree on branch
-   `gsd/phase-{phase}-{slug}`; commit per task, then at phase end (gates green) merge into
-   `master` and push. Never force-push or amend pushed commits. A `tools/hooks/` pre-push guard
-   enforces this (updated 2026-09-22, phase-1 discussion D-06/D-07).
+   `gsd/phase-{phase}-{slug}`; work lands as **one commit per plan** — the granularity rule
+   lives in `AGENTS.md` and is pointed to, not restated here — then at phase end (gates
+   green) merge into `master` and push. Never force-push or amend pushed commits. A
+   `tools/hooks/` pre-push guard enforces this structurally — a compliance guard for
+   cooperating agents, not a security boundary; its seven disclosed limits are listed in
+   `AGENTS.md`'s git-policy bullet and are not repeated here (updated 2026-09-23, phase-1
+   execution, discussion D-06/D-07/D-16).
 
 Phases that touch bindings (3, 4, 7 on Linux; 10 on macOS) additionally re-run the R2.8 oracle
 test as a gate.

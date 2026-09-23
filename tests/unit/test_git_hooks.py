@@ -38,7 +38,7 @@ import os
 import shutil
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Generator, Mapping
 from pathlib import Path
 from typing import Final
 
@@ -181,12 +181,27 @@ def _minimal_path(tmp_path: Path) -> Path:
     return minimal
 
 
-def _path_env(*entries: Path, prepend: bool = True, **overrides: str) -> dict[str, str]:
-    """Return an env copy whose ``PATH`` is ``entries``, plus the real one when ``prepend``."""
+def _path_env(
+    *entries: Path,
+    prepend: bool = True,
+    overrides: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return an env copy whose ``PATH`` is ``entries``, plus the real one when ``prepend``.
+
+    ``overrides`` is an explicit mapping rather than ``**overrides: str``: the env-var
+    names callers need are module constants, so every call site had to spell the keywords
+    as ``**{CONST: value}``, and unpacking a ``dict[str, str]`` into a signature carrying
+    the keyword-only ``prepend: bool`` makes a type checker report the ``str`` value as a
+    candidate for ``prepend`` (four ``reportArgumentType`` errors, measured). A mapping
+    parameter expresses the same thing with no ambiguity to resolve.
+    """
     parts = [str(entry) for entry in entries]
     if prepend:
         parts.append(os.environ.get("PATH", ""))
-    return _push_env(PATH=os.pathsep.join(parts), **overrides)
+    env = _push_env(PATH=os.pathsep.join(parts))
+    if overrides:
+        env.update(overrides)
+    return env
 
 
 def _shim_rows(log: Path) -> list[tuple[str, str]]:
@@ -220,7 +235,9 @@ def _commit(clone: Path, text: str, message: str) -> None:
 
 
 @contextlib.contextmanager
-def _sandbox(tmp_path: Path, *, push_master: bool = True) -> Iterator[tuple[Path, Path]]:
+def _sandbox(
+    tmp_path: Path, *, push_master: bool = True
+) -> Generator[tuple[Path, Path], None, None]:
     """Yield ``(remote, clone)`` for a disposable repo pair wired to the tracked hooks.
 
     ``push_master=False`` leaves ``refs/heads/master`` absent on the remote, which
@@ -430,7 +447,9 @@ def test_post_checkout_indexes_new_worktree(tmp_path: Path) -> None:
     shim = _shim_dir(tmp_path, "codegraph", _RECORDING_SHIM)
     worktree = tmp_path / "wt"
     with _sandbox(tmp_path) as (_remote, clone):
-        result = _worktree_add(clone, worktree, _path_env(shim, **{SHIM_LOG_ENV: str(shim_log)}))
+        result = _worktree_add(
+            clone, worktree, _path_env(shim, overrides={SHIM_LOG_ENV: str(shim_log)})
+        )
 
     assert result.returncode == 0, f"worktree add failed:\n{result.stderr}"
     rows = _shim_rows(shim_log)
@@ -462,7 +481,7 @@ def test_post_checkout_ignores_ordinary_branch_switch(tmp_path: Path) -> None:
     """
     shim_log = tmp_path / "shim.log"
     shim = _shim_dir(tmp_path, "codegraph", _RECORDING_SHIM)
-    env = _path_env(shim, **{SHIM_LOG_ENV: str(shim_log)})
+    env = _path_env(shim, overrides={SHIM_LOG_ENV: str(shim_log)})
     with _sandbox(tmp_path) as (_remote, clone):
         _check(_git("checkout", "-b", "other", cwd=clone, env=env), "git checkout -b other")
         _check(_git("checkout", "master", cwd=clone, env=env), "git checkout master")
@@ -534,7 +553,7 @@ def test_post_commit_syncs_index(tmp_path: Path) -> None:
             "-m",
             "a commit that should refresh the index",
             cwd=clone,
-            env=_path_env(shim, **{SHIM_LOG_ENV: str(shim_log)}),
+            env=_path_env(shim, overrides={SHIM_LOG_ENV: str(shim_log)}),
         )
         clone_root = clone.resolve()
 
@@ -620,7 +639,7 @@ def test_post_commit_codegraph_hang_does_not_block_commit(tmp_path: Path) -> Non
             "-m",
             "commit with a codegraph that never returns",
             cwd=clone,
-            env=_path_env(shim, **{TIMEOUT_ENV: "1"}),
+            env=_path_env(shim, overrides={TIMEOUT_ENV: "1"}),
         )
         elapsed = time.monotonic() - started
         after = _head(clone)

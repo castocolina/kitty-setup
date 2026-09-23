@@ -1,13 +1,14 @@
 # kitty-setup — Agent Rules
 
 Universal, non-negotiable rules for any agent (or human) working in this repo. Project
-identity, structure, and stack live in `README.md` and the swappable convention files
-below — never duplicated here. Rules and process for agents live in this file — the
-canonical instruction file — validated with the `agent-md-refactor` skill. Project
-information for humans lives in `README.md`, validated with the
-`crafting-effective-readmes` skill. Stack and tooling conventions live in
-`.claude/conventions.md`. A rule belongs in exactly one of the three files; a rule found
-in the wrong file is moved, not copied.
+identity and structure live in `README.md`; stack and tooling **conventions** live in
+`.claude/conventions.md` — neither is duplicated here. What this file states about the
+stack is the **allow-list** (`## Stack` below): a rule about what may exist in the repo,
+not a tooling convention. Rules and process for agents live in this file — the canonical
+instruction file — validated with the `agent-md-refactor` skill. Project information for
+humans lives in `README.md`, validated with the `crafting-effective-readmes` skill. A
+rule belongs in exactly one of the three files; a rule found in the wrong file is moved,
+not copied.
 
 ## Authoritative sources
 
@@ -41,7 +42,8 @@ to match drifted code.
 - **Git policy.** Each phase runs in its own git worktree on branch
   `gsd/phase-{phase}-{slug}`. Work lands per the commit-granularity rule below. At phase
   end, once `make doctor` and `make test` are green, merge into `master` and push — the
-  same precondition `.planning/ROADMAP.md`'s Universal Phase Gate step 6 states. Never
+  same precondition `.planning/ROADMAP.md`'s Universal Phase Gate step 6 states. Phase
+  1's branch merges after Phase 2's R1.1 turns `make doctor` green. Never
   force-push or amend pushed commits. Enforced by `tools/hooks/pre-push`, wired once via
   `core.hooksPath` by `make hooks`; the hook rejects any push whose remote tip is not an
   ancestor of the local tip, plus any `master` push carrying a non-merge commit that no
@@ -65,7 +67,8 @@ to match drifted code.
 - **Re-read before edit.** The user may edit files between turns; never trust in-memory
   contents. Re-read before evaluating or modifying.
 - **Skill outputs land on disk.** Brainstorms, designs, plans, analyses are written to
-  files (under `.planning/` or `docs/`). If it isn't on disk, it doesn't exist.
+  files — under `.planning/`, `docs/`, or the `tmp/h<NN>-<slug>/` hypothesis dir the
+  mantra rule above requires. If it isn't on disk, it doesn't exist.
 - **Research tooling first.** Prefer the `codegraph_explore` MCP tool, or `codegraph
   explore` from the shell, **before** opening files — it returns verbatim source plus call
   paths in one call, and this repo is CodeGraph-indexed, so a grep-and-read loop repeats
@@ -78,7 +81,10 @@ to match drifted code.
   `.planning/config.json` — the rule makes plans opt in; it does not invent a mechanism.
 - **Verify before declaring done.** Any "ready" claim is backed by `make doctor` and
   `make test` output captured into the PR / handoff — both commands, captured rather than
-  green. No "should work" — only "verified by `<command>` → `<output>`".
+  green. No "should work" — only "verified by `<command>` → `<output>`". Capturing is the
+  evidence duty and is a separate thing from the merge precondition: the git policy above
+  additionally requires both commands to be green before a phase branch merges, so a
+  captured-but-red run satisfies this rule and still blocks the merge.
 - **Questions are not orders.** Answer questions; do not auto-change code.
 
 ## Stack
