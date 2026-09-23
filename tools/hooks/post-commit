@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# tools/hooks/post-commit — CodeGraph index lifecycle, incremental-refresh half
+# (R0.6, D-13). Invoked by `git commit` after the commit object already exists, so it
+# cannot fail a commit even in principle. This hook is ADVISORY: it can only warn, and
+# it has no non-zero exit path.
+#
+# This file is shell because it is a git-invoked hook entry point, which the shell
+# allow-list in the repo's canonical instruction file ("Stack" section) permits. The
+# section is named rather than the filename on purpose: the canonical instruction file
+# changes during this phase, and a filename here would go stale.
+#
+# argv:  none.
+# stdin: unused.
+#
+# CWD IS LOAD-BEARING, and was measured rather than assumed. git runs this hook at the
+#   root of the committing worktree, which is exactly the tree to refresh. The house
+#   REPO_ROOT idiom, `cd "$(dirname "${BASH_SOURCE[0]}")/../.."`, is deliberately NOT
+#   used: core.hooksPath can resolve the hook FILE out of a different worktree — it
+#   always does when core.hooksPath is an absolute path, and it does for
+#   `git worktree add` even when it is relative (measured on git 2.55.0) — so cd'ing to
+#   the hook file's own ../.. would refresh the wrong tree. Do not add a `cd`.
+#
+# WHY THE INCREMENTAL SUBCOMMAND: D-13 names `sync` for the commit path and reserves
+#   the whole-repo rebuild (`init`, which tools/hooks/post-checkout runs once per new
+#   worktree) for worktree creation, so a commit never pays whole-repo cost. `-q` is
+#   documented by `codegraph sync --help` as "Suppress output (for git hooks)"; the
+#   tagged line below is this hook's own, not the tool's.
+#
+# LIMITS — established by execution, not guessed. If you hit one, this hook is
+# behaving as designed; do not "fix" it.
+#   1. `git commit --no-verify` does NOT skip post-commit (it skips pre-commit and
+#      commit-msg), but `git commit` in a repo whose core.hooksPath does not resolve to
+#      this directory will not run it at all.
+#   2. A CodeGraph absence, failure or timeout is warned about and then ignored.
+#   3. On a host with no `timeout` binary (a default macOS install) the call is
+#      unbounded. Accepted residual risk, recorded as threat-register row T-1-04 in
+#      .planning/phases/01-governance-freeze/01-02-PLAN.md.
+#   4. A worktree that was never indexed has nothing to sync; the refresh warns and the
+#      commit stands. tools/hooks/post-checkout is what builds the first index.
+
+set -euo pipefail
+
+log() { printf '[post-commit] %s\n' "$*"; }
+
+# House precondition idiom (01-PATTERNS.md invariant 6): `command -v`, never `which`.
+if ! command -v codegraph >/dev/null 2>&1; then
+    log "warning: codegraph is not on PATH — the index was not refreshed; the commit itself is unaffected"
+    exit 0
+fi
+
+# Bounded so a codegraph that never returns cannot wedge every commit in the repo.
+# macOS ships no `timeout` by default and this repo is verified on a Mac in Phases
+# 9-10, so the bare fallback is required rather than optional.
+CODEGRAPH_TIMEOUT_S="${KITTI_CODEGRAPH_TIMEOUT_S:-60}"
+rc=0
+if command -v timeout >/dev/null 2>&1; then
+    timeout "${CODEGRAPH_TIMEOUT_S}" codegraph sync -q || rc=$?
+else
+    codegraph sync -q || rc=$?
+fi
+
+# A successful run is logged too, not just a failing one: `sync -q` is silent by
+# design, so without this line a successful commit would emit no [post-commit] tag at
+# all and R0.6's "demonstrated, not asserted" criterion would have no signal to capture.
+if [[ "${rc}" -eq 0 ]]; then
+    log "CodeGraph index synchronised for this worktree"
+else
+    log "warning: codegraph sync exited ${rc} (failure or timeout) — the index was not refreshed; the commit itself is unaffected"
+fi
+
+exit 0
