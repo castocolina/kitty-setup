@@ -26,7 +26,7 @@ created: "2026-09-23"
 | **Config file** | `pyproject.toml` |
 | **Quick run command** | `uv run pytest tests/unit -x` |
 | **Full suite command** | `make test` |
-| **Estimated runtime** | ~30 seconds (unit); full suite longer, integration gated by `KITTI_INTEGRATION=1` |
+| **Estimated runtime** | ~30 seconds (unit); full suite longer. **Note:** `tests/integration/` is skipped entirely unless `KITTI_INTEGRATION=1` (`tests/conftest.py:44-53`) — a verify command pointed there reports green while running nothing. |
 
 **Caveat carried forward from research:** neither `make test` nor `make doctor` currently
 covers governance content, so this phase's real gate is the per-requirement checks below
@@ -38,7 +38,7 @@ covers governance content, so this phase's real gate is the per-requirement chec
 
 - **After every task commit:** the grep/shell check for that task's requirement (cheap, instant)
 - **After every plan wave:** `uv run pytest tests/unit -x` plus every governance check landed so far
-- **Git-hook behaviour:** exercised in a **disposable sandbox repo** (`tempfile.TemporaryDirectory`),
+- **Git-hook behaviour:** exercised in a **disposable sandbox repo** (pytest `tmp_path`),
   never against the real working tree — these tests mutate git state, including force-pushes
 - **Before `/gsd-verify-work`:** full suite green, and every row below at ✅
 - **Max feedback latency:** ~30 seconds for greps and unit tests; ~60 seconds for the sandbox git tests
@@ -60,9 +60,9 @@ Task IDs are assigned by the planner; the Requirement → check mapping is fixed
 | TBD | TBD | 1 | R0.9 | — | N/A | grep | `rg -n 'agent-md-refactor\|crafting-effective-readmes' AGENTS.md` | ❌ W0 | ⬜ pending |
 | TBD | TBD | 1 | R0.10 | — | N/A | grep | `rg -ni 'one commit per plan' AGENTS.md` | ❌ W0 | ⬜ pending |
 | TBD | TBD | 1 | R0.8 | — | N/A | shell | `test "$(cat CLAUDE.md)" = '@AGENTS.md'` ; `jq -r .claude_md_path .planning/config.json` = `./AGENTS.md` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 2 | R0.4 | T-1-01 | Non-fast-forward push is rejected | integration | `uv run pytest tests/integration/test_git_hooks.py -k force_push` (disposable sandbox) | ❌ W0 | ⬜ pending |
+| TBD | TBD | 2 | R0.4 | T-1-01 | Non-fast-forward push is rejected | integration | `uv run pytest tests/unit/test_git_hooks.py -k force_push` (disposable sandbox) | ❌ W0 | ⬜ pending |
 | TBD | TBD | 2 | R0.4 | T-1-01 | `core.hooksPath` resolves per worktree | shell | `git config --get core.hooksPath` = `tools/hooks` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 2 | R0.6 | — | CodeGraph failure never aborts the git operation | integration | `uv run pytest tests/integration/test_git_hooks.py -k codegraph` (worktree-add + post-commit, sandbox) | ❌ W0 | ⬜ pending |
+| TBD | TBD | 2 | R0.6 | — | CodeGraph failure never aborts the git operation | integration | `uv run pytest tests/unit/test_git_hooks.py -k codegraph` (worktree-add + post-commit, sandbox) | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -75,8 +75,21 @@ because R0.4 and R0.6 are the only two requirements in this phase whose truth is
 rather than textual — and ROADMAP criterion 7 says the CodeGraph lifecycle must be
 "demonstrated, not asserted", which a grep cannot do.
 
-- [ ] `tests/integration/test_git_hooks.py` — new file. `subprocess` + `tempfile.TemporaryDirectory`
-      disposable-repo harness, following the exact pattern the research used in its sandboxes:
+- [ ] `tests/unit/test_git_hooks.py` — new file. `subprocess` + pytest's **`tmp_path`**
+      disposable-repo harness.
+
+      **Location and fixture corrected 2026-09-23 from the pattern map, to remove a false-pass
+      and a non-idiomatic fixture — both were defects in this file as first written:**
+      - `tests/conftest.py:44-53` skips *every* item under `tests/integration/` unless
+        `KITTI_INTEGRATION=1`. Placing these there would make the verify command **report green
+        while running nothing** — precisely the silent false pass this project exists to remove.
+        The gate's real meaning is "needs a live kitty"; these tests need only `git`, so they
+        belong in the ungated tree and must run in plain `make test`.
+      - `tempfile.TemporaryDirectory` has **0 occurrences** anywhere in `tests/`; the house
+        fixture is pytest's `tmp_path`. RESEARCH.md's `TemporaryDirectory` was the researcher's
+        own sandbox vocabulary, not this repo's.
+
+      Cases, following the pattern the research used in its sandboxes:
   - [ ] force-push / amend-after-push rejection by `tools/hooks/pre-push`, asserting non-zero exit
   - [ ] fast-forward push is **allowed** (the negative control — a hook that rejects everything
         would pass a rejection-only test)
