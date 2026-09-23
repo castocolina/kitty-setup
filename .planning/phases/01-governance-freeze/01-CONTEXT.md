@@ -57,8 +57,8 @@ git guard.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase intent and requirements
-- `docs/prds/kitty-setup-remediation-v1.0-prd.md` §R0 — the source PRD for this phase's four requirements.
-- `.planning/REQUIREMENTS.md` R0.1–R0.4 — requirement IDs and acceptance text (R0.2 is being reworded per D-03).
+- `docs/prds/kitty-setup-remediation-v1.0-prd.md` §R0 — the source PRD for this phase's requirements (R0.1–R0.4; R0.5–R0.7 were added during this discussion).
+- `.planning/REQUIREMENTS.md` R0.1–R0.7 — requirement IDs and acceptance text (R0.2/R0.4 reworded per D-03/D-06; R0.5–R0.7 added per D-12/D-13/D-10).
 - `.planning/ROADMAP.md` "Phase 1" + "Universal Phase Gate" — success criteria and the per-phase gate (step 6 is being updated per D-06).
 - `.planning/PROJECT.md` Key Decisions — the three locked decisions; the git row changes per D-06.
 
@@ -103,7 +103,7 @@ git guard.
 <deferred>
 ## Deferred Ideas
 
-- **`curl | bash` installer with channel selection** — modeled on `../wezterm-setup/tools/install.sh`, letting a user install a chosen channel (nightly/release). Agreed to become **Phase 10**, after macOS verification, so distribution ships only once the setup is proven on both OSes. Needs its own requirement IDs (R8.x) added to `.planning/REQUIREMENTS.md`.
+- **`curl | bash` installer with channel selection** — modeled on `../wezterm-setup/tools/install.sh`, letting a user install a chosen channel (nightly/release). Agreed to become a phase of its own: initially Phase 10 (after macOS verification), then moved to **Phase 9** on 2026-09-22 at the user's request, with the installer's Mac-side run carried into Phase 10 (macOS E2E) as criterion 5. Needs its own requirement IDs (R8.x) added to `.planning/REQUIREMENTS.md`.
 - **Repairing the ~25 stale `openspec/` path references** created by D-02 — belongs to Phase 8 (live-doc hygiene), which already owns doc accuracy.
 - **`CLAUDE.md` Stack-section inaccuracies** beyond D-08's hook line (it claims the upstream-installer call and PATH edit happen in bash; both are Python now) — Phase 8, requirement R6.1.
 - **Findings from `crafting-effective-readmes` (D-11)** that exceed Phase 1 scope — recorded, not acted on.

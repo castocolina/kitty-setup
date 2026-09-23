@@ -183,7 +183,7 @@ Each defect is a requirement with a regression test.
       the selected channel; the default is stated explicitly in `--help` and in the README.
 - [ ] **R8.3**: After a `curl | bash` install, `my-kitty uninstall` still leaves no trace —
       verified on a host that never had the repo — and the macOS path is exercised over the
-      Phase 9 SSH harness with recorded evidence.
+      Phase 10 SSH harness with recorded evidence (the Mac-side run is owned by Phase 10).
 
 ## Cross-Cutting Gates
 
@@ -200,7 +200,7 @@ phase can be called done. Sourced from the PRD's "Quality Standards" and "Constr
 - **Security**: no new world-readable sockets; remote-control socket stays user-scoped; SSH
   key-auth only.
 - **Binding gate**: any phase that touches bindings re-runs the R2.8 oracle test on Linux
-  (Phases 3, 4, 7; macOS in Phase 9).
+  (Phases 3, 4, 7; macOS in Phase 10).
 - **Git gate**: commit per task, push branch `gsd/<phase>`; never merge to `master`, force-push,
   amend pushed commits, or push `master` (R0.4).
 
@@ -217,7 +217,7 @@ From the PRD's "Edge Cases". Each belongs to the phase that owns the relevant be
 | kitty versions below the minimum | Phase 5 |
 | Paths containing spaces | Phase 2 |
 | Running tests from inside kitty | Phase 2 |
-| Mac unreachable → Phase 9 blocked, all other phases unaffected | Phase 9 |
+| Mac unreachable → Phase 10 blocked, all other phases unaffected | Phase 10 |
 
 ## v2 Requirements
 
@@ -282,11 +282,11 @@ Every v1 requirement maps to exactly one phase.
 | R5.3 | Phase 7 | Pending |
 | R6.1 | Phase 8 | Pending |
 | R6.2 | Phase 8 | Pending |
-| R7.1 | Phase 9 | Pending |
-| R7.2 | Phase 9 | Pending |
-| R7.3 | Phase 9 | Pending |
-| R8.1 | Phase 10 | Pending |
-| R8.2 | Phase 10 | Pending |
+| R7.1 | Phase 10 | Pending |
+| R7.2 | Phase 10 | Pending |
+| R7.3 | Phase 10 | Pending |
+| R8.1 | Phase 9 | Pending |
+| R8.2 | Phase 9 | Pending |
 | R8.3 | Phase 10 | Pending |
 
 **Note on R1.8 and R2.8:** R1.8 (chord normalisation through kitty's parser) sits in Phase 3, not

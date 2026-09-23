@@ -10,9 +10,9 @@ judges every binding change is built *before* the first change (Phase 3), not af
 bindings (Phase 4) land against that oracle. With the binding surface trustworthy, the component
 boundary and version floor are enforced (Phase 5), the two new behaviours are built (Phases 6-7),
 docs are brought back in line with reality (Phase 8), and finally the whole thing is proven on a
-real Mac over SSH (Phase 9).
+packaged for distribution (Phase 9), and finally the whole thing — installer included — is proven on a real Mac over SSH (Phase 10).
 
-Phase 9 is deliberately terminal and load-bearing for nothing. If the Mac is unreachable, exactly
+Phase 10 is deliberately terminal and load-bearing for nothing. If the Mac is unreachable, exactly
 one phase blocks.
 
 ## Universal Phase Gate
@@ -32,7 +32,7 @@ repeated in each phase's success criteria — they are preconditions for calling
    `master` and push. Never force-push or amend pushed commits. A `tools/hooks/` pre-push guard
    enforces this (updated 2026-09-22, phase-1 discussion D-06/D-07).
 
-Phases that touch bindings (3, 4, 7 on Linux; 9 on macOS) additionally re-run the R2.8 oracle
+Phases that touch bindings (3, 4, 7 on Linux; 10 on macOS) additionally re-run the R2.8 oracle
 test as a gate.
 
 Execution is autonomous: no clarifying questions during execute. Ambiguity belongs in
@@ -53,8 +53,8 @@ discuss-phase.
 - [ ] **Phase 6: Pane Color Cycle** - `ctrl+shift+alt+c` rotates focused pane background + tab accent through an editable palette, statelessly, ≤300 ms
 - [ ] **Phase 7: Presets & Chord→Scene** - Named window/tab presets in user TOML, and a chord that summons a named scene
 - [ ] **Phase 8: Live-Doc Hygiene** - Every doc a user or agent reads describes what the code now actually does
-- [ ] **Phase 9: macOS E2E Over SSH** - Prove the whole setup on a real Mac, driven from Bazzite over SSH
-- [ ] **Phase 10: Distribution & Release Channels** - Ship a `curl | bash` installer with channel selection, once both OSes are proven
+- [ ] **Phase 9: Distribution & Release Channels** - Ship a `curl | bash` installer with channel selection
+- [ ] **Phase 10: macOS E2E Over SSH** - Prove the whole setup, installer included, on a real Mac driven from Bazzite over SSH
 
 ## Phase Details
 
@@ -105,7 +105,7 @@ discuss-phase.
   5. `cmd+k` and `super+k` normalise to the same chord through kitty's own parser, so payload chords attribute to our file on macOS rather than to a kitty default — proven by test.
 
 **Plans**: TBD
-**Note**: Criterion 1 is the acceptance gate for R2 and R5.3 and must land before any work in Phase 4. macOS-side assertions in criteria 2, 3, and 5 are researched here from docs/source and re-run against a real Mac in Phase 9.
+**Note**: Criterion 1 is the acceptance gate for R2 and R5.3 and must land before any work in Phase 4. macOS-side assertions in criteria 2, 3, and 5 are researched here from docs/source and re-run against a real Mac in Phase 10.
 
 ### Phase 4: Keybinding Harmonization
 
@@ -121,7 +121,7 @@ discuss-phase.
   5. The R2.8 oracle test is green after every binding change in this phase — no phantom, duplicate, stale, or wrongly attributed entry appears at any point.
 
 **Plans**: TBD
-**Note**: Linux criteria are verified in this phase. The macOS half of criteria 2, 3, and 4 (including `cmd+k` attributed to `clear`) is verified against a real Mac in Phase 9; until then it is a documented hypothesis, and the repro docs' macOS sections say so.
+**Note**: Linux criteria are verified in this phase. The macOS half of criteria 2, 3, and 4 (including `cmd+k` attributed to `clear`) is verified against a real Mac in Phase 10; until then it is a documented hypothesis, and the repro docs' macOS sections say so.
 
 ### Phase 5: Component Separation & Version Floor
 
@@ -173,40 +173,40 @@ discuss-phase.
 **Success Criteria** (what must be TRUE):
 
   1. CLI help text, docstrings, README, scene example headers, and the `CLAUDE.md` "Stack" section all match current behaviour — every claim checkable against a command's actual output.
-  2. Every behaviour changed in Phases 2-7 has a repro doc carrying both a Linux status section (filled with recorded evidence) and a macOS status section (filled, or explicitly marked pending Phase 9 rather than left blank or assumed).
+  2. Every behaviour changed in Phases 2-7 has a repro doc carrying both a Linux status section (filled with recorded evidence) and a macOS status section (filled, or explicitly marked pending Phase 10 rather than left blank or assumed).
   3. Frozen `openspec/` specs are left unrewritten, with the freeze banner from Phase 1 still the only change to them.
 
 **Plans**: TBD
 
-### Phase 9: macOS E2E Over SSH
+### Phase 9: Distribution & Release Channels
+
+**Goal**: Someone who has never cloned this repo can install a chosen release channel with one command, and the channel they get is the one they asked for.
+**Depends on**: Phase 8 (Linux behaviour is settled and documented before it is packaged)
+**Requirements**: R8.1, R8.2, R8.3
+**Success Criteria** (what must be TRUE):
+
+  1. `tools/install.sh` installs kitty-setup end-to-end on a clean Linux host via `curl -fsSL <raw-url> | bash`, with no repo clone required beforehand, and the trust model is documented the way `../wezterm-setup/docs/install.md` documents its own.
+  2. The installer accepts a channel selection (rolling vs pinned release) and installs the selected one; the default channel is explicit in `--help` and in the README, never implied.
+  3. Uninstall remains exact after a `curl | bash` install: `my-kitty uninstall` leaves no trace, verified on a host that never had the repo.
+
+**Plans**: TBD
+**Note**: Added 2026-09-22 during Phase 1 discussion, modeled on `../wezterm-setup/tools/install.sh`; moved ahead of macOS verification on 2026-09-22 at the user's request. The installer's macOS run moved with it — it is now criterion 5 of Phase 10, which owns every Mac-side check. Out of scope: publishing to a package manager (brew/apt), and any signing/notarization work.
+
+### Phase 10: macOS E2E Over SSH
 
 **Goal**: The macOS half of this project stops being a hypothesis — the same install, the same doctor, the same chords, and the same oracle are exercised on a real Mac in a real GUI session.
-**Depends on**: Phase 8, plus one-time manual prerequisites completed by the user
-**Requirements**: R7.1, R7.2, R7.3
+**Depends on**: Phase 9, plus one-time manual prerequisites completed by the user
+**Requirements**: R7.1, R7.2, R7.3, R8.3
 **Success Criteria** (what must be TRUE):
 
   1. The plan opens with the one-time prerequisite checklist the user performs — Remote Login enabled on the Mac, this host's SSH key added, uv + git installed, repo cloned, GUI session logged in, host alias shared — and execution does not begin until they are confirmed done.
   2. Driven from Bazzite over SSH in a single session, `make install` succeeds on the Mac, `my-kitty doctor` exits 0 with every check PASS or SKIP, and `my-kitty keys` reports 0 conflicts with `cmd+k` attributed to `clear`.
   3. kitty launches in the Mac GUI session (`open -a kitty` / `launchctl asuser`), is driven via `kitten @` over its unix socket, and the integration suite — including the R2.8 oracle test asserting `my-kitty keys --json` equals kitty's live macOS effective keymap 1:1 — is green.
   4. Every repro doc's macOS status section is filled with recorded evidence from this run, and a short manual UAT checklist covers what cannot be automated (physical keypress feel) and is completed.
+  5. The Phase 9 `curl | bash` installer is exercised on the Mac over the same SSH harness, including channel selection and a trace-free `my-kitty uninstall`, and the run is recorded as evidence (R8.3).
 
 **Plans**: TBD
-**Note**: No phase depends on Phase 9. If the Mac is unreachable, this phase blocks and the other eight are unaffected — that isolation is the reason it is last.
-
-### Phase 10: Distribution & Release Channels
-
-**Goal**: Someone who has never cloned this repo can install a chosen release channel with one command, and the channel they get is the one they asked for.
-**Depends on**: Phase 9 (distribution ships only once the setup is proven on Linux AND macOS)
-**Requirements**: R8.1, R8.2, R8.3
-**Success Criteria** (what must be TRUE):
-
-  1. `tools/install.sh` installs kitty-setup end-to-end on a clean Linux host via `curl -fsSL <raw-url> | bash`, with no repo clone required beforehand, and the trust model is documented the way `../wezterm-setup/docs/install.md` documents its own.
-  2. The installer accepts a channel selection (rolling vs pinned release) and installs the selected one; the default channel is explicit in `--help` and in the README, never implied.
-  3. The same command path is exercised on macOS (reusing the Phase 9 SSH harness) and the run is recorded as evidence.
-  4. Uninstall remains exact after a `curl | bash` install: `my-kitty uninstall` leaves no trace, verified on a host that never had the repo.
-
-**Plans**: TBD
-**Note**: Added 2026-09-22 during Phase 1 discussion, modeled on `../wezterm-setup/tools/install.sh`. Out of scope: publishing to a package manager (brew/apt), and any signing/notarization work.
+**Note**: No phase depends on Phase 10. If the Mac is unreachable, this phase blocks and the other nine are unaffected — that isolation is the reason it is last.
 
 ## Progress
 
@@ -223,8 +223,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Pane Color Cycle | 0/TBD | Not started | - |
 | 7. Presets & Chord→Scene | 0/TBD | Not started | - |
 | 8. Live-Doc Hygiene | 0/TBD | Not started | - |
-| 9. macOS E2E Over SSH | 0/TBD | Not started | - |
-| 10. Distribution & Release Channels | 0/TBD | Not started | - |
+| 9. Distribution & Release Channels | 0/TBD | Not started | - |
+| 10. macOS E2E Over SSH | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-09-22 from `docs/prds/kitty-setup-remediation-v1.0-prd.md` (v1.0). Phase

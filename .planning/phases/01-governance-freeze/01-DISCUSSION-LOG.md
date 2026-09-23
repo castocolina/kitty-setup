@@ -93,7 +93,7 @@ Raised by the user mid-discussion; no options were presented — it was a direct
 
 ## Deferred Ideas
 
-- **`curl | bash` installer with channel selection** (modeled on `../wezterm-setup/tools/install.sh`) — promoted to **Phase 10**, added to ROADMAP.md with requirements R8.1–R8.3.
+- **`curl | bash` installer with channel selection** (modeled on `../wezterm-setup/tools/install.sh`) — promoted to its own phase with requirements R8.1–R8.3 — added as Phase 10, then reordered to **Phase 9** on 2026-09-22 (macOS E2E became Phase 10 and absorbed the installer's Mac-side run as R8.3).
 - **Repairing ~25 stale `openspec/` path references** created by the move — Phase 8.
 - **CLAUDE.md Stack-section inaccuracies** beyond the new hook line — Phase 8, R6.1.
 - **`crafting-effective-readmes` findings** beyond Phase 1 scope — recorded, not acted on.

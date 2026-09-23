@@ -82,7 +82,7 @@ session.
   payload earns every line it keeps.
 - **Two hosts, unequal evidence**: Linux (Bazzite/KDE, X11-via-XWayland, kitty 0.49) is the
   daily driver and is verifiable in-session. macOS has never been verified at all — everything
-  macOS in this milestone is a hypothesis until Phase 9 runs it over SSH.
+  macOS in this milestone is a hypothesis until Phase 10 runs it over SSH.
 - **Existing harness is an asset**: `tests/integration` behind `KITTI_INTEGRATION=1` plus
   `KittySession` means the R2.8 oracle test is buildable today, which is why it lands in Phase 3
   before any binding changes.
