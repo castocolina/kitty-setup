@@ -85,6 +85,12 @@ _SLEEPING_SHIM: Final[str] = f"exec sleep {_SLEEP_S} >/dev/null 2>&1 </dev/null\
 #: against an empty remote ref, which the provenance guard rejects by design
 #: (see the hook header's limits block, item 6).
 ALLOW_MASTER: Final[str] = "KITTI_ALLOW_MASTER_PUSH"
+#: A remote ref whose name is not ``master``, used to push master's content under a
+#: different name. Guard 2 was keyed on the refspec's remote side alone, so this form
+#: skipped provenance entirely while carrying a commit the same guard rejects on
+#: ``master:master`` — measured in ``tmp/h06-prepush-refspec/`` (plan 01-06), where probe
+#: 01 recorded ``local_ref=refs/heads/master remote_ref=refs/heads/main`` for it.
+RENAMED_REF: Final[str] = "refs/heads/main"
 
 
 def _git(
@@ -346,6 +352,85 @@ def test_direct_commit_to_master_rejected(tmp_path: Path) -> None:
     assert any(
         "provenance" in line for line in rejections
     ), f"rejection does not name the provenance guard:\n{joined}"
+
+
+def _bootstrap_renamed_ref(clone: Path) -> None:
+    """Create ``RENAMED_REF`` on the remote from master, using the sanctioned escape hatch.
+
+    The hatch is required: creating that ref is itself a first push of master to an
+    empty remote ref, which the provenance guard rejects by design. Bootstrapping it
+    here is what lets the tests below reach guard 2's provenance **enumeration** instead
+    of stopping at the absent-remote-tip branch.
+    """
+    _check(
+        _git(
+            "push",
+            "origin",
+            f"master:{RENAMED_REF}",
+            cwd=clone,
+            env=_push_env(**{ALLOW_MASTER: "1"}),
+        ),
+        f"bootstrap {RENAMED_REF}",
+    )
+
+
+def test_master_to_renamed_remote_ref_rejected(tmp_path: Path) -> None:
+    """A commit authored on master is rejected even when the remote ref is renamed.
+
+    The regression this pins: guard 2 tested only the refspec's **remote** side, so
+    ``git push origin master:refs/heads/main`` carried the exact commit
+    ``test_direct_commit_to_master_rejected`` covers straight past provenance —
+    reproduced live before the fix (``tmp/h06-prepush-refspec/before.txt``, scenario
+    S2b) and recorded as MEDIUM 7 of the phase's verification report.
+
+    The rejection must name ``provenance`` rather than merely be non-zero: with
+    ``RENAMED_REF`` already present, the enumeration path is the one under test, and an
+    exit code alone cannot distinguish it from the absent-remote-tip branch or from a
+    crashing hook.
+    """
+    with _sandbox(tmp_path) as (_remote, clone):
+        _bootstrap_renamed_ref(clone)
+        _commit(clone, "direct\n", "authored straight onto master")
+        result = _git("push", "origin", f"master:{RENAMED_REF}", cwd=clone)
+
+    assert result.returncode != 0, (
+        f"master -> {RENAMED_REF} was not rejected; the renamed-ref bypass is open:\n"
+        f"{result.stderr}"
+    )
+    rejections = _rejections(result)
+    assert rejections, f"no {HOOK_TAG} diagnostic on stderr:\n{result.stderr}"
+    joined = "\n".join(rejections)
+    assert any(
+        "provenance" in line for line in rejections
+    ), f"rejection does not name the provenance guard:\n{joined}"
+
+
+def test_master_to_new_remote_ref_name_rejected(tmp_path: Path) -> None:
+    """Pushing master to a remote ref that does not exist yet is rejected under any name.
+
+    The same bypass reached through an absent remote ref: there is no tip to enumerate
+    against, so provenance cannot be established at all and the hook must say so instead
+    of waving the push through because the ref is not literally named ``master``. This is
+    the hook header's limit 6, widened from ``refs/heads/master`` to any empty remote ref,
+    and the rejection points at the sanctioned route for a deliberate bootstrap.
+    """
+    with _sandbox(tmp_path) as (_remote, clone):
+        result = _git("push", "origin", f"master:{RENAMED_REF}", cwd=clone)
+
+    assert result.returncode != 0, (
+        f"master -> new {RENAMED_REF} was not rejected; the renamed-ref bypass is open:\n"
+        f"{result.stderr}"
+    )
+    rejections = _rejections(result)
+    assert rejections, f"no {HOOK_TAG} diagnostic on stderr:\n{result.stderr}"
+    joined = "\n".join(rejections)
+    assert any(
+        "provenance" in line for line in rejections
+    ), f"rejection does not name the provenance guard:\n{joined}"
+    assert ALLOW_MASTER in result.stderr, (
+        "the rejection does not name the sanctioned route for a deliberate bootstrap:\n"
+        f"{result.stderr}"
+    )
 
 
 def test_phase_branch_merge_to_master_allowed(tmp_path: Path) -> None:
