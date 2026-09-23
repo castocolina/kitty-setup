@@ -3,7 +3,7 @@
 # See docs/agent-iteration.md (R3 — Makefile is thin).
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup clean doctor test uninstall prune
+.PHONY: help install setup clean doctor test uninstall prune hooks
 
 help:
 	@echo "kitty-setup targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  uninstall KEEP_CONFIG=1  preserve entire ~/.config/kitty/ footprint; remove kitty.app"
 	@echo "  uninstall KEEP_KITTY=1   preserve kitty.app + symlink + desktop; remove config + backups"
 	@echo "  prune                    keep 3 most recent kitty.conf backups, delete the rest"
+	@echo "  hooks                    set core.hooksPath to tools/hooks (git policy guard + codegraph lifecycle)"
 
 install: setup
 
@@ -38,3 +39,6 @@ uninstall:
 
 prune:
 	@my-kitty prune --backups --keep 3
+
+hooks:
+	@git config core.hooksPath tools/hooks

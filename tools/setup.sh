@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# tools/setup.sh — bootstrap entry point. The only bash logic in this repo (paired with
-# tools/uninstall.sh). See CLAUDE.md ("Stack") and docs/agent-iteration.md (R3).
+# tools/setup.sh — bootstrap entry point. One of the two bootstrap bash entry points, paired
+# with tools/uninstall.sh; the git hooks under tools/hooks/ are the repo's other tracked shell.
+# See CLAUDE.md ("Stack") and docs/agent-iteration.md (R3).
 #
 # Steps:
 #   1. Ensure `uv` is on PATH; install via the upstream installer if missing.

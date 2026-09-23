@@ -97,10 +97,12 @@ session.
 ## Constraints
 
 - **Tech stack**: Python 3.12+; `my-kitty` is the single `[project.scripts]` entry point. Bash
-  exists only in `tools/setup.sh` and `tools/uninstall.sh` for prerequisite bootstrap. No new
-  shell scripts. Makefile targets stay ≤5 lines and dispatch into `tools/` or a `my-kitty`
-  subcommand — Why: the repo's `CLAUDE.md` "Stack" rule; one entry point is what makes behaviour
-  introspectable and testable.
+  exists only in `tools/setup.sh` and `tools/uninstall.sh` for prerequisite bootstrap, and in the
+  git-invoked hook entry points under `tools/hooks/` (`pre-push`, `post-commit`, `post-checkout`),
+  each a thin dispatcher that delegates to a `my-kitty` subcommand if it outgrows that. No shell
+  scripts outside those two clauses. Makefile targets stay ≤5 lines and dispatch into `tools/` or a
+  `my-kitty` subcommand — Why: the repo's `CLAUDE.md` "Stack" rule; one entry point is what makes
+  behaviour introspectable and testable.
 - **Compatibility**: kitty ≥ the minimum constant decided in R3.4 (≥0.46 baseline; hosts run
   0.49). Linux (Bazzite/KDE) and macOS both first-class — Why: same muscle memory on both
   machines is the point of the project.
