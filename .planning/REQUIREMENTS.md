@@ -14,6 +14,9 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
 
 ### R0 — Governance
 
+> Note (2026-09-22, D-14): every "`CLAUDE.md`" below means the canonical instruction file,
+> which R0.8 establishes as `AGENTS.md` (with `CLAUDE.md` reduced to an `@AGENTS.md` import).
+
 - [ ] **R0.1**: `CLAUDE.md` carries a non-negotiable rule — *"Research, then experiment, then
       decide, then implement."* Any removal or replacement of behaviour (config line, chord, code
       path) requires (a) documented research (kitty docs/source/introspection) and (b) an
@@ -44,6 +47,15 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       CodeGraph failure warns and never aborts the commit or the worktree creation.
 - [ ] **R0.7**: Every new GSD plan carries `cross_ai: true` in its frontmatter (D-10), so
       cross-AI execution is the default rather than per-plan opt-in.
+- [ ] **R0.8**: `AGENTS.md` is the canonical instruction file and carries every agent rule
+      (D-14): GSD's `project-instruction-file` resolves to `AGENTS.md`, and codex/opencode read it
+      by convention, so rules kept only in `CLAUDE.md` would be invisible to the CLIs that execute
+      plans. `CLAUDE.md` is reduced to the single line `@AGENTS.md`, and
+      `.planning/config.json`'s `claude_md_path` is repointed.
+- [ ] **R0.9**: A placement rule is written into `AGENTS.md` (D-15): rules and process live in
+      `AGENTS.md` (validated with `agent-md-refactor`), project information for humans lives in
+      `README.md` (validated with `crafting-effective-readmes`), and stack/tooling conventions stay
+      in `.claude/conventions.md`. A rule belongs in exactly one file and is moved, never copied.
 
 ### R1 — Defect remediation
 
@@ -253,6 +265,8 @@ Every v1 requirement maps to exactly one phase.
 | R0.5 | Phase 1 | Pending |
 | R0.6 | Phase 1 | Pending |
 | R0.7 | Phase 1 | Pending |
+| R0.8 | Phase 1 | Pending |
+| R0.9 | Phase 1 | Pending |
 | R1.1 | Phase 2 | Pending |
 | R1.2 | Phase 2 | Pending |
 | R1.3 | Phase 2 | Pending |

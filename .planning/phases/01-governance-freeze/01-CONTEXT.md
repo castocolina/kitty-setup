@@ -9,8 +9,8 @@
 An agent opening this repo finds exactly one authoritative source of intent (`.planning/`) and
 one set of non-negotiable process rules in `CLAUDE.md`, with the whole OpenSpec tree relocated
 under `.planning/legacy/` and labelled as history. No source, config, or test file behaviour
-changes in this phase — it edits `CLAUDE.md`, moves `openspec/`, adds banners, and installs one
-git guard.
+changes in this phase — it writes `AGENTS.md` (canonical) with `CLAUDE.md` reduced to an
+`@AGENTS.md` import, moves `openspec/`, adds banners, and installs one git guard.
 
 </domain>
 
@@ -32,7 +32,15 @@ git guard.
 ### CLAUDE.md content
 - **D-09:** Surgical edit, not a restructure. The file is 62 lines and well organised; `agent-md-refactor` would collide with Phase 8's edits to the same file. Changes: rewrite "Authoritative sources" to point at `.planning/`; replace "No auto-commit" with the D-06 git policy; add the research→experiment→decide mantra as a non-negotiable rule; delete the OpenSpec "Spec-first" rule; keep `docs/agent-iteration.md` as the hypothesis playbook.
 - **D-10:** Add a rule that every new GSD plan carries `cross_ai: true` in its frontmatter, so cross-AI execution is the default rather than opt-in per plan.
-- **D-11:** After the `CLAUDE.md` edit, run the `crafting-effective-readmes` skill to validate the result covers what a newcomer agent needs. Findings that fall outside Phase 1's scope become deferred ideas, not edits.
+- **D-11:** After the instruction-file edit, validate it with the **`agent-md-refactor`** skill — that is the skill for AGENTS.md/CLAUDE.md-style files. `crafting-effective-readmes` is for `README.md` and is NOT used on the instruction file (corrected 2026-09-22; the earlier draft of this decision had the two skills swapped). Findings outside Phase 1's scope become deferred ideas, not edits.
+
+### Instruction-file layout and content placement (added 2026-09-22 by user request)
+- **D-14:** **`AGENTS.md` is the canonical instruction file**, not `CLAUDE.md`. Evidence: GSD's own `gsd-tools project-instruction-file` resolves to `AGENTS.md`, and codex and opencode — the CLIs now wired for cross-AI review and execution — read `AGENTS.md` by convention. Rules living only in `CLAUDE.md` would be invisible to the agents that execute plans. Migration: move the rule content from `CLAUDE.md` into `AGENTS.md`, and reduce `CLAUDE.md` to the single line `@AGENTS.md` (Claude Code's native import), so there is exactly one source of truth and no duplicated text to drift. `.planning/config.json`'s `claude_md_path` is repointed accordingly. — **Reversibility:** reversible — two files and a config key.
+- **D-15:** A written placement rule governs where things go, so future agents do not have to guess:
+  - **`AGENTS.md`** — rules and process for agents (the mantra, git policy, tooling discipline, `cross_ai: true`, verification gates, authoritative sources). Validated with `agent-md-refactor` (D-11).
+  - **`README.md`** — project information for humans: what kitty-setup is, install, usage, uninstall. Validated with `crafting-effective-readmes`.
+  - **`.claude/conventions.md`** — stack and tooling conventions (uv, black, ruff, pyright, bandit, vulture), keeping the existing "Pluggable rules" indirection so the language layer stays swappable.
+  - A rule belongs in exactly one of these. A rule discovered in the wrong file is moved, not copied.
 
 ### Tooling discipline (added 2026-09-22 by user request)
 - **D-12:** `CLAUDE.md` gains a research-tooling rule, because token/context cost is a first-class concern: prefer the `codegraph_explore` MCP tool (or `codegraph explore`) **before** opening files — it returns verbatim source plus call paths in one call. When a file must be opened directly, size it up first (`wc -l`, `rg -n '<symbol>'` to get the line number) and read only the relevant range instead of the whole file. Prefer the fast, focused tools — `rg`, `fd`, `wc`, `bat`, `sd`, `eza` — over their slower or more verbose equivalents. Rationale: this repo is CodeGraph-indexed, so a grep/read loop repeats work the index already did.
@@ -63,7 +71,9 @@ git guard.
 - `.planning/PROJECT.md` Key Decisions — the three locked decisions; the git row changes per D-06.
 
 ### Files this phase edits
-- `CLAUDE.md` — the file being rewritten (D-09, D-10).
+- `AGENTS.md` — the canonical instruction file this phase creates (D-09, D-10, D-14, D-15).
+- `CLAUDE.md` — reduced to a single `@AGENTS.md` import line (D-14).
+- `README.md` — not edited here; named only so the placement rule in D-15 can point at it.
 - `docs/requirements.md`, `docs/propossal_roadmap.md` — banner targets (D-04).
 - `openspec/changes/phase1-curated-bindings-revert-defaults/` — the change being archived (D-01).
 - `openspec/config.yaml` — moves with the tree (D-02).

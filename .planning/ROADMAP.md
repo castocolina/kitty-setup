@@ -62,7 +62,7 @@ discuss-phase.
 
 **Goal**: An agent opening this repo finds exactly one authoritative source of intent and one set of non-negotiable process rules, so an autonomous run never has to re-litigate how work happens.
 **Depends on**: Nothing (first phase)
-**Requirements**: R0.1, R0.2, R0.3, R0.4, R0.5, R0.6, R0.7
+**Requirements**: R0.1, R0.2, R0.3, R0.4, R0.5, R0.6, R0.7, R0.8, R0.9
 **Success Criteria** (what must be TRUE):
 
   1. `CLAUDE.md` states, as a non-negotiable rule, that research and a recorded real-kitty-session experiment precede any decision to remove or replace a config line, chord, or code path.
@@ -72,7 +72,9 @@ discuss-phase.
   5. FROZEN banners ("FROZEN — history only; source of truth is `.planning/`") open `.planning/legacy/openspec/README.md`, `docs/requirements.md`, and `docs/propossal_roadmap.md`.
   6. `CLAUDE.md` carries the research-tooling rule: `codegraph_explore` before opening files; size a file (`wc -l`, `rg -n`) and read only the relevant range when it must be opened; prefer `rg`/`fd`/`wc`/`bat`/`sd`/`eza`.
   7. A newly created phase worktree gets a CodeGraph index automatically, and a commit refreshes it; a CodeGraph failure warns without aborting either operation. Demonstrated, not asserted.
-  8. `CLAUDE.md` states that every new GSD plan carries `cross_ai: true` in its frontmatter.
+  8. The canonical instruction file states that every new GSD plan carries `cross_ai: true` in its frontmatter.
+  9. `AGENTS.md` is the canonical instruction file holding every rule, `CLAUDE.md` is the single line `@AGENTS.md`, and `.planning/config.json`'s `claude_md_path` points at the canonical file — so Claude, codex, and opencode all read the same rules.
+  10. `AGENTS.md` states the placement rule: rules in `AGENTS.md` (validated with `agent-md-refactor`), project information in `README.md` (validated with `crafting-effective-readmes`), stack conventions in `.claude/conventions.md`; each rule in exactly one file.
 
 **Plans**: TBD
 

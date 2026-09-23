@@ -5,7 +5,7 @@
 
 **Date:** 2026-09-22
 **Phase:** 1-Governance & Freeze
-**Areas discussed:** Archive mechanics, Rule enforcement, Freeze scope, CLAUDE.md shape, GSD configuration, Tooling discipline
+**Areas discussed:** Archive mechanics, Rule enforcement, Freeze scope, CLAUDE.md shape, GSD configuration, Tooling discipline, Instruction-file layout
 **Mode:** discuss + `--analyze` overlay (trade-off table before each question; requested as `—analyze`)
 
 ---
@@ -56,8 +56,8 @@
 | Surgical edit | Rewrite the affected blocks in the existing 62-line file | ✓ |
 | Restructure via agent-md-refactor | Split into linked docs with progressive disclosure | |
 
-**User's choice:** Surgical edit, then run `crafting-effective-readmes` to validate the result, and add the cross-AI frontmatter rule.
-**Notes:** A restructure would also collide with Phase 8's edits to the same file.
+**User's choice:** Surgical edit, then validate the result, and add the cross-AI frontmatter rule.
+**Notes:** A restructure would also collide with Phase 8's edits to the same file. **Corrected later in the discussion:** the validating skill is `agent-md-refactor` (for AGENTS.md/CLAUDE.md-style files), not `crafting-effective-readmes` (for README.md) — the user caught the mismatch.
 
 ---
 
@@ -82,6 +82,22 @@ Raised by the user mid-discussion; no options were presented — it was a direct
 **Notes:** Captured as D-12 (tooling rule) and D-13 (index lifecycle) plus requirements R0.5/R0.6. One deviation from the literal request, flagged for the planner: `codegraph sync` ("sync changes since last index") is recommended for the per-commit refresh instead of the full `codegraph index` rebuild — same guarantee, far cheaper per commit — with the full rebuild kept for worktree creation, where `.codegraph/` is absent because it is gitignored.
 
 ---
+
+## Instruction-file layout
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| AGENTS.md + `@AGENTS.md` import | AGENTS.md canonical; CLAUDE.md becomes a one-line native import | ✓ |
+| AGENTS.md + CLAUDE.md symlink | One source, but symlink behaviour varies per tool and on Windows checkouts | |
+| Keep CLAUDE.md canonical | Works for Claude, fights the convention GSD and the other CLIs assume | |
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Rules vs info vs conventions | AGENTS.md = rules; README.md = project info; `.claude/conventions.md` = stack conventions | ✓ |
+| Rules vs everything else | AGENTS.md = rules; everything else folded into README.md | |
+
+**User's choice:** AGENTS.md canonical via `@import`, with the three-way placement split.
+**Notes:** Driven by evidence gathered during the discussion: `gsd-tools project-instruction-file` resolves to `AGENTS.md`, and codex/opencode read `AGENTS.md` by convention — so with cross-AI review and execution now enabled, rules kept only in `CLAUDE.md` would be invisible to the CLIs that execute plans. The repo currently has only `CLAUDE.md` (62 lines). Captured as D-14/D-15 plus requirements R0.8/R0.9.
 
 ## Claude's Discretion
 
