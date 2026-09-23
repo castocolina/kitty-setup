@@ -134,8 +134,16 @@ Each defect is a requirement with a regression test.
       it was previously specified as "relocate outside the uv venv"); guard `int(stdout)` in the
       launcher → clean error; an empty/whitespace color is treated as **absent** (no kitten
       argument emitted, matching the recipe loader's convention) and passthrough is narrowed to
-      real `rgb:`/`rgba:`/functional forms (D-12); `prune --keep <0` → argparse error; harness
-      teardown `close-os-window`; doctor "skipped" → real SKIP state; PATH-migration messages
+      **`rgb:` only** (reworded 2026-09-23 from "real `rgb:`/`rgba:`/functional forms" — measured
+      against kitty 0.49.0's own parser, which accepts `rgb:ff/00/00` and rejects `rgba:ff/00/00/80`,
+      `rgb(1,2,3)`, `rgba(1,2,3,0.5)` and `hsl(1,2%,3%)`, so the wider list named forms kitty cannot
+      consume; U-2 in `.planning/phases/02-defect-remediation/02-RESEARCH.md`); `prune --keep <0` →
+      argparse error; **the harness teardown verb stays `close-window`** (reworded 2026-09-23: the
+      original "teardown `close-os-window`" is not implementable — `close-os-window` is not a
+      `kitten @` subcommand in kitty 0.49.0, only a mappable action, and the teardown call is wrapped
+      in `except HarnessCommandError: pass`, so implementing it literally would leak one kitty process
+      per integration test **silently**; `close-window` was measured correct with 2 OS windows and 3
+      windows; U-1 in 02-RESEARCH.md); doctor "skipped" → real SKIP state; PATH-migration messages
       printed as specified; unsupported-shell hint prints both lines.
 - [ ] **R1.8**: Introspection macOS attribution — normalise payload chords through kitty's own
       `parse_shortcut` (in the same `+runpy` call) so `cmd+k` ≡ `super+k` attributes to our file
