@@ -42,7 +42,16 @@ covers governance content, so this phase's real gate is the per-requirement chec
   commit to sample after. The sampling unit is the task's verification, which runs while the work is
   still unstaged or staged against `HEAD`. A `commit per task` grep does not match the old phrasing,
   which is why plan 01-05's absence gate uses the broadened alternation
-  `commits? per task|per-task commit|task commit` over this file as well as ROADMAP and PROJECT.
+  `commits? per task|per-task commit|task commit` over ROADMAP and PROJECT.
+
+  **Corrected again 2026-09-23 (review round 3):** that grep is asserted over ROADMAP and PROJECT
+  **only**, never over this file. This document quotes the forbidden phrasing twice by necessity —
+  once in the explanation above, and once inside row `01-05-T2`, which records the grep command
+  verbatim including its own search pattern. A file that catalogues commands contains every string
+  those commands look for, so "this pattern is absent here" is structurally unachievable. Two
+  earlier gates over this file had the same shape and were rescoped for the same reason (the `TBD`
+  guard and the `⬜ pending` gate, both now restricted to `'^| 01-0'` rows). Any future gate written
+  against this file must target row cells, and must not search for a literal that a row records.
 - **After every plan wave:** `uv run pytest tests/unit -x` plus every governance check landed so far
 - **Git-hook behaviour:** exercised in a **disposable sandbox repo** (pytest `tmp_path`),
   never against the real working tree — these tests mutate git state, including force-pushes
@@ -88,8 +97,8 @@ the files that amendment permits.
 | 01-04-T2 | 01-04 | 4 | R0.4 | T-1-01 | The documented policy discloses **every** way past the guard, not two of seven | grep | `for L in 'no-verify' 'KITTI_ALLOW_MASTER_PUSH' 'squash' 'cherry-pick' 'first' 'delet'; do rg -qi -- "$L" AGENTS.md \|\| exit 1; done` | ❌ W0 | ⬜ pending |
 | 01-04-T3 | 01-04 | 4 | R0.8 | — | No non-frozen tracked file still points a reader at `CLAUDE.md` for a rule | grep | `rg -q 'AGENTS\.md' .claude/conventions.md && ! rg -q 'CLAUDE' .claude/conventions.md` ; `rg -q 'AGENTS\.md' tools/setup.sh && ! rg -q 'CLAUDE\.md' tools/setup.sh` ; `rg -q 'AGENTS\.md' docs/agent-iteration.md && ! rg -q 'CLAUDE\.md' docs/agent-iteration.md` | ✅ | ⬜ pending |
 | 01-05-T1 | 01-05 | 5 | R0.9 | — | N/A | manual + grep | `agent-md-refactor` skill invoked, every finding triaged Applied/Deferred/Rejected in `01-05-SUMMARY.md`; then **every** `AGENTS.md` content check from the 01-04 rows above re-run, including the exactly-one-line count and the forbidden-token loop | ❌ W0 | ⬜ pending |
-| 01-05-T2 | 01-05 | 5 | R0.4, R0.10 | T-1-01 | The planning docs state the same policy as `AGENTS.md`, in every place each states one | shell | `rg -ni 'one commit per plan' .planning/ROADMAP.md && rg -ni 'one commit per plan' .planning/PROJECT.md` ; `for F in .planning/ROADMAP.md .planning/PROJECT.md .planning/phases/01-governance-freeze/01-VALIDATION.md; do test -f "$F" \|\| exit 1; if rg -qiE -- 'commits? per task\|per-task commit\|task commit' "$F"; then exit 1; fi; done` ; `test -f .planning/PROJECT.md && ! rg -q 'agents push a feature branch only' .planning/PROJECT.md` ; `test "$(rg -c '^### Phase [0-9]+(\.[0-9]+)?:' .planning/ROADMAP.md)" = '11'` | ✅ | ⬜ pending |
-| 01-05-T3 | 01-05 | 5 | R0.1–R0.10 | T-1-01 | The whole gate is run and recorded, and the quality baseline did not regress | shell | `OUT="$(make test 2>&1)" && printf '%s\n' "$OUT" \| rg -q '(^\|[^0-9])18 passed'` ; the per-requirement checks above ; the Map Completeness Gate below ; the baseline-vs-post quality table in `01-05-SUMMARY.md` | ✅ | ⬜ pending |
+| 01-05-T2 | 01-05 | 5 | R0.4, R0.10 | T-1-01 | The planning docs state the same policy as `AGENTS.md`, in every place each states one | shell | `rg -ni 'one commit per plan' .planning/ROADMAP.md && rg -ni 'one commit per plan' .planning/PROJECT.md` ; `for F in .planning/ROADMAP.md .planning/PROJECT.md; do test -f "$F" \|\| exit 1; if rg -qi -- 'commits? per task\|per-task commit\|task commit' "$F"; then exit 1; fi; done` ; `test -f .planning/PROJECT.md && ! rg -q 'agents push a feature branch only' .planning/PROJECT.md` ; `test "$(rg -c '^### Phase [0-9]+(\.[0-9]+)?:' .planning/ROADMAP.md)" = '11'` | ✅ | ⬜ pending |
+| 01-05-T3 | 01-05 | 5 | R0.1–R0.10 | T-1-01 | The whole gate is run and recorded, and the quality baseline did not regress | shell | `OUT="$(uv run pytest tests/unit/test_git_hooks.py -q 2>&1)" && printf '%s\n' "$OUT" \| rg -q '(^\|[^0-9])18 passed' && ! printf '%s\n' "$OUT" \| rg -q 'skipped'` ; `OUT="$(make test 2>&1)" && printf '%s\n' "$OUT" \| rg -q '(^\|[^0-9])311 passed'` ; the per-requirement checks above ; the Map Completeness Gate below ; the baseline-vs-post quality table in `01-05-SUMMARY.md` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -128,7 +137,9 @@ The map itself must be provably resolved, not merely look resolved. Plan 01-05 t
 
 ```bash
 V=.planning/phases/01-governance-freeze/01-VALIDATION.md
-test -f "$V" && ! rg -q '⬜ pending' "$V"                       # nothing left unrun
+test -f "$V" && ! rg '^\| 01-0' "$V" | rg -q '⬜ pending'       # nothing left unrun (rows only:
+#   the Status legend above and this very line both contain the marker, so a whole-file form can
+#   never pass — found and fixed in review round 3)
 test "$(rg -c '^\| 01-0' "$V")" = '23'                          # no row silently added or lost
 test "$(rg -c '^\| 01-0.*(✅|❌|⚠️)' "$V")" = '23'               # every row carries a real verdict
 ```
@@ -138,10 +149,22 @@ rather than resolved; the row-count check alone would pass on a map of twenty-th
 third is the positive assertion that each row reached a verdict.
 
 **What this replaces, and why that gate was worthless.** The previous plan gated on
-`test "$(rg -nic 'TBD' "$V" | wc -l)" = '0'`. This file has **never** contained the string `TBD`, so
-that gate passed before any work was done and could never fail — a gate that cannot fail is not a
-gate. `TBD` is still checked, but only as a guard against a placeholder being *introduced*, and it is
+`test "$(rg -nic 'TBD' "$V" | wc -l)" = '0'` over the whole file. That is not a usable gate here, and
+the reason is visible in this very paragraph: explaining the gate requires naming the token it looks
+for, so the prose describing it necessarily contains `TBD`. A whole-file check therefore fails on a
+correct document, and the number of occurrences grows every time this explanation is revised — which
+is why neither this paragraph nor the gate in `01-05-PLAN.md` states a count or a line number for
+them. The only stable, checkable claim is the row-scoped one below.
+
+The surviving guard is scoped to **verification-map rows** — `! rg '^\| 01-0' "$V" | rg -q 'TBD'` —
+where a placeholder would actually mean an unfinished check. So the accurate claim is: this file
+contains no `TBD` in any map row, and the guard exists to catch one being *introduced* there. It is
 labelled that way in the plan rather than presented as evidence of progress.
+
+Corrected in review round 3. The earlier wording asserted the file "has **never** contained the
+string `TBD`" — refuted by the occurrences in the sentence making the claim. Round 2 fixed the
+gate in `01-05-PLAN.md` but left this document of record unamended, so a later reader could
+re-derive the wrong conclusion and restore the whole-file form.
 
 ---
 
