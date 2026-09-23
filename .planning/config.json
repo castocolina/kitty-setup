@@ -48,7 +48,7 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "tdd_mode": true,
+    "tdd_mode": false,
     "ui_review": false,
     "use_worktrees": true,
     "plan_review_convergence": true,
@@ -73,7 +73,7 @@
   },
   "mode": "yolo",
   "intel": {
-    "enabled": false
+    "enabled": true
   },
   "graphify": {
     "enabled": true,

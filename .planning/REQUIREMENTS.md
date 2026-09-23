@@ -64,6 +64,19 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       commit's message. This supersedes "agents commit per task" in R0.4 — R0.4 keeps the worktree,
       merge, push and no-force-push half of the policy.
 
+      **`workflow.tdd_mode` must stay `false` for this project, and R0.10 is why** (decided
+      2026-09-23, before Phase 1 wave 2). The two settings are mutually unsatisfiable: with
+      `tdd_mode: true`, GSD's harness gate requires a **RED commit** — a commit scoped `(01-0N)`
+      touching `tests/` — *before* the implementation step of any task where
+      `query task.is-behavior-adding` returns true. Measured: plans `01-01` and `01-02` are
+      `type: tdd` and return `is_behavior_adding: true`, so the gate would demand at least two
+      commits from each, while R0.10 and those plans' own gates require the count to be exactly
+      **1**. One of the two has to give, and the plans already chose: `01-02-PLAN.md:92-93` records
+      the RED→GREEN transitions as **verified states to report, not commits**. The TDD discipline is
+      therefore kept in the plan text and in the SUMMARY evidence, not in commit topology.
+      Re-enabling `tdd_mode` without also relaxing R0.10 and the per-plan one-commit gates will halt
+      a phase mid-run with `TDD GATE TRIPPED`.
+
 - [ ] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
       vulture (added 2026-09-23 at the user's direction after the gate's claim was measured and
       found false). Owned by **Phase 2**, the earliest phase that already edits these files.
