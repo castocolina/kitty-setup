@@ -1,5 +1,8 @@
 # kitty-scenes — Requirements (high-level)
 
+> **FROZEN — history only; source of truth is `.planning/`.**
+> Superseded by `.planning/REQUIREMENTS.md`. Retained for provenance; do not edit.
+
 Date: 2026-05-01. Clean restart. Hypothesis-driven, scripts before integration. Linux + macOS parity.
 
 ## Context
