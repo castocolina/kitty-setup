@@ -77,7 +77,19 @@ discuss-phase.
   10. `AGENTS.md` states the placement rule: rules in `AGENTS.md` (validated with `agent-md-refactor`), project information in `README.md` (validated with `crafting-effective-readmes`), stack conventions in `.claude/conventions.md`; each rule in exactly one file.
   11. `AGENTS.md` states the commit-granularity rule (one commit per plan, squashed logically; a split is justified in the message), and it appears in exactly one file — R0.4's text points at it rather than repeating it.
 
-**Plans**: TBD
+**Plans**: 5 plans in 5 waves (serial — the chain is forced by the archive → move → banner →
+instruction-file ordering constraint plus the tracer-first lead, not by a lack of parallelism)
+
+- [ ] 01-01-PLAN.md — TRACER: `tools/hooks/pre-push` force/rewrite + direct-to-master guard, wired
+      via one shared `core.hooksPath`, regression-tested in a disposable sandbox (R0.4)
+- [ ] 01-02-PLAN.md — CodeGraph index lifecycle: `post-checkout` indexes a new worktree,
+      `post-commit` syncs incrementally, neither can abort a git operation (R0.6)
+- [ ] 01-03-PLAN.md — Archive the pending change with `--skip-specs`, `git mv openspec/` under
+      `.planning/legacy/`, FROZEN banners on the three history files (R0.2)
+- [ ] 01-04-PLAN.md — `AGENTS.md` as the canonical rule set, `CLAUDE.md` reduced to `@AGENTS.md`,
+      `claude_md_path` repointed (R0.1, R0.3, R0.4, R0.5, R0.7, R0.8, R0.9, R0.10)
+- [ ] 01-05-PLAN.md — `agent-md-refactor` validation pass, ROADMAP/PROJECT git-policy alignment,
+      and the phase governance gate run and recorded (R0.4, R0.9, R0.10)
 
 ### Phase 2: Defect Remediation
 
@@ -225,7 +237,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Governance & Freeze | 0/TBD | Not started | - |
+| 1. Governance & Freeze | 0/5 | Planned | - |
 | 2. Defect Remediation | 0/TBD | Not started | - |
 | 3. Keybinding Research & Oracle | 0/TBD | Not started | - |
 | 4. Keybinding Harmonization | 0/TBD | Not started | - |
