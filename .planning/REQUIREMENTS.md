@@ -90,6 +90,17 @@ Each defect is a requirement with a regression test.
       `~/.local/share/kitty-setup/` and the rc block sources it, so no runtime PATH lookup is
       needed; doctor checks the generated file plus the rc source line. Root cause confirmed: the
       helper exists inside the uv tool venv but `uv tool install` exposes only `my-kitty`.
+      **R1.1 also owns retiring Phase 1's doctor carve-out.** If plan `01-05` Task 2 Step 0 measures
+      `make doctor` as not-green and writes the named, dated, expiring carve-out into `AGENTS.md`,
+      `.planning/ROADMAP.md` and `.planning/PROJECT.md`, then R1.1 is not satisfied until that
+      carve-out text is **gone from all three files**. Plan `01-05` stamps each of the three passages
+      with the literal marker `PHASE-1-DOCTOR-CARVE-OUT`, so the check is exact, runnable at the
+      Phase 2 gate:
+      `for F in AGENTS.md .planning/ROADMAP.md .planning/PROJECT.md; do if rg -q 'PHASE-1-DOCTOR-CARVE-OUT' "$F"; then exit 1; fi; done`
+      Added in Phase 1 review round 2 (O2): the carve-out's
+      expiry was honoured only by prose, so nothing would have caught it becoming permanent by
+      neglect. If Step 0 measures doctor green and writes no carve-out, this clause is vacuously
+      satisfied and the check passes unchanged.
 - [ ] **R1.2**: `make clean` behaviour and help text agree; `clean` MUST NOT delete `kitty.app` or
       backups.
 - [ ] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary

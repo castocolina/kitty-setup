@@ -74,7 +74,11 @@ changes in this phase — it writes `AGENTS.md` (canonical) with `CLAUDE.md` red
 ### Files this phase edits
 - `AGENTS.md` — the canonical instruction file this phase creates (D-09, D-10, D-14, D-15).
 - `CLAUDE.md` — reduced to a single `@AGENTS.md` import line (D-14).
-- `README.md` — not edited here; named only so the placement rule in D-15 can point at it.
+- `README.md` — two edits only (plan 01-01 Step 0 b/b2): the `## Stack and layout` shell-allow-list
+  sentence gains `tools/hooks/`, and the repository-tree block gains an `AGENTS.md` entry. Nothing
+  else; `01-05` gates the branch diff at exactly two hunks. Corrected in review round 2 — this line
+  previously read "not edited here", which contradicted the plan that this phase's own hook work
+  forces: the allow-list claim becomes false the moment `tools/hooks/pre-push` exists.
 - `docs/requirements.md`, `docs/propossal_roadmap.md` — banner targets (D-04).
 - `openspec/changes/phase1-curated-bindings-revert-defaults/` — the change being archived (D-01).
 - `openspec/config.yaml` — moves with the tree (D-02).
