@@ -174,7 +174,7 @@ Each defect is a requirement with a regression test.
 - [ ] **R6.2**: Every changed behaviour has a repro doc with both a Linux status section and a
       macOS status section.
 
-### R7 — macOS end-to-end verification over SSH
+### R7 — macOS end-to-end verification and remediation over SSH
 
 - [ ] **R7.1**: Separate phase + plan. Prerequisites the user performs once, documented in the
       plan: enable Remote Login on the Mac, add this host's SSH key, install uv + git, clone the
@@ -185,6 +185,25 @@ Each defect is a requirement with a regression test.
       suite, and record evidence into the repro docs' macOS sections.
 - [ ] **R7.3**: Anything not automatable (physical keypress feel) becomes a short manual UAT
       checklist.
+- [ ] **R7.4**: This phase **fixes** what it finds, it does not only report. Any macOS-specific
+      defect surfaced by the run — chord attribution, the `cmd+k` override, doctor checks, per-OS
+      config selection, the installer's macOS path — is remediated inside this phase under the
+      same Universal Phase Gate (research → experiment on the Mac → decide → implement → green
+      gates), with the macOS oracle test (R2.8) as the acceptance check. Defects that are not
+      macOS-specific are recorded and routed to the phase that owns them instead of being fixed
+      here.
+- [ ] **R7.5**: An SSH runbook (`docs/ssh-macos-runbook.md`) makes the Mac reachable without the
+      driving session losing context: key-based Remote Login setup, a persistent/multiplexed
+      connection (`ControlMaster`/`ControlPersist`) so repeated commands do not re-authenticate,
+      and kitty's remote-control **unix socket forwarded** to the Linux host
+      (`ssh -L /tmp/kitty-mac.sock:/tmp/kitty-<pid> <host>`, OpenSSH ≥6.7 supports unix-socket
+      forwarding) so `kitten @ --to unix:/tmp/kitty-mac.sock` drives the Mac's kitty from Bazzite.
+      The runbook states which steps are the human's and which the agent's; the forwarding
+      mechanism is verified by experiment before it is relied on, per the mantra.
+- [ ] **R7.6**: This is the milestone's one **human-in-the-loop** phase: it cannot run unattended
+      because the Mac needs a logged-in GUI session and the one-time prerequisites. The phase plan
+      states that explicitly, and the roadmap flags it so an autonomous run stops here rather than
+      failing obscurely.
 
 ### R8 — Distribution (added 2026-09-22)
 
@@ -196,6 +215,11 @@ Each defect is a requirement with a regression test.
 - [ ] **R8.3**: After a `curl | bash` install, `my-kitty uninstall` still leaves no trace —
       verified on a host that never had the repo — and the macOS path is exercised over the
       Phase 10 SSH harness with recorded evidence (the Mac-side run is owned by Phase 10).
+- [ ] **R8.4**: Phase 9 **builds** the macOS distribution path, it does not defer it: the
+      installer detects the host OS and selects the macOS install steps (kitty.app placement, PATH
+      edit for the host shell, per-OS `clear.conf` variant), and the channel selection works
+      identically on both OSes. Phase 9 verifies what it can on Linux and marks the macOS path a
+      documented hypothesis; Phase 10 runs it on a real Mac and fixes it under R7.4.
 
 ## Cross-Cutting Gates
 
@@ -299,9 +323,13 @@ Every v1 requirement maps to exactly one phase.
 | R7.1 | Phase 10 | Pending |
 | R7.2 | Phase 10 | Pending |
 | R7.3 | Phase 10 | Pending |
+| R7.4 | Phase 10 | Pending |
+| R7.5 | Phase 10 | Pending |
+| R7.6 | Phase 10 | Pending |
 | R8.1 | Phase 9 | Pending |
 | R8.2 | Phase 9 | Pending |
 | R8.3 | Phase 10 | Pending |
+| R8.4 | Phase 9 | Pending |
 
 **Note on R1.8 and R2.8:** R1.8 (chord normalisation through kitty's parser) sits in Phase 3, not
 Phase 2, because it is a prerequisite of the R2.8 oracle's attribution assertion. R2.8's oracle

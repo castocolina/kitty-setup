@@ -10,7 +10,7 @@ judges every binding change is built *before* the first change (Phase 3), not af
 bindings (Phase 4) land against that oracle. With the binding surface trustworthy, the component
 boundary and version floor are enforced (Phase 5), the two new behaviours are built (Phases 6-7),
 docs are brought back in line with reality (Phase 8), and finally the whole thing is proven on a
-packaged for distribution (Phase 9), and finally the whole thing — installer included — is proven on a real Mac over SSH (Phase 10).
+packaged for distribution including the macOS install path (Phase 9), and finally the whole thing — installer included — is proven on a real Mac over SSH and repaired there (Phase 10, the one phase needing a human).
 
 Phase 10 is deliberately terminal and load-bearing for nothing. If the Mac is unreachable, exactly
 one phase blocks.
@@ -54,7 +54,7 @@ discuss-phase.
 - [ ] **Phase 7: Presets & Chord→Scene** - Named window/tab presets in user TOML, and a chord that summons a named scene
 - [ ] **Phase 8: Live-Doc Hygiene** - Every doc a user or agent reads describes what the code now actually does
 - [ ] **Phase 9: Distribution & Release Channels** - Ship a `curl | bash` installer with channel selection
-- [ ] **Phase 10: macOS E2E Over SSH** - Prove the whole setup, installer included, on a real Mac driven from Bazzite over SSH
+- [ ] **Phase 10: macOS E2E Over SSH** - Prove the whole setup, installer included, on a real Mac driven from Bazzite over SSH — and fix what it finds (human-in-the-loop)
 
 ## Phase Details
 
@@ -184,21 +184,22 @@ discuss-phase.
 
 **Goal**: Someone who has never cloned this repo can install a chosen release channel with one command, and the channel they get is the one they asked for.
 **Depends on**: Phase 8 (Linux behaviour is settled and documented before it is packaged)
-**Requirements**: R8.1, R8.2, R8.3
+**Requirements**: R8.1, R8.2, R8.3, R8.4
 **Success Criteria** (what must be TRUE):
 
   1. `tools/install.sh` installs kitty-setup end-to-end on a clean Linux host via `curl -fsSL <raw-url> | bash`, with no repo clone required beforehand, and the trust model is documented the way `../wezterm-setup/docs/install.md` documents its own.
   2. The installer accepts a channel selection (rolling vs pinned release) and installs the selected one; the default channel is explicit in `--help` and in the README, never implied.
   3. Uninstall remains exact after a `curl | bash` install: `my-kitty uninstall` leaves no trace, verified on a host that never had the repo.
+  4. The installer's macOS path is **built here**, not deferred: host-OS detection selects the macOS steps (kitty.app placement, PATH edit for the host shell, per-OS `clear.conf` variant) and channel selection behaves identically on both OSes. Linux is verified in this phase; the macOS path ships as a documented hypothesis that Phase 10 runs and repairs.
 
 **Plans**: TBD
 **Note**: Added 2026-09-22 during Phase 1 discussion, modeled on `../wezterm-setup/tools/install.sh`; moved ahead of macOS verification on 2026-09-22 at the user's request. The installer's macOS run moved with it — it is now criterion 5 of Phase 10, which owns every Mac-side check. Out of scope: publishing to a package manager (brew/apt), and any signing/notarization work.
 
 ### Phase 10: macOS E2E Over SSH
 
-**Goal**: The macOS half of this project stops being a hypothesis — the same install, the same doctor, the same chords, and the same oracle are exercised on a real Mac in a real GUI session.
+**Goal**: The macOS half of this project stops being a hypothesis — the same install, doctor, chords, oracle, and installer are exercised on a real Mac in a real GUI session, and whatever they surface is **fixed here**, not filed.
 **Depends on**: Phase 9, plus one-time manual prerequisites completed by the user
-**Requirements**: R7.1, R7.2, R7.3, R8.3
+**Requirements**: R7.1, R7.2, R7.3, R7.4, R7.5, R7.6, R8.3
 **Success Criteria** (what must be TRUE):
 
   1. The plan opens with the one-time prerequisite checklist the user performs — Remote Login enabled on the Mac, this host's SSH key added, uv + git installed, repo cloned, GUI session logged in, host alias shared — and execution does not begin until they are confirmed done.
@@ -206,9 +207,11 @@ discuss-phase.
   3. kitty launches in the Mac GUI session (`open -a kitty` / `launchctl asuser`), is driven via `kitten @` over its unix socket, and the integration suite — including the R2.8 oracle test asserting `my-kitty keys --json` equals kitty's live macOS effective keymap 1:1 — is green.
   4. Every repro doc's macOS status section is filled with recorded evidence from this run, and a short manual UAT checklist covers what cannot be automated (physical keypress feel) and is completed.
   5. The Phase 9 `curl | bash` installer is exercised on the Mac over the same SSH harness, including channel selection and a trace-free `my-kitty uninstall`, and the run is recorded as evidence (R8.3).
+  6. `docs/ssh-macos-runbook.md` exists and works: key-based Remote Login, a multiplexed connection (`ControlMaster`/`ControlPersist`) so repeated commands do not re-authenticate, and kitty's remote-control unix socket forwarded to the Linux host (`ssh -L /tmp/kitty-mac.sock:/tmp/kitty-<pid> <host>`) so `kitten @ --to unix:/tmp/kitty-mac.sock` drives the Mac's kitty from Bazzite. The forwarding is proven by experiment before anything relies on it.
+  7. Every macOS-specific defect the run surfaces is fixed inside this phase under the Universal Phase Gate, with the macOS oracle test green afterwards (R7.4). Non-macOS defects are recorded and routed to their owning phase rather than fixed here.
 
 **Plans**: TBD
-**Note**: No phase depends on Phase 10. If the Mac is unreachable, this phase blocks and the other nine are unaffected — that isolation is the reason it is last.
+**Note**: No phase depends on Phase 10. If the Mac is unreachable, this phase blocks and the other nine are unaffected — that isolation is the reason it is last. **This is the milestone's one human-in-the-loop phase** (R7.6): it needs a logged-in Mac GUI session plus the one-time prerequisites, so an autonomous run must stop here and say so rather than fail obscurely.
 
 ## Progress
 

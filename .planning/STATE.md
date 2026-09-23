@@ -75,7 +75,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 10]: Requires one-time manual prerequisites from the user before it can start — enable Remote Login on the Mac, add this host's SSH key, install uv + git, clone the repo, log into the GUI session, share the host alias. No other phase depends on Phase 10, so an unreachable Mac blocks only this phase.
+- [Phase 10]: Requires one-time manual prerequisites from the user before it can start — enable Remote Login on the Mac, add this host's SSH key, install uv + git, clone the repo, log into the GUI session, share the host alias. No other phase depends on Phase 10, so an unreachable Mac blocks only this phase. It is also the milestone's only human-in-the-loop phase (needs a logged-in Mac GUI session), so an autonomous run must stop there deliberately.
 - [Phase 4]: The macOS half of cwd inheritance, instant clear, and conflict-free custom chords stays a documented hypothesis until Phase 10 runs it on a real Mac. Repro docs must say so rather than assume parity.
 - [Phase 3]: Whether redundant payload restatement lines (tab-nav, window-nav, font-zoom, url-hints) can be removed depends on the R2.5 experiment's verdict. Phase 4's scope shifts based on that outcome.
 - [Setup]: `.planning/config.json` does not exist yet — granularity, gates, and model profile are at built-in defaults. Run `/gsd-config` before executing if non-default settings are wanted. Note: the 9-phase decomposition is fixed by the PRD and should not be re-derived from a granularity setting.
