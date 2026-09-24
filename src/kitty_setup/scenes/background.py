@@ -16,7 +16,7 @@ from kitty_setup.scenes.colors import ColorError, normalize_color
 
 
 def set_window_background(
-    color: str,
+    color: str | None,
     *,
     match: str | None = None,
     to: str | None = None,
@@ -25,13 +25,17 @@ def set_window_background(
 
     The color is normalized client-side (:func:`.colors.normalize_color`)
     before the kitten call; an unrecognized value raises
-    :class:`.colors.ColorError` and makes no kitten call.
+    :class:`.colors.ColorError` and makes no kitten call. An absent color
+    (``None``, empty or whitespace-only) sets nothing: no kitten call is made
+    and 0 is returned.
     """
-    color = normalize_color(color) or color
+    normalized = normalize_color(color)
+    if normalized is None:
+        return 0
     args: list[str] = []
     if match is not None:
         args.extend(("--match", match))
-    args.append(f"background={color}")
+    args.append(f"background={normalized}")
     result = _client.kitten_at("set-colors", *args, to=to)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)

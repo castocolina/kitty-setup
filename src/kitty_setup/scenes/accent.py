@@ -16,7 +16,7 @@ from kitty_setup.scenes.colors import ColorError, normalize_color
 
 
 def set_tab_accent(
-    color: str,
+    color: str | None,
     *,
     active_fg: str | None = None,
     inactive_fg: str | None = None,
@@ -27,20 +27,29 @@ def set_tab_accent(
 
     The color and the optional fg overrides are normalized client-side
     (:func:`.colors.normalize_color`) before the kitten call; an unrecognized
-    value raises :class:`.colors.ColorError` and makes no kitten call.
+    value raises :class:`.colors.ColorError` and makes no kitten call. An
+    absent value (``None``, empty or whitespace-only) emits no argument: an
+    absent color omits ``active_bg``/``inactive_bg`` but keeps the fg
+    overrides, and when nothing at all is left to set no kitten call is made
+    and 0 is returned.
     """
-    color = normalize_color(color) or color
+    normalized = normalize_color(color)
     active_fg = normalize_color(active_fg)
     inactive_fg = normalize_color(inactive_fg)
+    # An absent color contributes no bg arguments; the fg overrides still apply.
+    settings: list[str] = (
+        [] if normalized is None else [f"active_bg={normalized}", f"inactive_bg={normalized}"]
+    )
+    if active_fg is not None:
+        settings.append(f"active_fg={active_fg}")
+    if inactive_fg is not None:
+        settings.append(f"inactive_fg={inactive_fg}")
+    if not settings:
+        return 0
     args: list[str] = []
     if match is not None:
         args.extend(("--match", match))
-    args.append(f"active_bg={color}")
-    args.append(f"inactive_bg={color}")
-    if active_fg is not None:
-        args.append(f"active_fg={active_fg}")
-    if inactive_fg is not None:
-        args.append(f"inactive_fg={inactive_fg}")
+    args.extend(settings)
     result = _client.kitten_at("set-tab-color", *args, to=to)
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
