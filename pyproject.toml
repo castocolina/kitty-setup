@@ -88,6 +88,11 @@ ignore = []
 # noqa" finding — growing the repo's recorded lint baseline from 19 findings to 21 instead of
 # holding it. The narrower entry holds it at 19. See 01-01-SUMMARY.md "Deviations".
 "tests/unit/test_git_hooks.py" = ["S603", "S607"]
+# S603: the headless integration runner (R0.13, 02-11) passes every argv as a list with
+#       shell=False, built from shutil.which's absolute compositor path and sys.executable.
+#       The only caller-supplied part is the developer's own PYTEST_ARGS, which reaches pytest
+#       as arguments and never a shell. Scoped to this one file for the reason given above.
+"src/kitty_setup/harness/integration_runner.py" = ["S603"]
 
 [tool.pyright]
 include = ["src", "tests"]

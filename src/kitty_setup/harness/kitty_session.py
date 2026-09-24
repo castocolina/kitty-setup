@@ -3,14 +3,20 @@
 Implements the kitty-test-harness capability. ``KittySession`` is a context
 manager that:
 
-1. Spawns Kitty with a per-session Unix socket and a per-session config dir
-   under ``tmp/sessions/<id>/``.
+1. Spawns Kitty with a per-session config dir under ``tmp/sessions/<id>/`` (config,
+   log, HOME — the evidence) and a per-session Unix socket alone in a short private
+   (0700) directory under ``$XDG_RUNTIME_DIR``, falling back to the temp dir. The socket
+   is kept out of the repo so its path does not grow with checkout depth:
+   ``sockaddr_un.sun_path`` holds 108 bytes including the NUL, and kitty silently
+   ignores a longer ``--listen-on`` (measured: 114 bytes from a ``.claude/worktrees/``
+   checkout).
 2. Polls the socket up to 5 seconds for readiness.
 3. Exposes ``ls()`` / ``send_key()`` / ``send_text()`` / ``launch()`` /
    ``get_text()`` wrappers around ``kitten @ --to unix:<sock>``.
 4. Closes the OS window cleanly on exit, then SIGTERM and finally SIGKILL the
    process if it lingers. Wipes its session directory on success unless
-   ``KEEP_SESSIONS=1`` is set.
+   ``KEEP_SESSIONS=1`` is set. The socket directory holds no evidence and is
+   always removed, on teardown and on a failed startup alike.
 
 The harness ignores the user's ``~/.config/kitty/`` because every session
 points ``--config`` at its own session-local file.
@@ -25,6 +31,7 @@ import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -34,6 +41,8 @@ from typing import Any, Final
 DEFAULT_SOCKET_BUDGET_S: Final[float] = 5.0
 DEFAULT_CLOSE_GRACE_S: Final[float] = 2.0
 DEFAULT_KILL_GRACE_S: Final[float] = 5.0
+# sockaddr_un.sun_path is 108 bytes on Linux, one of them the terminating NUL.
+SOCKET_PATH_BUDGET: Final[int] = 107
 
 
 class HarnessStartupError(RuntimeError):
@@ -82,6 +91,18 @@ def _sessions_root() -> Path:
     return root
 
 
+def _make_socket_dir() -> Path:
+    """Create a short private (0700) directory for one session's control socket.
+
+    ``$XDG_RUNTIME_DIR`` when it is set and is a directory (``/run/user/<uid>/kitti-…``,
+    34 bytes to the socket, measured), otherwise ``tempfile.gettempdir()`` (``/tmp/kitti-…``,
+    24 bytes). ``mkdtemp`` creates the directory with mode 0700.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    parent = runtime if runtime and Path(runtime).is_dir() else tempfile.gettempdir()
+    return Path(tempfile.mkdtemp(prefix="kitti-", dir=parent))
+
+
 _ANSI_RE: Final[re.Pattern[str]] = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -110,6 +131,7 @@ class KittySession:
         self._kill_grace_s = kill_grace_s
         self._session_id: str = ""
         self._session_dir: Path = Path()
+        self._socket_dir: Path | None = None
         self._socket_path: Path = Path()
         self._config_path: Path = Path()
         self._log_path: Path = Path()
@@ -130,15 +152,23 @@ class KittySession:
         self._session_dir = _sessions_root() / self._session_id
         self._session_dir.mkdir(parents=True, exist_ok=False)
         (self._session_dir / "home").mkdir()
-        self._socket_path = self._session_dir / "sock"
         self._config_path = self._session_dir / "kitty.conf"
         self._log_path = self._session_dir / "kitty.log"
-        self._write_session_config()
-        self._spawn_kitty()
+        self._socket_dir = _make_socket_dir()
+        self._socket_path = self._socket_dir / "sock"
         try:
+            if len(bytes(self._socket_path)) > SOCKET_PATH_BUDGET:
+                raise HarnessStartupError(
+                    f"socket path {self._socket_path} is longer than the "
+                    f"{SOCKET_PATH_BUDGET} bytes sun_path allows; set XDG_RUNTIME_DIR "
+                    "or TMPDIR to a shorter directory"
+                )
+            self._write_session_config()
+            self._spawn_kitty()
             self._wait_for_socket()
-        except HarnessStartupError:
+        except BaseException:
             self._kill_process()
+            self._remove_socket_dir()
             raise
         return self
 
@@ -152,6 +182,7 @@ class KittySession:
             if self._process is not None and self._process.poll() is None:
                 self._close_window_then_terminate()
         finally:
+            self._remove_socket_dir()
             keep = exc is not None or os.environ.get("KEEP_SESSIONS") == "1"
             if not keep and self._session_dir.exists():
                 shutil.rmtree(self._session_dir, ignore_errors=True)
@@ -304,6 +335,13 @@ class KittySession:
         except subprocess.TimeoutExpired:
             self._process.kill()
             self._process.wait(timeout=2.0)
+
+    def _remove_socket_dir(self) -> None:
+        # Always removed, KEEP_SESSIONS or not: it holds only the socket, and a stale
+        # socket left in $XDG_RUNTIME_DIR is evidence of nothing.
+        if self._socket_dir is not None:
+            shutil.rmtree(self._socket_dir, ignore_errors=True)
+            self._socket_dir = None
 
     def _kill_process(self) -> None:
         if self._process is None:

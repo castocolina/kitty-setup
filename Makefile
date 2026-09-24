@@ -3,7 +3,7 @@
 # See docs/agent-iteration.md (R3 — Makefile is thin).
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup clean doctor test uninstall prune hooks
+.PHONY: help install setup clean doctor test test-integration uninstall prune hooks
 
 help:
 	@echo "kitty-setup targets:"
@@ -11,7 +11,8 @@ help:
 	@echo "  setup                    alias of 'install'"
 	@echo "  clean                    strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)"
 	@echo "  doctor                   diagnose install state and config-include health"
-	@echo "  test                     run pytest (set KITTI_INTEGRATION=1 for integration tests)"
+	@echo "  test                     run pytest (unit tree; integration items skip — see test-integration)"
+	@echo "  test-integration         run tests/integration headless under a nested compositor (PYTEST_ARGS='<files> -k <expr>' for a subset)"
 	@echo "  uninstall                remove EVERYTHING we created (tools/uninstall.sh)"
 	@echo "  uninstall KEEP_BACKUPS=1 preserve kitty.conf.bak.* files; remove the rest"
 	@echo "  uninstall KEEP_CONFIG=1  preserve entire ~/.config/kitty/ footprint; remove kitty.app"
@@ -33,6 +34,9 @@ doctor:
 
 test:
 	@uv run pytest tests/
+
+test-integration:
+	@uv run python -m kitty_setup.harness.integration_runner $(PYTEST_ARGS)
 
 uninstall:
 	@KEEP_BACKUPS="$(KEEP_BACKUPS)" KEEP_CONFIG="$(KEEP_CONFIG)" KEEP_KITTY="$(KEEP_KITTY)" ./tools/uninstall.sh

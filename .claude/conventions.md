@@ -63,7 +63,7 @@ make format            # black + ruff --fix on src/ and tests/
 make validate          # full pre-commit pipeline
 make test              # pytest with coverage
 make test-unit
-make test-integration  # real Kitty session; KITTI_INTEGRATION=1 to enable
+make test-integration  # tests/integration headless under a nested compositor (cage); fails loudly without one
 ```
 
 Never commit code that fails `make validate`.
