@@ -101,6 +101,102 @@ def test_prune_two_policy_flags_exit_non_zero(capsys: pytest.CaptureFixture[str]
     assert "not allowed" in err or "argument" in err.lower()
 
 
+_SCRATCH_BACKUP = "kitty.conf.bak.20260101T000000Z"
+
+
+def _scratch_home_with_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point ``HOME`` at ``tmp_path`` holding one backup, so the real handler has work to do."""
+    kitty_dir = tmp_path / ".config" / "kitty"
+    kitty_dir.mkdir(parents=True)
+    (kitty_dir / "kitty.conf").write_text("", encoding="utf-8")
+    backup = kitty_dir / _SCRATCH_BACKUP
+    backup.write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    return backup
+
+
+def _record_prune_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, argparse.Namespace]:
+    """Replace ``cli_prune`` with a recorder, so no backup is ever listed or deleted."""
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    monkeypatch.setattr(cli.pruner, "cli_prune", fake)
+    return captured
+
+
+@pytest.mark.parametrize("option", ["--keep", "--older-than"])
+def test_prune_negative_value_is_an_argparse_usage_error(
+    option: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``prune --backups <option> -1`` is argparse's usage error, exit 2 — not a traceback.
+
+    The real handler runs against a scratch ``HOME`` with one backup. Before the fix, argparse
+    accepted ``-1``, and ``pruner``'s library guard raised a ``ValueError`` that escaped
+    ``cli.main`` (D-13).
+    """
+    backup = _scratch_home_with_backup(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["prune", "--backups", option, "-1"])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage: my-kitty prune" in err
+    assert f"argument {option}" in err
+    assert "-1" in err
+    assert backup.exists(), "a rejected value must not delete anything"
+
+
+def test_guard_prune_zero_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero is a valid ``--keep``: the check is non-negative, not positive."""
+    captured = _record_prune_args(monkeypatch)
+    assert cli.main(["prune", "--backups", "--keep", "0"]) == 0
+    assert captured["args"].keep == 0
+    assert cli.main(["prune", "--backups", "--older-than", "0"]) == 0
+    assert captured["args"].older_than == 0
+
+
+@pytest.mark.parametrize(
+    ("argv", "attr", "value"),
+    [
+        (["--keep", "5"], "keep", 5),
+        (["--older-than", "30"], "older_than", 30),
+    ],
+)
+def test_guard_prune_valid_values(
+    argv: list[str], attr: str, value: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A positive value still reaches the handler, as an ``int``, unchanged."""
+    captured = _record_prune_args(monkeypatch)
+    assert cli.main(["prune", "--backups", *argv]) == 0
+    got = getattr(captured["args"], attr)
+    assert type(got) is int
+    assert got == value
+
+
+@pytest.mark.parametrize(("option", "raw"), [("--keep", "abc"), ("--older-than", "x")])
+def test_guard_prune_non_int(
+    option: str,
+    raw: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A non-integer is still argparse's standard invalid-int error, exit 2."""
+    captured = _record_prune_args(monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["prune", "--backups", option, raw])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert f"argument {option}: invalid int value: '{raw}'" in err
+    assert not captured, "the handler must not run"
+
+
 def test_no_args_prints_help_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     code = cli.main([])
     out = capsys.readouterr().out
