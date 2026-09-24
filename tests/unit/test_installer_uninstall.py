@@ -242,3 +242,77 @@ def test_no_backups_present_prints_nothing_to_delete(
     installer.cli_uninstall(_ns())
     out = capsys.readouterr().out
     assert "nothing to delete" in out
+
+
+# --- R1.7 / D-11: the install log is removed, not relocated -----------------
+
+
+def test_install_log_producer_is_gone() -> None:
+    """Tombstone (D-11): pins a deletion, not a behaviour.
+
+    ``_record_install_log`` wrote the kitty version to ``<repo>/tmp/install.log``, which
+    nothing in ``src/``, ``tests/``, ``tools/``, ``docs/`` or the Makefile reads, and which a
+    ``uv tool install`` put inside uv's own tool venv. It existed only because a spec now
+    frozen under ``.planning/legacy/openspec/`` asked for it. This case is a signpost for a
+    future reader: the log was removed on purpose and must not come back under another name.
+    """
+    assert "_record_install_log" not in vars(installer)
+
+
+def test_install_log_not_written_by_mocked_install(
+    calls: dict[str, list[object]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tombstone (D-11): a mocked install writes no ``install.log`` under the repo root.
+
+    Pins a deletion, not a behaviour. ``_repo_root`` is pointed at a scratch root, the kitty
+    binary is a stub whose version is captured without running it, and the symlink, desktop
+    entry and scene seeding are stubbed, so nothing reaches the real ``HOME``. The report's
+    version still comes from the captured version, and ``_repo_root`` keeps its two remaining
+    callers: the payload source and the seeded-scenes source.
+    """
+    scratch = tmp_path / "repo"
+    scratch.mkdir()
+    dest = tmp_path / "dest"
+    kitty_bin = dest / installer.KITTY_APP_DIRNAME / "bin" / "kitty"
+    kitty_bin.parent.mkdir(parents=True)
+    kitty_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    kitty_bin.chmod(0o755)
+
+    def fake_repo_root() -> Path:
+        return scratch
+
+    def fake_capture_version(_kitty_bin: Path) -> str:
+        return "kitty 9.9.9 stub"
+
+    def fake_ensure_symlink(_target: Path, _link: Path) -> None:
+        return None
+
+    def fake_write_desktop_entry(*, kitty_bin: Path, icon_path: Path) -> None:
+        del kitty_bin, icon_path
+
+    def fake_seed_scenes() -> tuple[int, int]:
+        return (0, 0)
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(installer, "_repo_root", fake_repo_root)
+    monkeypatch.setattr(installer, "_capture_version", fake_capture_version)
+    monkeypatch.setattr(installer, "_ensure_symlink", fake_ensure_symlink)
+    monkeypatch.setattr(installer, "_write_desktop_entry", fake_write_desktop_entry)
+    monkeypatch.setattr(installer, "seed_scenes", fake_seed_scenes)
+
+    report = installer.install(dest=dest, inject_config=False)
+
+    assert report.version == "kitty 9.9.9 stub"
+    assert report.skipped_kitty_install is True
+    assert list(tmp_path.rglob("install.log")) == []
+    assert not (scratch / "tmp").exists()
+    payload_source: Path = vars(installer)["_payload_source"]()
+    scenes_source: Path = vars(installer)["_scenes_source"]()
+    assert payload_source in {scratch / "config" / "kitty", _bundled("_payload") / "kitty"}
+    assert scenes_source in {scratch / "examples" / "scenes", _bundled("_scenes")}
+    assert calls["uninstall"] == [] and calls["remove_kitty"] == []
+
+
+def _bundled(name: str) -> Path:
+    """Where a wheel install puts a force-included directory, next to ``installer.py``."""
+    return Path(installer.__file__).resolve().parent / name

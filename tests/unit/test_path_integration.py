@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -401,3 +404,110 @@ def test_print_path_result_unsupported_shell_prints_manual_lines_without_complet
     assert path_integration.EXPORT_LINE in out
     assert "completion is not set up for fish" in out
     assert "my-kitty-completion" not in out
+
+
+# --- R1.7 / D-13: the install report prints what path_integration computed ----------------
+
+
+def _report(result: path_integration.PathEditResult) -> str:
+    """What ``installer._print_path_result`` prints for ``result``."""
+    printer: Callable[[path_integration.PathEditResult], None] = vars(installer)[
+        "_print_path_result"
+    ]
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        printer(result)
+    return buffer.getvalue()
+
+
+def _current_block(shell: str) -> str:
+    render: Callable[[str], str] = vars(path_integration)["_block_text"]
+    return render(shell)
+
+
+# The five changed-branch reasons, each reached from a real ``~/.zshrc`` state. Every state uses
+# the same rc path, so a report line that ignores the reason is the same line for all five.
+_REASON_STATES: list[tuple[str, Callable[[], str], str]] = [
+    (
+        "removed-duplicate",
+        lambda: _legacy_block() + "# divider\n" + _new_block(),
+        "removed duplicate legacy marker",
+    ),
+    ("migrated-legacy", _legacy_block, "migrated legacy marker"),
+    (
+        "moved-zsh",
+        lambda: _current_block("zsh") + _USER_COMPINIT + "\n",
+        "moved rc block to end of file",
+    ),
+    ("rewrote-body", _new_block, "rewrote rc block body to current template"),
+    ("appended", lambda: "# user zshrc\nalias ll='ls -la'\n", "appended sentinel-bracketed block"),
+]
+
+
+def _drive(home: Path, rc_text: str) -> tuple[path_integration.PathEditResult, str]:
+    (home / ".zshrc").write_text(rc_text, encoding="utf-8")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
+    return result, _report(result)
+
+
+@pytest.mark.parametrize(
+    ("rc_text", "expected"),
+    [(state, reason) for _, state, reason in _REASON_STATES],
+    ids=[name for name, _, _ in _REASON_STATES],
+)
+def test_path_report_reason_printed(
+    tmp_path: Path, rc_text: Callable[[], str], expected: str
+) -> None:
+    """D-13: the changed branch prints the reason ``ensure_local_bin_in_path`` computed."""
+    result, out = _drive(tmp_path, rc_text())
+    assert result.changed is True
+    assert result.reason == expected
+    assert result.reason in out, out
+
+
+def test_path_report_reason_lines_distinct(tmp_path: Path) -> None:
+    """Five distinct reasons print five distinct lines, compared as a set.
+
+    A generic line that happens to carry one reason's words, or none, collapses the set.
+    """
+    lines: set[str] = set()
+    reasons: set[str] = set()
+    for _, state, _ in _REASON_STATES:
+        result, out = _drive(tmp_path, state())
+        reasons.add(result.reason)
+        lines.update(line.strip() for line in out.splitlines() if line.strip())
+    assert len(reasons) == 5
+    assert len(lines) == 5, lines
+
+
+def test_path_report_hint_prints_each_manual_line_on_its_own(tmp_path: Path) -> None:
+    """Amended D-13: every entry of ``manual_lines`` is a whole printed line, verbatim.
+
+    Joined with ``'; '`` they read as one shell command in which a ``#`` entry comments out
+    whatever follows it. None of them may be a bash source line for a fish user.
+    """
+    result = path_integration.ensure_local_bin_in_path(home=tmp_path, shell="fish")
+    assert result.skipped is True
+    assert len(result.manual_lines) >= 2
+    out = _report(result)
+    printed = [line.strip() for line in out.splitlines() if line.strip()]
+    for entry in result.manual_lines:
+        assert entry.strip() in printed, out
+    assert any("fish" in line for line in printed if line not in result.manual_lines), out
+    bash_source = path_integration.completion_source_line("bash")
+    assert all(bash_source not in line for line in printed), out
+    assert "my-kitty-completion" not in out
+
+
+def test_guard_path_report_unchanged_says_nothing_needed(tmp_path: Path) -> None:
+    """Guard (green at RED): a current block reports that nothing needed doing."""
+    result, out = _drive(tmp_path, _current_block("zsh"))
+    assert result.changed is False
+    assert "already" in out
+
+
+def test_guard_path_report_keeps_source_guidance(tmp_path: Path) -> None:
+    """Guard (green at RED): a change still tells the user to ``source`` the rc file."""
+    result, out = _drive(tmp_path, "# user zshrc\n")
+    assert result.changed is True
+    assert f"source {tmp_path / '.zshrc'}" in out
