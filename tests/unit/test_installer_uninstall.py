@@ -25,6 +25,23 @@ def _ns(**flags: bool) -> argparse.Namespace:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_completion_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ``cli_uninstall``'s completion-script removal (plan 02-01) off the real ``HOME``.
+
+    Without this, every default-flag case here would unlink the user's own
+    ``~/.local/share/kitty-setup/my-kitty-completion.*``. ``raising=False`` because the
+    constant is introduced by the same plan whose RED commit adds this guard.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(
+        installer,
+        "COMPLETION_DIR",
+        tmp_path / ".local" / "share" / "kitty-setup",
+        raising=False,
+    )
+
+
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[object]]:
     """Patch all four side-effect helpers; record invocations."""
