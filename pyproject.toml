@@ -93,6 +93,11 @@ ignore = []
 #       The only caller-supplied part is the developer's own PYTEST_ARGS, which reaches pytest
 #       as arguments and never a shell. Scoped to this one file for the reason given above.
 "src/kitty_setup/harness/integration_runner.py" = ["S603"]
+# S603: the completion e2e module (R1.1, 02-02) starts real bash and zsh with a list argv and
+#       shell=False; the shell path comes from shutil.which and the script text is a module
+#       literal, so no untrusted input reaches the call. Scoped to this one file for the reason
+#       given above.
+"tests/integration/test_completion_e2e.py" = ["S603"]
 
 [tool.pyright]
 include = ["src", "tests"]

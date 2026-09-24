@@ -396,7 +396,7 @@ def _print_path_result(result: path_integration.PathEditResult) -> None:
     if result.skipped:
         print(
             f"PATH:          shell {result.shell or '<unknown>'} not auto-handled; "
-            f"add manually: {result.manual_line}"
+            f"add manually: {'; '.join(result.manual_lines)}"
         )
     elif not result.changed:
         print("PATH:          already configured")
@@ -442,7 +442,13 @@ def cli_install(args: argparse.Namespace) -> int:
     _print_path_result(path_result)
     # The rc block is read only at the next shell start, so generating after the rc edit
     # within one install is sound; what matters is that both land in the same install.
-    completion = write_completion_script(path_result.shell)
+    try:
+        completion = write_completion_script(path_result.shell)
+    except OSError as exc:
+        # E1 (D-13): the rc block now sources this file and doctor FAILs without it, so a
+        # failed write is an install failure, reported as one line rather than a traceback.
+        print(f"install failed: cannot write the shell completion script: {exc}", file=sys.stderr)
+        return 1
     _print_completion_result(path_result.shell, completion)
     _print_legacy_shim_notice()
     return 0

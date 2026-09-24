@@ -202,6 +202,27 @@ def test_cli_install_unsupported_shell_reports_skip_and_writes_nothing(
     assert "source" not in completion_lines[0]
 
 
+def test_cli_install_completion_write_failure_is_one_clean_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """E1 (D-13): an unwritable completion directory is one stderr line and exit 1.
+
+    ``~/.local`` is made a regular file, so the real ``mkdir`` inside the write raises
+    ``NotADirectoryError`` — a genuine OS failure, with nothing stubbed in the unit under test.
+    """
+    _redirect_default_dir(monkeypatch, tmp_path)
+    _patch_install_side_effects(monkeypatch, "bash")
+    (tmp_path / ".local").write_text("not a directory\n", encoding="utf-8")
+    rc = installer.cli_install(argparse.Namespace(dest=installer.DEFAULT_DEST, no_config=False))
+    captured = capsys.readouterr()
+    assert rc == 1
+    err_lines = [line for line in captured.err.splitlines() if line.strip()]
+    assert len(err_lines) == 1, captured.err
+    assert str(_completion_dir(tmp_path)) in err_lines[0]
+    assert "Traceback" not in captured.out
+    assert "Traceback" not in captured.err
+
+
 # --------------------------------------------------------------------------- removal
 
 

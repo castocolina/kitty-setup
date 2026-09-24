@@ -17,6 +17,10 @@ from pathlib import Path
 from kitty_setup import binding_introspection, config_updater, installer, path_integration
 from kitty_setup.scenes._client import _parse_listen_on_base, _pgrep_kitty_pids
 
+# ``_check_completion`` is shared with the integration test that proves its verdict equals what
+# real zsh registers (tests/integration/test_completion_e2e.py), so it is declared here.
+__all__ = ["CheckResult", "_check_completion", "cli_doctor", "run_checks"]
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class CheckResult:
@@ -119,7 +123,10 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
 
 
 def _kitten_ls_succeeds(kitten_bin: Path, socket: Path) -> tuple[bool, str]:
-    """Return ``(ok, stderr_or_empty)`` for ``kitten @ --to unix:<socket> ls`` with KITTY_LISTEN_ON unset."""
+    """Return ``(ok, stderr_or_empty)`` for ``kitten @ --to unix:<socket> ls``.
+
+    ``KITTY_LISTEN_ON`` is unset in the child's environment.
+    """
     env = dict(os.environ)
     env.pop("KITTY_LISTEN_ON", None)
     try:
@@ -145,7 +152,8 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
     `<base>-<PID>` exists on disk, calls `kitten @ ls` against it. SKIPs when no
     kitty is running OR no managed socket exists (e.g. a pre-`make setup` kitty
     is still running). FAILs only when at least one managed socket fails to
-    respond. Verified by probe 04 (`tmp/probes/phase2-remote-control-foundation/04-out-of-process-ls.md`).
+    respond. Verified by probe 04
+    (`tmp/probes/phase2-remote-control-foundation/04-out-of-process-ls.md`).
     """
     rc_conf = paths.payload_dir / "remote-control.conf"
     if not rc_conf.is_file():
@@ -165,7 +173,9 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
     if not kitten_bin.is_file():
         on_path = shutil.which("kitten")
         if on_path is None:
-            return CheckResult("remote-control", False, "no kitten binary on PATH or under ~/.local")
+            return CheckResult(
+                "remote-control", False, "no kitten binary on PATH or under ~/.local"
+            )
         kitten_bin = Path(on_path)
 
     pids = _pgrep_kitty_pids()
@@ -203,38 +213,78 @@ _RC_BY_SHELL: dict[str, str] = {"zsh": ".zshrc", "bash": ".bashrc"}
 
 
 def _check_completion(home: Path | None = None) -> CheckResult:
-    """Verify the argcomplete helper + the completion eval line in rc."""
-    helper = shutil.which("register-python-argcomplete")
+    """Verify what can be proven about shell completion without starting the user's shell.
+
+    In order, reporting the first failure: the completion script we own exists; our rc block's
+    body is exactly the current template for the shell; for zsh, nothing executable follows the
+    block; and the script's bytes equal freshly generated shellcode (the staleness check, U-3).
+    The block is judged with the same two predicates install uses to decide whether to rewrite
+    or move it, so doctor FAILs exactly the blocks the next ``my-kitty install`` fixes.
+    """
     home_dir = home or Path.home()
     shell_name = Path(os.environ.get("SHELL", "")).name
     rc_basename = _RC_BY_SHELL.get(shell_name)
     if rc_basename is None:
-        rc_basename = ".zshrc"  # default when shell is unknown
+        return CheckResult(
+            "completion",
+            False,
+            f"shell {shell_name or '<unknown>'} is not supported; "
+            "completion is set up for bash and zsh only",
+            skipped=True,
+        )
+    script = installer.completion_script_path(shell_name, home=home)
+    if not script.is_file():
+        return CheckResult(
+            "completion", False, f"{script} is missing; run `my-kitty install` to generate it"
+        )
+
     rc_file = home_dir / rc_basename
     rc_text = rc_file.read_text(encoding="utf-8") if rc_file.is_file() else ""
     bounds = path_integration._find_block(
         rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
     )
-    body = ""
-    if bounds is not None:
-        body_lines = rc_text.splitlines(keepends=False)[bounds[0] + 1 : bounds[1] - 1]
-        body = "\n".join(body_lines)
-    rc_has_eval = path_integration.COMPLETION_LINE in body
-
-    if helper is not None and rc_has_eval:
-        return CheckResult("completion", True, f"helper {helper}; eval line present in {rc_file}")
-    if helper is None and not rc_has_eval:
+    if bounds is None or not path_integration._block_body_matches_template(
+        rc_text, bounds, shell_name
+    ):
         return CheckResult(
             "completion",
             False,
-            f"register-python-argcomplete not on PATH AND eval line missing from {rc_file}",
+            f"the my-kitty block in {rc_file} does not match the current template that "
+            f"sources {script}; run `my-kitty install` to rewrite it",
         )
-    if helper is None:
-        return CheckResult("completion", False, "register-python-argcomplete not on PATH")
+    is_zsh = shell_name == installer.CompletionShell.ZSH
+    if is_zsh and not path_integration._block_followed_only_by_comments(rc_text, bounds):
+        return CheckResult(
+            "completion",
+            False,
+            f"the my-kitty block in {rc_file} is not the last command in it, so a later "
+            "compinit undoes its registration; run `my-kitty install` to move it to the end",
+        )
+
+    try:
+        current = script.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return CheckResult("completion", False, f"cannot read {script}: {exc}")
+    if current != installer.generate_completion_script(shell_name):
+        return CheckResult(
+            "completion",
+            False,
+            f"{script} is stale: it differs from freshly generated shellcode; "
+            "run `my-kitty install` to regenerate it",
+        )
+
+    if is_zsh:
+        return CheckResult(
+            "completion",
+            True,
+            f"{script} is current and sourced by the my-kitty block in {rc_file}, which starts "
+            "zsh's completion system itself when needed and is the last command in the file "
+            "(both checked). Doctor did not observe a live registration, and ~/.zlogin or a "
+            "ZDOTDIR elsewhere is outside what it reads; to confirm, run "
+            "`echo ${_comps[my-kitty]}` in a new shell",
+        )
     return CheckResult(
-        "completion",
-        False,
-        f"register-python-argcomplete present at {helper}; eval line missing from {rc_file}",
+        "completion", True, f"{script} is current and sourced by the my-kitty block in {rc_file}"
     )
 
 

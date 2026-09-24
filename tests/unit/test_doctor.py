@@ -159,59 +159,130 @@ def test_check_kitty_binary_subprocess_timeout(
     assert resolved is None
 
 
-def _seed_rc_with_block(home: Path, body: str) -> Path:
-    rc = home / ".zshrc"
-    rc.write_text(
-        f"{doctor.path_integration.MARKER_BEGIN}\n{body}\n{doctor.path_integration.MARKER_END}\n",
-        encoding="utf-8",
-    )
-    return rc
+# --- completion (R1.1, D-01..D-03, U-3) -------------------------------------
+# Built from the producers the runtime uses: ``installer.write_completion_script`` and
+# ``path_integration.ensure_local_bin_in_path`` against a ``tmp_path`` home, with ``SHELL`` set.
+# Each case asserts text no pre-D-01 detail can contain: under ``uv run`` the venv's ``bin/`` is
+# on PATH, so the old helper lookup PASSes on the eval line alone.
 
 
-def test_completion_check_passes_when_helper_and_rc_line_present(
+def _completion_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shell: str) -> Path:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("SHELL", f"/usr/bin/{shell}")
+    doctor.installer.write_completion_script(shell, home=home)
+    doctor.path_integration.ensure_local_bin_in_path(home=home, shell=shell)
+    return home
+
+
+def test_completion_check_passes_bash_naming_the_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
-    body = (
-        f"{doctor.path_integration.EXPORT_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
-        f"    {doctor.path_integration.COMPLETION_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_END}"
-    )
-    _seed_rc_with_block(tmp_path, body)
-    result = doctor._check_completion(home=tmp_path)
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    result = doctor._check_completion(home=home)
     assert result.name == "completion"
     assert result.passed is True
+    assert result.skipped is False
+    assert str(doctor.installer.completion_script_path("bash", home=home)) in result.detail
 
 
-def test_completion_check_fails_when_helper_missing(
+def test_completion_check_fails_when_file_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
-    body = (
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.unlink()
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert result.skipped is False
+    assert str(script) in result.detail
+
+
+def test_completion_check_fails_when_file_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.write_text("# shellcode from an older argcomplete\n", encoding="utf-8")
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert str(script) in result.detail
+    assert "stale" in result.detail
+    assert "my-kitty install" in result.detail
+
+
+def test_completion_check_fails_when_block_lacks_source_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    rc = home / ".bashrc"
+    rc.write_text(
+        f"{doctor.path_integration.MARKER_BEGIN}\n"
         f"{doctor.path_integration.EXPORT_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
-        f"    {doctor.path_integration.COMPLETION_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_END}"
+        f"{doctor.path_integration.MARKER_END}\n",
+        encoding="utf-8",
     )
-    _seed_rc_with_block(tmp_path, body)
-    result = doctor._check_completion(home=tmp_path)
+    result = doctor._check_completion(home=home)
     assert result.passed is False
-    assert "register-python-argcomplete" in result.detail
-    assert "not on PATH" in result.detail
+    assert str(rc) in result.detail
+    assert str(doctor.installer.completion_script_path("bash", home=home)) in result.detail
 
 
-def test_completion_check_fails_when_rc_eval_line_missing(
+def test_completion_check_skips_unsupported_shell(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
-    _seed_rc_with_block(tmp_path, doctor.path_integration.EXPORT_LINE)  # PATH-only block
-    result = doctor._check_completion(home=tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    result = doctor._check_completion(home=home)
+    assert result.skipped is True
+    assert "fish" in result.detail
+    assert result.render().startswith("SKIP completion: ")
+
+
+def test_completion_check_passes_zsh_and_says_what_it_did_not_observe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert str(doctor.installer.completion_script_path("zsh", home=home)) in result.detail
+    assert "not observe" in result.detail
+    assert "_comps" in result.detail
+
+
+def test_completion_check_fails_zsh_block_followed_by_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Measured: a ``compinit`` after our block resets ``_comps``, so a structural PASS lies."""
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    rc = home / ".zshrc"
+    rc.write_text(rc.read_text(encoding="utf-8") + "autoload -Uz compinit && compinit\n")
+    result = doctor._check_completion(home=home)
     assert result.passed is False
-    assert "missing" in result.detail.lower()
+    assert result.skipped is False
+    assert str(rc) in result.detail
+    assert "my-kitty install" in result.detail
+
+
+def test_completion_check_fails_zsh_body_without_self_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pre-revision guard-only body, last, with no ``compinit`` anywhere: registers nothing.
+
+    Hand-built, because no producer emits this body any more.
+    """
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    rc = home / ".zshrc"
+    rc.write_text(
+        f"{doctor.path_integration.MARKER_BEGIN}\n"
+        f"{doctor.path_integration.EXPORT_LINE}\n"
+        f"{doctor.path_integration.completion_source_line('zsh')}\n"
+        f"{doctor.path_integration.MARKER_END}\n",
+        encoding="utf-8",
+    )
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert result.skipped is False
+    assert str(rc) in result.detail
+    assert "my-kitty install" in result.detail
