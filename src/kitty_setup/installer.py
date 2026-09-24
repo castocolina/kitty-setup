@@ -206,12 +206,6 @@ def _write_desktop_entry(
     )
 
 
-def _record_install_log(version: str) -> None:
-    log_dir = _repo_root() / "tmp"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "install.log").write_text(version + "\n", encoding="utf-8")
-
-
 def install(
     *,
     dest: Path = DEFAULT_DEST,
@@ -236,7 +230,6 @@ def install(
         dest / KITTY_APP_DIRNAME / "share" / "icons" / "hicolor" / "256x256" / "apps" / "kitty.png"
     )
     _write_desktop_entry(kitty_bin=kitty_bin, icon_path=icon)
-    _record_install_log(version)
 
     if inject_config:
         paths = config_updater.ConfigPaths.for_user()
@@ -393,16 +386,25 @@ def _print_install_report(report: InstallReport) -> None:
 
 
 def _print_path_result(result: path_integration.PathEditResult) -> None:
+    """Report what ``ensure_local_bin_in_path`` did, in its own words (D-13, R1.7).
+
+    A change prints the ``reason`` the edit computed: an append, an in-place rewrite, a legacy
+    migration, a duplicate removal and a zsh move are different events. A skip prints each
+    ``manual_lines`` entry on its own line, because each is a line for the rc file; joined onto
+    one line, a ``#`` entry would comment out whatever followed it.
+    """
     if result.skipped:
         print(
             f"PATH:          shell {result.shell or '<unknown>'} not auto-handled; "
-            f"add manually: {'; '.join(result.manual_lines)}"
+            "add these lines to your shell rc yourself:"
         )
+        for line in result.manual_lines:
+            print(f"                   {line}")
     elif not result.changed:
         print("PATH:          already configured")
     else:
         print(
-            f"PATH:          appended block to {result.rc_file}; "
+            f"PATH:          {result.rc_file}: {result.reason}; "
             f"run `source {result.rc_file}` or restart shell"
         )
 
@@ -438,7 +440,14 @@ def cli_install(args: argparse.Namespace) -> int:
         print(f"install failed: {exc}", file=sys.stderr)
         return 1
     _print_install_report(report)
-    path_result = path_integration.ensure_local_bin_in_path()
+    try:
+        path_result = path_integration.ensure_local_bin_in_path()
+    except OSError as exc:
+        # R1.7: the OS error names the path it refused (the rc file, or its directory for the
+        # mkdir). One line and exit 1, like the completion-write failure below; nothing after a
+        # failed rc edit runs, so no completion script is written for a block that is not there.
+        print(f"install failed: cannot update the shell rc file: {exc}", file=sys.stderr)
+        return 1
     _print_path_result(path_result)
     # The rc block is read only at the next shell start, so generating after the rc edit
     # within one install is sound; what matters is that both land in the same install.
