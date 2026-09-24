@@ -11,8 +11,8 @@ manager that:
    ignores a longer ``--listen-on`` (measured: 114 bytes from a ``.claude/worktrees/``
    checkout).
 2. Polls the socket up to 5 seconds for readiness.
-3. Exposes ``ls()`` / ``send_key()`` / ``send_text()`` / ``launch()`` /
-   ``get_text()`` wrappers around ``kitten @ --to unix:<sock>``.
+3. Exposes ``ls()`` / ``send_text()`` / ``launch()`` / ``get_text()`` wrappers
+   around ``kitten @ --to unix:<sock>``.
 4. Closes the OS window cleanly on exit, then SIGTERM and finally SIGKILL the
    process if it lingers. Wipes its session directory on success unless
    ``KEEP_SESSIONS=1`` is set. The socket directory holds no evidence and is
@@ -24,6 +24,7 @@ points ``--config`` at its own session-local file.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import os
@@ -194,10 +195,6 @@ class KittySession:
         raw = self._kctl("ls")
         return json.loads(raw)
 
-    def send_key(self, keys: str) -> None:
-        """Send a key chord (e.g. ``"ctrl+shift+t"``) to the active window."""
-        self._kctl("send-key", keys)
-
     def send_text(self, text: str) -> None:
         """Send literal text to the active window."""
         self._kctl("send-text", text)
@@ -319,10 +316,9 @@ class KittySession:
         return result.stdout.decode("utf-8", errors="replace")
 
     def _close_window_then_terminate(self) -> None:
-        try:
+        # Process may already be tearing down; the failure must not propagate (U-1 pin).
+        with contextlib.suppress(HarnessCommandError):
             self._kctl("close-window", "--match=all")
-        except HarnessCommandError:
-            pass  # process may already be tearing down
         if self._process is None:
             return
         try:
@@ -346,8 +342,5 @@ class KittySession:
     def _kill_process(self) -> None:
         if self._process is None:
             return
-        with self._process:
-            try:
-                self._process.kill()
-            except ProcessLookupError:
-                pass
+        with self._process, contextlib.suppress(ProcessLookupError):
+            self._process.kill()

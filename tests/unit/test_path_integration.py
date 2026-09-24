@@ -23,7 +23,7 @@ _USER_COMPINIT = "autoload -Uz compinit && compinit"
 def test_rc_missing_writes_block(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert result.skipped is False
     assert result.rc_file == home / ".zshrc"
@@ -38,7 +38,7 @@ def test_rc_with_unrelated_content_appends_block(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".bashrc"
     rc.write_text("# my bashrc\nalias ll='ls -la'\n")
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", )
     assert result.changed is True
     assert result.rc_file == rc
     text = rc.read_text()
@@ -52,7 +52,7 @@ def test_completion_current_template_block_is_noop(tmp_path: Path) -> None:
     rc = home / ".zshrc"
     rc.write_text(path_integration._block_text("zsh"))
     before = rc.read_text()
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is False
     assert result.skipped is False
     assert "already" in result.reason or "matches" in result.reason
@@ -62,7 +62,7 @@ def test_completion_current_template_block_is_noop(tmp_path: Path) -> None:
 def test_rc_block_renders_path_export_and_completion_lines(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     text = (home / ".zshrc").read_text()
     assert path_integration.EXPORT_LINE in text
     assert path_integration.ZSH_COMPINIT_LINE in text
@@ -79,7 +79,7 @@ def test_completion_old_path_only_block_rewritten_and_moved_last_in_zsh(tmp_path
     old_body = path_integration.EXPORT_LINE
     old_block = f"{path_integration.MARKER_BEGIN}\n{old_body}\n{path_integration.MARKER_END}\n"
     rc.write_text(pre + old_block + post)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert result.reason == "rewrote rc block body to current template"
     text = rc.read_text()
@@ -97,7 +97,7 @@ def test_legacy_block_migrates_with_completion_line(tmp_path: Path) -> None:
         f"{path_integration._LEGACY_MARKER_END}\n"
     )
     rc.write_text(legacy)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     text = rc.read_text()
     assert path_integration.MARKER_BEGIN in text
@@ -118,7 +118,7 @@ def test_completion_block_appended_despite_user_authored_export(tmp_path: Path) 
     rc = home / ".zshrc"
     pre = 'export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"\n'
     rc.write_text(pre)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     text = rc.read_text()
     assert text.startswith(pre)
@@ -131,7 +131,7 @@ def test_completion_block_appended_despite_tilde_export(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text('export PATH="~/.local/bin:$PATH"\n')
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert path_integration.completion_source_line("zsh") in rc.read_text()
 
@@ -141,11 +141,7 @@ def test_completion_block_appended_when_env_already_has_target(tmp_path: Path) -
     also carries the line that sources the completion script."""
     home = tmp_path / "home"
     home.mkdir()
-    target = home / ".local" / "bin"
-    target.mkdir(parents=True)
-    result = path_integration.ensure_local_bin_in_path(
-        home=home, shell="zsh", env_path=f"{target}:/usr/bin"
-    )
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
     assert result.changed is True
     text = (home / ".zshrc").read_text()
     assert path_integration.MARKER_BEGIN in text
@@ -157,7 +153,7 @@ def test_completion_unsupported_shell_skips_with_honest_manual_lines(tmp_path: P
     completion line in another shell's syntax."""
     home = tmp_path / "home"
     home.mkdir()
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="fish", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="fish", )
     assert result.skipped is True
     assert result.changed is False
     assert result.shell == "fish"
@@ -175,8 +171,8 @@ def test_completion_unsupported_shell_skips_with_honest_manual_lines(tmp_path: P
 def test_idempotent_double_run(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    first = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
-    second = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    first = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
+    second = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert first.changed is True
     assert second.changed is False
     assert (home / ".zshrc").read_text().count(path_integration.MARKER_BEGIN) == 1
@@ -206,7 +202,7 @@ def test_migrates_legacy_marker_alone(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text(_legacy_block())
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert "migrated legacy marker" in result.reason
     text = rc.read_text()
@@ -220,7 +216,7 @@ def test_migrates_legacy_with_unrelated_content(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text(f"# user header\nalias ll='ls -la'\n{_legacy_block()}# trailing user line\n")
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     text = rc.read_text()
     assert text.startswith("# user header\nalias ll='ls -la'\n")
@@ -234,7 +230,7 @@ def test_legacy_and_new_blocks_keep_new(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text(_legacy_block() + "# divider\n" + _new_block())
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert "removed duplicate legacy marker" in result.reason
     text = rc.read_text()
@@ -248,9 +244,9 @@ def test_idempotent_after_migration(tmp_path: Path) -> None:
     home.mkdir()
     rc = home / ".zshrc"
     rc.write_text(_legacy_block())
-    first = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    first = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     snapshot = rc.read_text()
-    second = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    second = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert first.changed is True
     assert second.changed is False
     assert "already" in second.reason
@@ -293,7 +289,7 @@ def test_completion_bash_body_sources_file_without_compdef(tmp_path: Path) -> No
 
     home = tmp_path / "home"
     home.mkdir()
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", )
     assert result.rc_file == home / ".bashrc"
     text = (home / ".bashrc").read_text()
     assert text == path_integration._block_text("bash")
@@ -333,7 +329,7 @@ def test_completion_host_pre_d01_body_rewritten_in_place_bash(tmp_path: Path) ->
     pre = '# user rc\nexport PATH="$HOME/.local/bin:$HOME/bin:$PATH"\n'
     post = "alias ll='ls -la'\n# end\n"
     rc.write_text(pre + _block(_HOST_PRE_D01_BODY) + post)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", )
     assert result.changed is True
     assert result.reason == "rewrote rc block body to current template"
     text = rc.read_text()
@@ -358,7 +354,7 @@ def test_completion_dual_markers_rewrite_retained_obsolete_body(
     middle = "alias ll='ls -la'\n"
     tail = "# user tail\n"
     rc.write_text(head + _legacy_block() + middle + _block(obsolete_body) + tail)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash", )
     assert result.changed is True
     assert result.reason == "removed duplicate legacy marker"
     text = rc.read_text()
@@ -376,7 +372,7 @@ def test_completion_zsh_block_above_compinit_moves_to_end(tmp_path: Path) -> Non
     pre = "# user zshrc\n"
     post = f"{_USER_COMPINIT}\nbindkey -e\n"
     rc.write_text(pre + path_integration._block_text("zsh") + post)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", env_path="")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
     assert result.changed is True
     assert result.reason == "moved rc block to end of file"
     text = rc.read_text()

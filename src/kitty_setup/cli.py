@@ -335,7 +335,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_os_window_opacity = p_os_window_sub.add_parser(
         "opacity",
-        help="set the OS-window background opacity (0.0–1.0)",
+        help="set the OS-window background opacity (0.0-1.0)",
     )
     p_os_window_opacity.add_argument(
         "value",
