@@ -286,3 +286,187 @@ def test_completion_check_fails_zsh_body_without_self_init(
     assert result.skipped is False
     assert str(rc) in result.detail
     assert "my-kitty install" in result.detail
+
+
+# --- parse check and bindings: real SKIPs, and a label taken from the result (R1.5, R1.7) --------
+# Driven through the public ``run_checks`` with ``_check_kitty_binary`` replaced by name, so these
+# cases add no pyright ``reportPrivateUsage`` finding. New names (``ParseCheckResult``) are reached
+# as module attributes inside each body, so a missing one fails its own case at RED.
+
+BAD_LINE_DIAG = (
+    "BadLine(number=1, line='cursor_shape banana', exception=ValueError('Invalid cursor shape: "
+    "banana allowed values are block, beam, underline'), file='kitty-setup/kitty-setup.conf')\n"
+)
+MISSING_INCLUDE_WARNING = (
+    "[0.009] Could not find included config file: /x/kitty-setup/kitty-setup.conf, ignoring\n"
+)
+
+
+def _doctor_home(tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_text("font_size 12\n", encoding="utf-8")
+    return home
+
+
+def _fake_parser_kitty(tmp_path: Path, *, exit_code: int, stderr: str = "") -> Path:
+    """A fake kitty that writes ``stderr`` verbatim and exits ``exit_code`` for any argv."""
+    script = tmp_path / f"fake-parser-kitty-{exit_code}"
+    sidecar = tmp_path / f"fake-parser-kitty-{exit_code}.stderr"
+    sidecar.write_text(stderr, encoding="utf-8")
+    script.write_text(
+        f"#!/usr/bin/env bash\ncat '{sidecar}' >&2\nexit {exit_code}\n", encoding="utf-8"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return script
+
+
+def _checks_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+    kitty: Path | None,
+    *,
+    bindings_error: str = "introspection is not exercised by this case",
+) -> dict[str, doctor.CheckResult]:
+    def fake_kitty_binary() -> tuple[doctor.CheckResult, Path | None]:
+        return doctor.CheckResult("kitty binary", kitty is not None, str(kitty)), kitty
+
+    def failing_introspection(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise doctor.binding_introspection.BindingIntrospectionError(bindings_error)
+
+    monkeypatch.setattr(doctor, "_check_kitty_binary", fake_kitty_binary)
+    monkeypatch.setattr(doctor.binding_introspection, "enumerate_bindings", failing_introspection)
+    return {r.name: r for r in doctor.run_checks(home=home)}
+
+
+def _assert_one_skip(result: doctor.CheckResult, name: str) -> None:
+    line = result.render()
+    assert result.skipped is True
+    assert result.passed is False
+    assert line == f"SKIP {name}: {result.detail}"
+    assert line.count("SKIP") == 1
+    assert "skipped" not in line[len("SKIP ") :].lower()
+
+
+def test_skip_state_parse_check_without_kitty_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), None)["parse check"]
+    _assert_one_skip(result, "parse check")
+    assert "kitty binary not available" in result.detail
+
+
+def test_skip_state_bindings_without_kitty_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), None)["bindings"]
+    _assert_one_skip(result, "bindings")
+    assert "kitty binary not available" in result.detail
+
+
+def test_skip_state_bindings_when_introspection_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0)
+    checks = _checks_by_name(
+        monkeypatch, _doctor_home(tmp_path), kitty, bindings_error="probe failure"
+    )
+    result = checks["bindings"]
+    _assert_one_skip(result, "bindings")
+    assert result.detail == "probe failure"
+
+
+def test_parse_detail_names_the_command_from_the_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sentinel = "/sentinel/kitty +runpy 'import sys' /sentinel/kitty.conf"
+
+    def fake_parse_check(
+        conf_file: Path, kitty_bin: str | Path
+    ) -> doctor.config_updater.ParseCheckResult:
+        del conf_file, kitty_bin
+        return doctor.config_updater.ParseCheckResult(ok=True, command=sentinel, stderr="")
+
+    monkeypatch.setattr(doctor.config_updater, "_parse_check", fake_parse_check)
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
+    assert result.passed is True
+    assert result.skipped is False
+    assert sentinel in result.detail
+    assert "--debug-config" not in result.detail
+
+
+def test_parse_detail_surfaces_parser_stderr_on_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kitty = _fake_parser_kitty(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
+    assert result.passed is False
+    assert result.skipped is False
+    assert BAD_LINE_DIAG.strip() in result.detail
+    assert "+runpy" in result.detail
+    assert "--debug-config" not in result.detail
+    assert "\n" not in result.render()
+
+
+def test_parse_detail_pass_carries_parser_warnings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing include does not fail the check (T-2-19), so the PASS line must show it."""
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0, stderr=MISSING_INCLUDE_WARNING)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
+    assert result.passed is True
+    assert MISSING_INCLUDE_WARNING.strip() in result.detail
+    assert "+runpy" in result.detail
+    assert "\n" not in result.render()
+
+
+def test_guard_kitty_less_host_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Over the real ``run_checks``: two checks turning into SKIPs must not let this host pass."""
+    home = _doctor_home(tmp_path)
+    missing_kitty = tmp_path / "missing-kitty"
+
+    def no_which(name: str) -> None:
+        del name
+
+    def kitty_bin_under(dest: Path) -> Path:
+        del dest
+        return missing_kitty
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(doctor.shutil, "which", no_which)
+    monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
+    monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
+    monkeypatch.setattr(doctor.installer, "_kitty_bin", kitty_bin_under)
+
+    code = doctor.cli_doctor()
+
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert len(lines) == 9
+    assert lines[0].startswith("FAIL kitty binary: ")
+
+
+def test_guard_all_pass_or_skip_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def all_pass_or_skip(home: Path | None = None) -> list[doctor.CheckResult]:
+        del home
+        return [
+            doctor.CheckResult("alpha", True, "ok"),
+            doctor.CheckResult("beta", False, "not applicable on this host", skipped=True),
+        ]
+
+    monkeypatch.setattr(doctor, "run_checks", all_pass_or_skip)
+
+    code = doctor.cli_doctor()
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "PASS alpha: ok",
+        "SKIP beta: not applicable on this host",
+    ]

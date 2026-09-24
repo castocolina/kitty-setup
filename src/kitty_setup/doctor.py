@@ -90,21 +90,32 @@ def _check_sentinel_block(paths: config_updater.ConfigPaths) -> CheckResult:
     return CheckResult("sentinel block", False, f"absent from {paths.conf_file}")
 
 
+def _one_line(text: str) -> str:
+    """Join a multi-line diagnostic onto one line, so each check keeps one output line."""
+    return " | ".join(line.strip() for line in text.splitlines() if line.strip())
+
+
 def _check_parse(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> CheckResult:
     if kitty_bin is None:
-        return CheckResult("parse check", False, "skipped — kitty binary not available")
+        return CheckResult("parse check", False, "kitty binary not available", skipped=True)
     if not paths.conf_file.exists():
         return CheckResult("parse check", False, f"missing: {paths.conf_file}")
     try:
-        ok = config_updater._parse_check(paths.conf_file, kitty_bin)
+        result = config_updater._parse_check(paths.conf_file, kitty_bin)
     except config_updater.ConfigUpdaterError as exc:
         return CheckResult("parse check", False, str(exc))
-    return CheckResult("parse check", ok, f"kitty --debug-config exit={'0' if ok else 'non-0'}")
+    diagnostics = _one_line(result.stderr)
+    if result.ok:
+        warnings = f"; parser warnings: {diagnostics}" if diagnostics else ""
+        return CheckResult("parse check", True, f"{result.command} exit=0{warnings}")
+    return CheckResult(
+        "parse check", False, f"{result.command} exit=non-0: {diagnostics or '(no stderr)'}"
+    )
 
 
 def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> CheckResult:
     if kitty_bin is None:
-        return CheckResult("bindings", False, "skipped — kitty binary not available")
+        return CheckResult("bindings", False, "kitty binary not available", skipped=True)
     if not paths.conf_file.exists():
         return CheckResult("bindings", False, f"missing: {paths.conf_file}")
     try:
@@ -112,7 +123,7 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
             paths.conf_file, kitty_bin=kitty_bin, payload_dir=paths.payload_dir
         )
     except binding_introspection.BindingIntrospectionError as exc:
-        return CheckResult("bindings", False, f"skipped — {exc}")
+        return CheckResult("bindings", False, str(exc), skipped=True)
     summary = (
         f"{report.ours_count} ours, {report.defaults_count} defaults, "
         f"{report.conflicts_count} conflict{'s' if report.conflicts_count != 1 else ''}"
