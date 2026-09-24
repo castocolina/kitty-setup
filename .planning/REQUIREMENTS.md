@@ -98,6 +98,26 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       A silent scope reduction does not. No test's behaviour may change to satisfy a type checker:
       the suite's pass/fail set must be identical before and after, evidenced by both runs.
 
+- [ ] **R0.13**: **The integration suite actually runs in the phase gate.** All 70 tests under
+      `tests/integration/` are skipped unless `KITTI_INTEGRATION=1`, so `make test` has been
+      reporting `311 passed, 70 skipped` while executing none of them — and the milestone's own
+      quality standard ("integration gated by `KITTI_INTEGRATION=1` and green") was never
+      verified by anything. Added 2026-09-23 **from measurement, not suspicion**: run headless
+      under a nested compositor, all **70 pass in 43.81s**
+      (`env -u WAYLAND_DISPLAY -u DISPLAY WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 cage --
+      bash -c 'KITTI_INTEGRATION=1 uv run pytest tests/integration -q'` → `70 passed in 43.81s`,
+      no orphan `cage` or `kitty` process left behind). The tests are not rotten; they are
+      unexecuted. Owned by **Phase 2**, because Phases 3–6 rest entirely on the R2.8 integration
+      oracle and must not inherit a suite nobody runs.
+      Deliverables: (a) a `make test-integration` target that runs the suite headless when a
+      nested compositor is available and says plainly why it is skipping when one is not —
+      never a silent skip; (b) `make test` keeps its fast unit default, so the gate change costs
+      no inner-loop time; (c) Universal Phase Gate step 5 requires the integration run's captured
+      output from this phase onward; (d) every integration gate written by a plan routes through
+      the headless wrapper, so no agent run ever puts a kitty window on the user's desktop.
+      This also supplies one of the four targets `.claude/conventions.md` documents and
+      **R6.3** (Phase 8) owns — R6.3 keeps `make validate`, `make format` and `make test-unit`.
+
 ### R1 — Defect remediation
 
 Each defect is a requirement with a regression test.

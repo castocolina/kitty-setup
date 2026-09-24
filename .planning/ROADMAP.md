@@ -36,6 +36,10 @@ repeated in each phase's success criteria — they are preconditions for calling
      in `src/`, bandit 0 high / 8 medium / 19 low, vulture 12). Phase 8.5 drives the `tests/`
      remainder down.
    - A phase that *adds* a file owns that file being clean, wherever it lives.
+   - **The integration suite must have been run, headless, with its output captured** (R0.13,
+     from Phase 2 onward). `make test` alone skips all 70 integration tests, so a phase that
+     reports only `make test` has verified nothing under `tests/integration/`. A skipped
+     integration run never counts as a green one.
 6. **Commit + merge + push** — each phase runs in its own git worktree on branch
    `gsd/phase-{phase}-{slug}`; work lands as **one commit per plan** — the granularity rule
    lives in `AGENTS.md` and is pointed to, not restated here — then at phase end (gates
@@ -113,7 +117,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
 
 **Goal**: A fresh install on Bazzite is provably healthy — `my-kitty doctor` is all PASS/SKIP and every known audit defect is fixed and pinned by a regression test, giving later phases a green baseline they can trust.
 **Depends on**: Phase 1
-**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R0.11
+**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R0.11, R0.13
 **Success Criteria** (what must be TRUE):
 
   1. `my-kitty doctor` exits 0 with every check PASS or SKIP on a fresh Bazzite uv-tool install: completion works via an install-generated static completion file that the rc block sources (no runtime `register-python-argcomplete` PATH lookup), and checks that previously printed "skipped" now report a real SKIP state.
@@ -123,6 +127,8 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   5. Every remaining minor defect has a regression test: the install log removed outright, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors treated as absent and passthrough restricted to **`rgb:` only** (narrowed 2026-09-23 — kitty 0.49.0's parser rejects `rgba:`, `rgb()`, `rgba()` and `hsl()`), `prune --keep <0` raising an argparse error, the harness teardown verb **left as `close-window`** (`close-os-window` is not a `kitten @` subcommand in kitty 0.49.0; see R1.7), and the PATH-migration and unsupported-shell hint messages printed exactly as specified (both lines).
 
   6. `uv run ruff check src`, `uv run black --check src`, `uv run pyright` over `src`, `uv run bandit -q -r src` and `uv run vulture src` all report clean for `src/` (R0.11) — the Universal Phase Gate's src half becomes a hard gate from this phase onward. `tests/` is out of scope here; Phase 8.5 owns it.
+
+  7. **The integration suite runs, and is seen to run** (R0.13): `make test-integration` executes all of `tests/integration/` headless under a nested compositor and reports its real count — measured green today at **70 passed in 43.81s** — while `make test` keeps its fast unit-only default. A run that skips because no compositor was found says so loudly and does not count as green. Genuinely dead code found on the way is **deleted**, not allowlisted; only framework idioms that a static checker cannot see through (argcomplete's `completer` attribute, `__exit__`'s signature parameters, pytest's own hooks) go in `vulture_allowlist.py`, each with a one-line reason.
 **Plans**: TBD
 
 ### Phase 3: Keybinding Research & Oracle
