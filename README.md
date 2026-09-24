@@ -152,11 +152,16 @@ symlink + desktop entry + every `kitty.conf.bak.*` file). The pre-rename
 closest mapping to the legacy "config-only" default is
 `make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`.
 
-**Note as of `add-shell-completion`:** the sentinel-bracketed PATH block in
-your shell rc now contains a guarded `register-python-argcomplete` eval line
-in addition to the PATH export. Re-running `make install` rewrites the block
-body in place between the existing markers; nothing else in the rc file is
-touched. Open a fresh shell after the install — `my-kitty <TAB>` expands to
+**Note on shell completion:** `make install` generates a completion script
+under `~/.local/share/kitty-setup/` (`my-kitty-completion.bash` or `.zsh`),
+and the sentinel-bracketed PATH block in your shell rc sources it after the
+PATH export, so no helper has to be found on PATH at shell start. Re-running
+`make install` rewrites the block body between the existing markers; nothing
+else in the rc file is touched. For zsh, the block starts zsh's completion
+system (`compinit`) itself if your rc has not, and install keeps it as the
+last command in `~/.zshrc`, moving it there when anything but comments
+follows it, because a `compinit` that runs after it would undo the
+registration. Open a fresh shell after the install — `my-kitty <TAB>` expands to
 the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
 `--keep-*` flags.
 
