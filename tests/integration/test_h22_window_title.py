@@ -137,7 +137,7 @@ def test_discovery_errors_when_no_kitty(
     """With no kitty running and --to unset and $KITTY_LISTEN_ON unset, fail loudly."""
     stub_config(monkeypatch, tmp_path)
     monkeypatch.delenv("KITTY_LISTEN_ON", raising=False)
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [])
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [])
     with pytest.raises(_client.SceneClientError, match="no kitty process found"):
         title.set_window_title("anything", temporary=False)
 

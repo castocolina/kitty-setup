@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from kitty_setup import binding_introspection, config_updater, installer, path_integration
-from kitty_setup.scenes._client import _parse_listen_on_base, _pgrep_kitty_pids
+from kitty_setup.scenes._client import parse_listen_on_base, pgrep_kitty_pids
 
 # ``_check_completion`` is shared with the integration test that proves its verdict equals what
 # real zsh registers (tests/integration/test_completion_e2e.py), so it is declared here.
@@ -37,14 +37,17 @@ class CheckResult:
 
 
 def _check_kitty_binary() -> tuple[CheckResult, Path | None]:
-    candidates: list[Path] = [installer.SYMLINK_PATH, installer._kitty_bin(installer.DEFAULT_DEST)]
+    candidates: list[Path] = [
+        installer.SYMLINK_PATH,
+        installer.kitty_bin_path(installer.DEFAULT_DEST),
+    ]
     on_path = shutil.which("kitty")
     if on_path is not None:
         candidates.insert(0, Path(on_path))
     for candidate in candidates:
         if candidate.is_file() or candidate.is_symlink():
             try:
-                version = subprocess.run(  # noqa: S603 — trusted path
+                version = subprocess.run(
                     [str(candidate), "--version"],
                     capture_output=True,
                     text=True,
@@ -101,7 +104,7 @@ def _check_parse(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> C
     if not paths.conf_file.exists():
         return CheckResult("parse check", False, f"missing: {paths.conf_file}")
     try:
-        result = config_updater._parse_check(paths.conf_file, kitty_bin)
+        result = config_updater.parse_check(paths.conf_file, kitty_bin)
     except config_updater.ConfigUpdaterError as exc:
         return CheckResult("parse check", False, str(exc))
     diagnostics = _one_line(result.stderr)
@@ -141,7 +144,7 @@ def _kitten_ls_succeeds(kitten_bin: Path, socket: Path) -> tuple[bool, str]:
     env = dict(os.environ)
     env.pop("KITTY_LISTEN_ON", None)
     try:
-        result = subprocess.run(  # noqa: S603 — trusted paths
+        result = subprocess.run(
             [str(kitten_bin), "@", f"--to=unix:{socket}", "ls"],
             capture_output=True,
             check=False,
@@ -174,7 +177,7 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
             "managed remote-control.conf not installed (run `make install`)",
             skipped=True,
         )
-    base = _parse_listen_on_base(rc_conf)
+    base = parse_listen_on_base(rc_conf)
     if base is None:
         return CheckResult(
             "remote-control", False, f"{rc_conf} has no `listen_on unix:<path>` directive"
@@ -189,7 +192,7 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
             )
         kitten_bin = Path(on_path)
 
-    pids = _pgrep_kitty_pids()
+    pids = pgrep_kitty_pids()
     reachable: list[int] = []
     failures: list[str] = []
     for pid in pids:
@@ -251,7 +254,7 @@ def _check_completion(home: Path | None = None) -> CheckResult:
 
     rc_file = home_dir / rc_basename
     rc_text = rc_file.read_text(encoding="utf-8") if rc_file.is_file() else ""
-    bounds = path_integration._find_block(
+    bounds = path_integration.find_block(
         rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
     )
     if bounds is None or not path_integration._block_body_matches_template(

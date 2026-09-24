@@ -103,6 +103,34 @@ ignore = []
 #       literal, so no untrusted input reaches the call. Scoped to this one file for the reason
 #       given above.
 "tests/integration/test_completion_e2e.py" = ["S603"]
+# --- src/ entries (R0.11, 02-10): these replace the last inline `# noqa` directives, in the
+# same edit that removes them, because adding an id to a config ignore list turns every
+# existing directive for it into a RUF100 finding (the measured Phase 1 lesson recorded
+# above at the test_git_hooks.py entry). Each entry is scoped to the one module that carries
+# the call shape, never appended to a broad glob.
+# S603: every remaining src/ subprocess call passes a list argv with shell=False, built from
+#       module constants, shutil.which results, or paths under the user's own HOME; there is
+#       no untrusted input to re-check at each call site. Covers the nine sites ruff named
+#       when the directives were removed (installer, doctor, config_updater,
+#       binding_introspection, harness/kitty_session, scenes/_client).
+# S607: installer.py's `sh` (upstream installer script) and _client.py's `pgrep` are
+#       deliberately PATH-resolved. Absolutising them with shutil.which would pin a path the
+#       host may legitimately vary and add a lookup that can fail for a binary the OS
+#       guarantees — the same decision as the git-binary precedent recorded above at the
+#       test_git_hooks.py entry. Absolutising was considered and rejected.
+# S310: installer.py's urlopen is guarded in code: the URL is parsed and a non-https scheme
+#       raises ValueError before mkstemp creates a file or the connection opens (the ASVS V12
+#       control). The rule is AST-based and cannot see the guard, so this entry is the
+#       compensating control naming it.
+"src/kitty_setup/installer.py" = ["S603", "S607", "S310"]
+"src/kitty_setup/doctor.py" = ["S603"]
+"src/kitty_setup/config_updater.py" = ["S603"]
+"src/kitty_setup/binding_introspection.py" = ["S603"]
+"src/kitty_setup/harness/kitty_session.py" = ["S603"]
+"src/kitty_setup/scenes/_client.py" = ["S603", "S607"]
+# B018: vulture_allowlist.py — the useless expression (`_.name` assignments) is the allowlist
+#       mechanism itself and is intentional (R0.11, 02-10).
+"vulture_allowlist.py" = ["B018", "E501"]
 
 [tool.pyright]
 include = ["src", "tests"]
@@ -112,6 +140,29 @@ reportMissingTypeStubs = false
 
 [tool.bandit]
 exclude_dirs = ["tests", "tmp"]
+# Every id is named with its own reason (R0.11, 02-10); a blanket skip is deliberately not used.
+# B404 (x8, every module that imports subprocess): the tool's purpose is driving kitty; the
+#   import is unavoidable, not a finding.
+# B603 (x12): every subprocess call passes a list argv with shell=False; the same trusted-input
+#   reasoning as ruff's S603 entries above, which cover the same call sites.
+# B604 (x9, path_integration.py x7 + installer.py x2): a false positive — each is a `shell=`
+#   keyword argument to a function that runs nothing (PathEditResult(...) dataclass
+#   constructors, COMPLETION_BASENAME.format(shell=...), argcomplete's shellcode(..., shell=...)),
+#   which bandit mistakes for a shell-injection sink. No subprocess call carries shell=True
+#   anywhere in src/.
+# B607 (x2): the same two partial-path sites as ruff's S607 (installer.py's `sh`,
+#   _client.py's `pgrep`) — deliberately PATH-resolved, see the ruff rationale above.
+# B310 (x1, installer.py urlopen): guarded in code — a non-https scheme raises ValueError
+#   before mkstemp or the connection (the ASVS V12 control); the rule is AST-based and cannot
+#   see the guard, so this skip names it as the compensating control.
+skips = ["B404", "B603", "B604", "B607", "B310"]
+
+[tool.vulture]
+# Pytest resolves a fixture by name — as a test parameter, via @pytest.mark.usefixtures, or as
+# autouse — and no static scan sees that. Every fixture is set aside by its decorator rather
+# than listed by name. This covers fake_home, uninstall_stubs, isolated_completion_dir today
+# and any fixture a later phase adds.
+ignore_decorators = ["@pytest.fixture"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

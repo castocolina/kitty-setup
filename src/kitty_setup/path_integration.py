@@ -35,9 +35,9 @@ __all__ = [
     "_block_body_matches_template",
     "_block_followed_only_by_comments",
     "_block_text",
-    "_find_block",
     "completion_source_line",
     "ensure_local_bin_in_path",
+    "find_block",
 ]
 
 MARKER_BEGIN: Final[str] = "# >>> my-kitty PATH >>>"
@@ -163,7 +163,7 @@ def _detect_shell(explicit: str | None, env_shell: str | None) -> str | None:
     return Path(env_shell).name or None
 
 
-def _find_block(rc_text: str, begin: str, end: str) -> tuple[int, int] | None:
+def find_block(rc_text: str, begin: str, end: str) -> tuple[int, int] | None:
     """Return (start_line_idx, end_line_idx_exclusive) for a marker block, or None."""
     lines = rc_text.splitlines(keepends=False)
     begin_idx: int | None = None
@@ -227,8 +227,8 @@ def ensure_local_bin_in_path(
 
     if rc_file.is_file():
         rc_text = rc_file.read_text(encoding="utf-8")
-        new_block = _find_block(rc_text, MARKER_BEGIN, MARKER_END)
-        legacy_block = _find_block(rc_text, _LEGACY_MARKER_BEGIN, _LEGACY_MARKER_END)
+        new_block = find_block(rc_text, MARKER_BEGIN, MARKER_END)
+        legacy_block = find_block(rc_text, _LEGACY_MARKER_BEGIN, _LEGACY_MARKER_END)
 
         if new_block is not None and legacy_block is not None:
             # Degenerate: both blocks present. Remove the legacy one, then put the retained
@@ -236,7 +236,7 @@ def ensure_local_bin_in_path(
             # (H3), so an obsolete body cannot survive the upgrade. Re-find it: its lines
             # shift when the legacy block came first.
             new_text = _splice_lines(rc_text, legacy_block[0], legacy_block[1], [])
-            retained = _find_block(new_text, MARKER_BEGIN, MARKER_END)
+            retained = find_block(new_text, MARKER_BEGIN, MARKER_END)
             if retained is not None and not _block_is_current(new_text, retained, detected_shell):
                 new_text = _render_block(new_text, retained, detected_shell)
             rc_file.write_text(new_text, encoding="utf-8")

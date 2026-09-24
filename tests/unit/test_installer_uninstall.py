@@ -281,7 +281,7 @@ def test_install_log_not_written_by_mocked_install(
     def fake_repo_root() -> Path:
         return scratch
 
-    def fake_capture_version(_kitty_bin: Path) -> str:
+    def fake_capture_version(kitty_bin: Path) -> str:
         return "kitty 9.9.9 stub"
 
     def fake_ensure_symlink(_target: Path, _link: Path) -> None:

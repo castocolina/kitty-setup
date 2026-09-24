@@ -59,7 +59,7 @@ def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
     monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
     monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
-    monkeypatch.setattr(doctor.installer, "_kitty_bin", lambda _: tmp_path / "missing-kitty")
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", lambda _: tmp_path / "missing-kitty")
 
     results = doctor.run_checks(home=home)
     names = [r.name for r in results]
@@ -389,7 +389,7 @@ def test_parse_detail_names_the_command_from_the_result(
         del conf_file, kitty_bin
         return doctor.config_updater.ParseCheckResult(ok=True, command=sentinel, stderr="")
 
-    monkeypatch.setattr(doctor.config_updater, "_parse_check", fake_parse_check)
+    monkeypatch.setattr(doctor.config_updater, "parse_check", fake_parse_check)
     kitty = _fake_parser_kitty(tmp_path, exit_code=0)
     result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
     assert result.passed is True
@@ -441,7 +441,7 @@ def test_guard_kitty_less_host_exits_nonzero(
     monkeypatch.setattr(doctor.shutil, "which", no_which)
     monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
     monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
-    monkeypatch.setattr(doctor.installer, "_kitty_bin", kitty_bin_under)
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", kitty_bin_under)
 
     code = doctor.cli_doctor()
 

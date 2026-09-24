@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -142,12 +143,12 @@ def seed_scenes() -> tuple[int, int]:
     return (seeded, kept)
 
 
-def _kitty_bin(dest: Path) -> Path:
+def kitty_bin_path(dest: Path) -> Path:
     return dest / KITTY_APP_DIRNAME / "bin" / "kitty"
 
 
 def _capture_version(kitty_bin: Path) -> str:
-    result = subprocess.run(  # noqa: S603 — args constructed from trusted paths
+    result = subprocess.run(
         [str(kitty_bin), "--version"],
         capture_output=True,
         text=True,
@@ -158,15 +159,21 @@ def _capture_version(kitty_bin: Path) -> str:
 
 
 def _download_installer(url: str = INSTALLER_URL) -> Path:
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme != "https":
+        # ASVS V12: the fetched script is executed with `sh`, so a scheme downgrade is a
+        # code-execution path. Raised (not asserted, so -O cannot strip it) and checked
+        # before mkstemp, so a rejected URL creates no file and opens no connection.
+        raise ValueError(f"installer URL must use https, got scheme {scheme!r}: {url}")
     tmp = Path(tempfile.mkstemp(prefix="kitty-installer-", suffix=".sh")[1])
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 — pinned URL
+    with urllib.request.urlopen(url, timeout=30) as response:
         tmp.write_bytes(response.read())
     return tmp
 
 
 def _run_upstream_installer(installer_script: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 — args constructed from trusted paths
+    subprocess.run(
         ["sh", str(installer_script), "launch=n", f"dest={dest}"],
         check=True,
         timeout=600,
@@ -212,7 +219,7 @@ def install(
     inject_config: bool = True,
 ) -> InstallReport:
     """Install upstream Kitty into ``dest`` and (optionally) inject our config block."""
-    kitty_bin = _kitty_bin(dest)
+    kitty_bin = kitty_bin_path(dest)
     skipped = False
     if kitty_bin.is_file() and os.access(kitty_bin, os.X_OK):
         skipped = True

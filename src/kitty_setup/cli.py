@@ -22,6 +22,7 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import argcomplete
 
@@ -211,7 +212,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "color",
         help="color: named (blue), hex (#001a33), or NONE to reset",
     )
-    p_window_background_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    cast(Any, p_window_background_color).completer = scenes.colors.color_completer
     p_window_background.add_argument(
         "--match",
         type=str,
@@ -264,7 +265,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "color",
         help="color: named (blue), hex (#0066cc), or NONE to reset",
     )
-    p_tab_accent_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    cast(Any, p_tab_accent_color).completer = scenes.colors.color_completer
     p_tab_accent.add_argument(
         "--active-fg",
         type=str,
@@ -399,7 +400,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # Shell tab-completion for the scene name: complete from the *.toml stems in
     # the scenes directory (glob only — no TOML parse, so a malformed recipe
     # never breaks completion).
-    p_scene_launch_name.completer = scenes.recipe.scene_name_completer  # type: ignore[attr-defined]
+    cast(Any, p_scene_launch_name).completer = scenes.recipe.scene_name_completer
     p_scene_launch.add_argument(
         "--layout",
         type=str,
@@ -418,17 +419,20 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TEXT",
         help="title for the new tab (UTF-8, including emoji)",
     )
-    p_scene_launch.add_argument(
-        "--tab-accent",
-        dest="tab_accent",
-        type=str,
-        default=None,
-        metavar="COLOR",
-        help=(
-            "accent color for the new tab (named, #rrggbb); applies "
-            "only to the focused-tab background"
+    cast(
+        Any,
+        p_scene_launch.add_argument(
+            "--tab-accent",
+            dest="tab_accent",
+            type=str,
+            default=None,
+            metavar="COLOR",
+            help=(
+                "accent color for the new tab (named, #rrggbb); applies "
+                "only to the focused-tab background"
+            ),
         ),
-    ).completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    ).completer = scenes.colors.color_completer
     p_scene_launch.add_argument(
         "--pane",
         dest="panes",
