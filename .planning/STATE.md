@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 2 of 10 (Defect Remediation)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-09-23 — Phase 1 complete: `AGENTS.md` is the canonical rule file, `openspec/` is frozen at `.planning/legacy/openspec/`, the three git hooks are live, and the 23-row verification map is fully resolved
+Plan: 6 of 11 in current phase executed and merged into `gsd/phase-02-defect-remediation` (02-11, 02-01, 02-02, 02-03, 02-04, 02-05); 02-06..02-10 are under plan revision
+Status: Executing
+Last activity: 2026-09-24 — 02-05 merged (`a60afed`): parse check reports its command and stderr; payload rollback never loses the previous payload. From the primary checkout: `make doctor` exit 0 (8 PASS, 1 SKIP), `make test` 423 passed, `make test-integration` 77 passed
 
 Progress: [█░░░░░░░░░] 10%
 
@@ -71,7 +71,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [Phase 5 — found by 02-05, measured on kitty 0.49.0]: the install-time parse check (a) passes a `kitty.conf` whose `include` of our own payload is missing — `load_config(accumulate_bad_lines=…)` only collects value-conversion failures, so the diagnosis reaches stderr (and doctor's PASS line) but not the verdict — and (b) runs only when `install()` changed the conf, so an ordinary reinstall never checks the new payload and the payload rollback never engages. Proposed requirement: the check fails on a missing include of our own payload and runs on every payload replacement. It changes when `my-kitty install` exits non-zero, so it needs its own decision; Phase 5 is the next phase to touch `config_updater`. Evidence: `02-05-SUMMARY.md` § T-2-19.
 
 ### Blockers/Concerns
 
@@ -79,7 +79,7 @@ None yet.
 - [Phase 10]: Requires one-time manual prerequisites from the user before it can start — enable Remote Login on the Mac, add this host's SSH key, install uv + git, clone the repo, log into the GUI session, share the host alias. No other phase depends on Phase 10, so an unreachable Mac blocks only this phase. It is also the milestone's only human-in-the-loop phase (needs a logged-in Mac GUI session), so an autonomous run must stop there deliberately.
 - [Phase 4]: The macOS half of cwd inheritance, instant clear, and conflict-free custom chords stays a documented hypothesis until Phase 10 runs it on a real Mac. Repro docs must say so rather than assume parity.
 - [Phase 3]: Whether redundant payload restatement lines (tab-nav, window-nav, font-zoom, url-hints) can be removed depends on the R2.5 experiment's verdict. Phase 4's scope shifts based on that outcome.
-- [Phase 1]: Phase 1's branch `gsd/phase-01-governance-freeze` is **not** merged to `master` and nothing is pushed: `make doctor` is red on exactly one check (`completion: register-python-argcomplete not on PATH`), which is requirement R1.1 owned by Phase 2. The merge happens once Phase 2 turns it green — no carve-out was written and the precondition was not narrowed.
+- [Phase 1]: Phase 1's branch `gsd/phase-01-governance-freeze` is **not** merged to `master` and nothing is pushed. Its precondition, R1.1, is now met on the Phase 2 branch — 02-02 turned `make doctor` green (exit 0 after a real install, 2026-09-24) — so both branches merge together at Phase 2's end, once `make doctor` and `make test` are green there.
 
 ## Deferred Items
 
@@ -91,6 +91,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23
-Stopped at: Phase 1 complete; Phase 2 planning next
-Resume file: .planning/phases/02-defect-remediation/02-CONTEXT.md
+Last session: 2026-09-24
+Stopped at: Phase 2 wave 6 (02-05) merged; 02-06..02-10 plan revision in progress, then waves 7-11
+Resume file: .planning/phases/02-defect-remediation/02-06-PLAN.md
