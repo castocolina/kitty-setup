@@ -85,7 +85,7 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
 - [ ] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
       vulture (added 2026-09-23 at the user's direction after the gate's claim was measured and
       found false). Owned by **Phase 2**, the earliest phase that already edits these files.
-      Measured baseline at `5452f54`: `src/` carries **19** of pyright's 571 errors; ruff's 28 and
+      Measured baseline at `5452f54`: `src/` carries **15** of pyright's 571 errors (`uv run pyright src`); ruff's 28 and
       black's 11 files span `src`+`tests`+`tools`; bandit reports **0 high** (8 medium, 19 low —
       an earlier report of "20 high" misread bandit's *confidence* column as severity). From the
       moment this lands, "src clean" is a hard gate in the Universal Phase Gate step 5.

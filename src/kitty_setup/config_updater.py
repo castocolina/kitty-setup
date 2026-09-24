@@ -212,7 +212,7 @@ _PARSE_SNIPPET: Final[str] = (
 )
 
 
-def _parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
+def parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
     """Validate ``conf_file`` by loading it in kitty's own interpreter.
 
     Runs ``kitty +runpy`` with a snippet that calls ``kitty.config.load_config`` with an
@@ -223,7 +223,7 @@ def _parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
     """
     argv = [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)]
     try:
-        result = subprocess.run(  # noqa: S603 — args are constructed from trusted paths
+        result = subprocess.run(
             argv,
             capture_output=True,
             text=True,
@@ -322,7 +322,7 @@ def install(
     has drifted. A timestamped backup is created before any mutating write.
 
     When ``kitty_bin`` is provided the resulting ``conf_file`` is loaded by
-    kitty's own config parser (see :func:`_parse_check`); on a rejection the
+    kitty's own config parser (see :func:`parse_check`); on a rejection the
     latest backup is restored and :class:`ConfigUpdaterError` is raised, naming
     the command that ran and carrying the parser's stderr.
 
@@ -394,7 +394,7 @@ def _write_block_and_check(
 
     parse_ok: bool | None = None
     if kitty_bin is not None and (created_conf or updated_block):
-        check = _parse_check(conf, kitty_bin)
+        check = parse_check(conf, kitty_bin)
         parse_ok = check.ok
         if not check.ok:
             if backup_path is not None:

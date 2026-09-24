@@ -2,7 +2,7 @@
 
 The check has three branches: SKIP (no kitty running OR managed conf absent),
 PASS (every managed socket reachable), FAIL (at least one managed socket
-unreachable). These tests stub ``_pgrep_kitty_pids`` and ``_kitten_ls_succeeds``
+unreachable). These tests stub ``pgrep_kitty_pids`` and ``_kitten_ls_succeeds``
 to drive each branch without spawning real kitty processes.
 
 The ``_per_probe_04`` suffix on the SUT function name carries the link to
@@ -42,18 +42,18 @@ def paths_without_rc(tmp_path: Path) -> config_updater.ConfigPaths:
 
 
 def test_parse_listen_on_base_returns_path(paths_with_rc: config_updater.ConfigPaths) -> None:
-    base = doctor._parse_listen_on_base(paths_with_rc.payload_dir / "remote-control.conf")
+    base = doctor.parse_listen_on_base(paths_with_rc.payload_dir / "remote-control.conf")
     assert base == "/tmp/kitty"
 
 
 def test_parse_listen_on_base_missing_returns_none(tmp_path: Path) -> None:
-    assert doctor._parse_listen_on_base(tmp_path / "nope.conf") is None
+    assert doctor.parse_listen_on_base(tmp_path / "nope.conf") is None
 
 
 def test_parse_listen_on_base_no_directive_returns_none(tmp_path: Path) -> None:
     conf = tmp_path / "rc.conf"
     conf.write_text("allow_remote_control yes\n", encoding="utf-8")
-    assert doctor._parse_listen_on_base(conf) is None
+    assert doctor.parse_listen_on_base(conf) is None
 
 
 def test_remote_control_skips_when_rc_conf_missing(
@@ -68,7 +68,7 @@ def test_remote_control_skips_when_no_kitty_running(
     paths_with_rc: config_updater.ConfigPaths,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(doctor, "_pgrep_kitty_pids", lambda: [])
+    monkeypatch.setattr(doctor, "pgrep_kitty_pids", lambda: [])
     result = doctor._check_remote_control_per_probe_04(paths_with_rc)
     assert result.skipped is True
     assert "no running kitty" in result.detail
@@ -81,7 +81,7 @@ def test_remote_control_skips_when_no_managed_socket_found(
 ) -> None:
     # Kitty running but no socket at /tmp/kitty-<PID> — e.g. a pre-`make setup` kitty
     # the user hasn't restarted yet. The check must SKIP, not FAIL.
-    monkeypatch.setattr(doctor, "_pgrep_kitty_pids", lambda: [99999])
+    monkeypatch.setattr(doctor, "pgrep_kitty_pids", lambda: [99999])
     monkeypatch.setattr(
         doctor, "_kitten_ls_succeeds", lambda *args, **kwargs: (False, "should not be called")
     )
@@ -108,7 +108,7 @@ def test_remote_control_passes_when_managed_socket_reachable(
     fake_socket = tmp_path / f"kitty-{fake_pid}"
     fake_socket.touch()
 
-    monkeypatch.setattr(doctor, "_pgrep_kitty_pids", lambda: [fake_pid])
+    monkeypatch.setattr(doctor, "pgrep_kitty_pids", lambda: [fake_pid])
     monkeypatch.setattr(doctor, "_kitten_ls_succeeds", lambda *args, **kwargs: (True, ""))
 
     result = doctor._check_remote_control_per_probe_04(paths_with_rc)
@@ -129,7 +129,7 @@ def test_remote_control_fails_when_managed_socket_unreachable(
     fake_pid = 12345
     (tmp_path / f"kitty-{fake_pid}").touch()
 
-    monkeypatch.setattr(doctor, "_pgrep_kitty_pids", lambda: [fake_pid])
+    monkeypatch.setattr(doctor, "pgrep_kitty_pids", lambda: [fake_pid])
     monkeypatch.setattr(
         doctor, "_kitten_ls_succeeds", lambda *args, **kwargs: (False, "connection refused")
     )

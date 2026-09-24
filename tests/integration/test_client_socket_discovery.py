@@ -115,7 +115,7 @@ def test_resolve_socket_pgrep_path_against_live_kitty(
         socket_file = _wait_for_socket(pid)
         # Constrain pgrep to the spawned PID so we don't pick up the user's
         # own kitty processes (the user's daily kitty IS running during tests).
-        monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [pid])
+        monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [pid])
 
         resolved = _client._resolve_socket(None)
         assert resolved == f"unix:{socket_file}"

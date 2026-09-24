@@ -111,8 +111,8 @@ def stub_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def pin_pgrep_to_pid(monkeypatch: pytest.MonkeyPatch, pid: int) -> None:
-    """Pin `_pgrep_kitty_pids()` to the spawned PID for deterministic discovery."""
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [pid])
+    """Pin `pgrep_kitty_pids()` to the spawned PID for deterministic discovery."""
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [pid])
     monkeypatch.delenv("KITTY_LISTEN_ON", raising=False)
 
 

@@ -83,13 +83,13 @@ def _recorded_argv(argv_log: Path) -> list[str]:
     return argv_log.read_bytes().decode("utf-8").split("\0")[:-1]
 
 
-def _parse_check(conf_file: Path, kitty_bin: Path) -> Any:
-    """Call ``config_updater._parse_check`` through the module namespace.
+def parse_check(conf_file: Path, kitty_bin: Path) -> Any:
+    """Call ``config_updater.parse_check`` through the module namespace.
 
     Looked up by name rather than by attribute so these cases add no pyright
     ``reportPrivateUsage`` finding; ``02-10`` renames the function and updates this one string.
     """
-    return vars(config_updater)["_parse_check"](conf_file, kitty_bin)
+    return vars(config_updater)["parse_check"](conf_file, kitty_bin)
 
 
 def _read(path: Path) -> str:
@@ -440,7 +440,7 @@ def _conf(tmp_path: Path) -> Path:
 
 
 def test_parse_result_carries_ok_command_and_stderr_fields(tmp_path: Path) -> None:
-    result = _parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
+    result = parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
     # Before the type assertion, which would narrow ``result`` and make this a type error.
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.ok = False
@@ -449,25 +449,25 @@ def test_parse_result_carries_ok_command_and_stderr_fields(tmp_path: Path) -> No
 
 
 def test_parse_result_command_names_runpy_not_debug_config(tmp_path: Path) -> None:
-    result = _parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
+    result = parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
     assert "+runpy" in result.command
     assert "--debug-config" not in result.command
 
 
 def test_parse_result_failure_carries_parser_stderr_verbatim(tmp_path: Path) -> None:
     failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
-    result = _parse_check(_conf(tmp_path), failing)
+    result = parse_check(_conf(tmp_path), failing)
     assert result.ok is False
     assert result.stderr == BAD_LINE_DIAG
 
 
 def test_parse_result_success_passes_stderr_through(tmp_path: Path) -> None:
     conf = _conf(tmp_path)
-    silent = _parse_check(conf, _fake_kitty_bin(tmp_path, exit_code=0, name="silent"))
+    silent = parse_check(conf, _fake_kitty_bin(tmp_path, exit_code=0, name="silent"))
     assert silent.ok is True
     assert silent.stderr == ""
     warned = _fake_kitty_bin(tmp_path, exit_code=0, stderr=MISSING_INCLUDE_WARNING, name="warned")
-    result = _parse_check(conf, warned)
+    result = parse_check(conf, warned)
     assert result.ok is True
     assert result.stderr == MISSING_INCLUDE_WARNING
 
@@ -476,7 +476,7 @@ def test_parse_result_command_is_the_complete_argv_executed(tmp_path: Path) -> N
     argv_log = tmp_path / "argv.bin"
     kitty = _fake_kitty_bin(tmp_path, exit_code=0, argv_log=argv_log)
     conf = _conf(tmp_path)
-    result = _parse_check(conf, kitty)
+    result = parse_check(conf, kitty)
     recorded = _recorded_argv(argv_log)
     assert recorded[0] == str(kitty)
     assert recorded[1] == "+runpy"

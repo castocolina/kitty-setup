@@ -1,6 +1,6 @@
 """Internal `kitten @` wrapper + socket discovery for scene primitives.
 
-Holds the helpers `_pgrep_kitty_pids` and `_parse_listen_on_base` that were
+Holds the helpers `pgrep_kitty_pids` and `parse_listen_on_base` that were
 previously defined in `doctor.py` and are still re-exported there (the
 remote-control doctor check uses them too). Adds `_resolve_kitten_binary`,
 `_resolve_socket`, `kitten_at`, and the `SceneClientError` exception so every
@@ -24,7 +24,7 @@ class SceneClientError(RuntimeError):
     """Raised by `_resolve_kitten_binary` / `_resolve_socket` on unrecoverable failures."""
 
 
-def _parse_listen_on_base(remote_control_conf: Path) -> str | None:
+def parse_listen_on_base(remote_control_conf: Path) -> str | None:
     """Return the `listen_on unix:<path>` base path from the managed `remote-control.conf`.
 
     The resolved per-instance socket appends `-<PID>` to this base (kitty's documented
@@ -37,7 +37,7 @@ def _parse_listen_on_base(remote_control_conf: Path) -> str | None:
     return match.group("path") if match else None
 
 
-def _pgrep_kitty_pids() -> list[int]:
+def pgrep_kitty_pids() -> list[int]:
     """Return the PIDs of running kitty processes (`pgrep -x kitty`)."""
     try:
         result = subprocess.run(
@@ -72,7 +72,7 @@ def _resolve_socket(to: str | None) -> str:
 
     Always returns a `unix:`-prefixed string. Steps 1 and 2 pass the caller-supplied
     value unchanged. Step 3 reads the base from the managed `remote-control.conf`
-    and appends `-<PID>` from `_pgrep_kitty_pids()`.
+    and appends `-<PID>` from `pgrep_kitty_pids()`.
 
     Raises `SceneClientError` for: missing config, zero kitties, multiple kitties.
     """
@@ -83,14 +83,14 @@ def _resolve_socket(to: str | None) -> str:
         return listen_on
 
     rc_conf = config_updater.ConfigPaths.for_user().payload_dir / "remote-control.conf"
-    base = _parse_listen_on_base(rc_conf)
+    base = parse_listen_on_base(rc_conf)
     if base is None:
         raise SceneClientError(
             "remote-control.conf missing or has no listen_on directive; "
             "run `make install` or pass --to unix:<path>"
         )
 
-    pids = _pgrep_kitty_pids()
+    pids = pgrep_kitty_pids()
     if not pids:
         raise SceneClientError("no kitty process found; run kitty first or pass --to unix:<path>")
     if len(pids) > 1:
@@ -118,7 +118,7 @@ def kitten_at(
     """
     kitten_bin = _resolve_kitten_binary()
     socket_path = _resolve_socket(to)
-    return subprocess.run(  # noqa: S603 — trusted paths, fixed verb
+    return subprocess.run(
         [str(kitten_bin), "@", f"--to={socket_path}", verb, *args],
         capture_output=True,
         text=True,

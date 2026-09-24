@@ -204,7 +204,10 @@ class KittySession:
         args: list[str] = []
         for key, value in kwargs.items():
             flag = f"--{key.replace('_', '-')}"
-            if value is True or value == "":
+            # The boolean-identity half pyright flagged (reportUnnecessaryComparison) is
+            # unreachable: value is annotated str and launch's only caller passes
+            # dict[str, str]. The empty-value half is the reachable flag-style idiom and stays.
+            if value == "":
                 args.append(flag)
             else:
                 args.append(f"{flag}={value}")
@@ -255,10 +258,10 @@ class KittySession:
         ]
         env = dict(os.environ)
         env["HOME"] = str(self._session_dir / "home")
-        env.setdefault("XDG_RUNTIME_DIR", "/tmp")  # noqa: S108 — fall-back only when unset
+        env.setdefault("XDG_RUNTIME_DIR", tempfile.gettempdir())
         log = self._log_path.open("ab")
         try:
-            self._process = subprocess.Popen(  # noqa: S603 — args constructed from trusted paths
+            self._process = subprocess.Popen(
                 argv,
                 stdout=log,
                 stderr=log,
@@ -300,7 +303,7 @@ class KittySession:
             *args,
         ]
         try:
-            result = subprocess.run(  # noqa: S603 — args constructed from trusted paths
+            result = subprocess.run(
                 argv,
                 capture_output=True,
                 check=False,
