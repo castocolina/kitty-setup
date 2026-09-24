@@ -5,6 +5,7 @@ The install path is intentionally per-user and ``sudo``-free:
 * ``~/.local/kitty.app/`` — payload from the upstream installer.
 * ``~/.local/bin/kitty`` — symlink to ``~/.local/kitty.app/bin/kitty``.
 * ``~/.local/share/applications/kitty.desktop`` — desktop entry.
+* ``~/.local/share/kitty-setup/my-kitty-completion.{bash,zsh}`` — shell completion.
 * ``~/.config/kitty/kitty-setup/`` — our configuration payload.
 * ``~/.config/kitty/kitty.conf`` — modified between sentinel markers only.
 
@@ -16,22 +17,50 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import enum
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
+import argcomplete
+
 from kitty_setup import config_updater, path_integration, pruner
+
+# ``argcomplete.shellcode`` generates the completion script in-process (D-02). argcomplete 3.6.3,
+# the uv.lock pin, defines it without annotations and leaves it out of ``__all__``, so pyright
+# strict reads the attribute as private and partially Unknown. Taking it from the module namespace
+# yields ``Any``, which this annotation narrows; argcomplete 3.7.2 annotates the same function as
+# ``(executables: Iterable[str], ..., shell: str = "bash", ...) -> str``. No suppression comment.
+_ARGCOMPLETE_SHELLCODE: Final[Callable[..., str]] = vars(argcomplete)["shellcode"]
 
 INSTALLER_URL: Final[str] = "https://sw.kovidgoyal.net/kitty/installer.sh"
 DEFAULT_DEST: Final[Path] = Path.home() / ".local"
 KITTY_APP_DIRNAME: Final[str] = "kitty.app"
 SYMLINK_PATH: Final[Path] = Path.home() / ".local" / "bin" / "kitty"
 DESKTOP_PATH: Final[Path] = Path.home() / ".local" / "share" / "applications" / "kitty.desktop"
+# D-01 names this literal path; ``XDG_DATA_HOME`` is deliberately not consulted, matching the
+# three constants above. ``_COMPLETION_RELDIR`` is the same location relative to an injected home.
+_COMPLETION_RELDIR: Final[Path] = Path(".local") / "share" / "kitty-setup"
+COMPLETION_DIR: Final[Path] = Path.home() / _COMPLETION_RELDIR
+COMPLETION_BASENAME: Final[str] = "my-kitty-completion.{shell}"
+COMPLETION_PROG: Final[str] = "my-kitty"
+
+
+class CompletionShell(enum.StrEnum):
+    """Shells we generate a completion script for.
+
+    argcomplete's own ``--shell`` choices, narrowed to the two shells whose rc file
+    ``path_integration`` edits.
+    """
+
+    BASH = "bash"
+    ZSH = "zsh"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -286,6 +315,64 @@ def remove_kitty_install(dest: Path = DEFAULT_DEST) -> KittyRemovalReport:
     )
 
 
+def _completion_dir(home: Path | None) -> Path:
+    return COMPLETION_DIR if home is None else home / _COMPLETION_RELDIR
+
+
+def completion_script_path(shell: str, *, home: Path | None = None) -> Path:
+    """Where the completion script for ``shell`` lives. Pure path arithmetic, no I/O.
+
+    Raises :class:`ValueError` for a shell that is not a :class:`CompletionShell`,
+    because no script is ever written for it.
+    """
+    member = CompletionShell(shell)
+    return _completion_dir(home) / COMPLETION_BASENAME.format(shell=member.value)
+
+
+def generate_completion_script(shell: str) -> str:
+    """Return the completion shellcode for ``my-kitty``, generated in-process.
+
+    Deliberately not ``register-python-argcomplete``: ``uv tool install`` exposes only
+    ``my-kitty``, so that helper is never on PATH (D-02). The in-process call runs in the
+    interpreter that owns ``argcomplete`` and cannot be substituted by a PATH entry. The
+    output names no subcommand (U-3): its currency is a byte match against a fresh call.
+    """
+    member = CompletionShell(shell)
+    return _ARGCOMPLETE_SHELLCODE([COMPLETION_PROG], shell=member.value)
+
+
+def write_completion_script(shell: str | None, *, home: Path | None = None) -> Path | None:
+    """Write the completion script for ``shell`` and return its path.
+
+    Returns ``None`` and creates nothing when ``shell`` is ``None`` or unsupported —
+    a bash script a fish user never reads is not written. Idempotent.
+    """
+    if shell is None or shell not in {member.value for member in CompletionShell}:
+        return None
+    path = completion_script_path(shell, home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(generate_completion_script(shell), encoding="utf-8")
+    return path
+
+
+def remove_completion_script(*, home: Path | None = None) -> list[Path]:
+    """Delete every per-shell completion script we own; return the paths removed.
+
+    The directory is removed only when it is left empty — never recursively, since a
+    user may keep something else there.
+    """
+    removed: list[Path] = []
+    for member in CompletionShell:
+        path = completion_script_path(member.value, home=home)
+        if path.is_file() or path.is_symlink():
+            path.unlink(missing_ok=True)
+            removed.append(path)
+    directory = _completion_dir(home)
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+    return removed
+
+
 def _print_install_report(report: InstallReport) -> None:
     print(f"kitty version: {report.version}")
     print(f"kitty.app:     {report.kitty_app_dir}")
@@ -320,6 +407,13 @@ def _print_path_result(result: path_integration.PathEditResult) -> None:
         )
 
 
+def _print_completion_result(shell: str | None, written: Path | None) -> None:
+    if written is None:
+        print(f"completion:    shell {shell or '<unknown>'} not supported; no script written")
+    else:
+        print(f"completion:    wrote {written}")
+
+
 LEGACY_BINARY_PATH: Final[Path] = Path.home() / ".local" / "bin" / "my-kitty-setup"
 
 
@@ -346,6 +440,10 @@ def cli_install(args: argparse.Namespace) -> int:
     _print_install_report(report)
     path_result = path_integration.ensure_local_bin_in_path()
     _print_path_result(path_result)
+    # The rc block is read only at the next shell start, so generating after the rc edit
+    # within one install is sound; what matters is that both land in the same install.
+    completion = write_completion_script(path_result.shell)
+    _print_completion_result(path_result.shell, completion)
     _print_legacy_shim_notice()
     return 0
 
@@ -413,6 +511,15 @@ def cli_uninstall(args: argparse.Namespace) -> int:
             print(f"kitty:         removed symlink {kitty_report.symlink}")
         if kitty_report.desktop_entry_removed:
             print(f"kitty:         removed desktop entry {kitty_report.desktop_entry}")
+
+    # The completion script belongs to the *binary*, not to the ~/.config/kitty footprint, so
+    # it is guarded by do_kitty: --keep-kitty is the only flag that preserves binary-adjacent
+    # state, and `make clean` passes --keep-kitty --keep-backups (D-04) but not --keep-config.
+    # Guarding by do_config would make the safe verb delete the completion of a binary that
+    # survives. Its own step, not a line in remove_kitty_install(), whose name means kitty.app.
+    if do_kitty:
+        for path in remove_completion_script():
+            print(f"completion:    removed {path}")
 
     print(_SELF_REMOVAL_BANNER)
     return 0
