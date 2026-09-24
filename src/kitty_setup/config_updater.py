@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as _dt
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,9 @@ BACKUP_SUFFIX_FMT: Final[str] = "%Y%m%dT%H%M%SZ"
 # Strict pattern guarding prune from touching anything we did not write.
 # See add-backup-pruning design D4 + risk #3 (no glob, exact regex).
 BACKUP_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^kitty\.conf\.bak\.\d{8}T\d{6}Z$")
+# Suffix of the sibling the previous payload is renamed to while an install is in flight. A
+# sibling of ``payload_dir`` shares its filesystem, so every rename between the two is atomic.
+ROLLBACK_SUFFIX: Final[str] = ".rollback"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -104,6 +108,21 @@ class UninstallResult:
     payload_dir_removed: bool
     conf_restored_from: Path | None
     conf_deleted: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ParseCheckResult:
+    """Outcome of the config parse check.
+
+    ``command`` is the complete, shell-quoted argv that ran — ``shlex.split(command)`` gives the
+    argv back — so it can be copied and re-run. ``stderr`` is the parser's output, untouched: on a
+    rejection it names the file, line and reason; on a pass it may still carry warnings, such as
+    a missing ``include``, that do not fail the check.
+    """
+
+    ok: bool
+    command: str
+    stderr: str
 
 
 class ConfigUpdaterError(RuntimeError):
@@ -180,28 +199,32 @@ def _latest_backup(conf_file: Path) -> Path | None:
     return backups[-1] if backups else None
 
 
+# One line, so the command built from it is one copyable line and doctor keeps one line per check.
+# The statements are the multi-line original's, joined with ``;``: ``print(b, file=sys.stderr)``
+# writes ``str(b)`` plus a newline, the same bytes as ``sys.stderr.write(str(b) + '\n')``.
 _PARSE_SNIPPET: Final[str] = (
-    "import sys\n"
-    "from kitty.config import load_config\n"
-    "bad = []\n"
-    "load_config(sys.argv[-1], accumulate_bad_lines=bad)\n"
-    "for b in bad:\n"
-    "    sys.stderr.write(str(b) + '\\n')\n"
-    "sys.exit(1 if bad else 0)\n"
+    "import sys; "
+    "from kitty.config import load_config; "
+    "bad = []; "
+    "load_config(sys.argv[-1], accumulate_bad_lines=bad); "
+    "[print(b, file=sys.stderr) for b in bad]; "
+    "sys.exit(1 if bad else 0)"
 )
 
 
-def _parse_check(conf_file: Path, kitty_bin: str | Path) -> bool:
-    """Validate ``conf_file`` via ``kitty +runpy`` (returns True iff no bad lines).
+def _parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
+    """Validate ``conf_file`` by loading it in kitty's own interpreter.
 
-    Kitty 0.46+ does not expose a ``--debug-config`` flag; the equivalent
-    introspection runs ``kitty.config.load_config`` and checks the
-    ``accumulate_bad_lines`` collector. Exit code 0 means no malformed lines;
-    non-zero means at least one was rejected.
+    Runs ``kitty +runpy`` with a snippet that calls ``kitty.config.load_config`` with an
+    ``accumulate_bad_lines`` collector and exits non-zero when it collected anything. That
+    collector only sees value-conversion failures: an unknown key, a malformed line or a missing
+    ``include`` exits 0 and shows up on stderr only, which is why ``stderr`` is returned on a pass
+    as well as on a rejection.
     """
+    argv = [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)]
     try:
         result = subprocess.run(  # noqa: S603 — args are constructed from trusted paths
-            [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)],
+            argv,
             capture_output=True,
             text=True,
             check=False,
@@ -209,7 +232,79 @@ def _parse_check(conf_file: Path, kitty_bin: str | Path) -> bool:
         )
     except FileNotFoundError as exc:
         raise ConfigUpdaterError(f"kitty binary not found at {kitty_bin}") from exc
-    return result.returncode == 0
+    return ParseCheckResult(
+        ok=result.returncode == 0, command=shlex.join(argv), stderr=result.stderr
+    )
+
+
+def _rejection_message(check: ParseCheckResult) -> str:
+    stderr = check.stderr.rstrip() or "(the parser wrote nothing to stderr)"
+    return (
+        "kitty's config parser rejected the mutated kitty.conf; kitty.conf was restored.\n"
+        f"command: {check.command}\n"
+        f"parser stderr:\n{stderr}"
+    )
+
+
+def _preserve_stale_aside(aside: Path, kitty_dir: Path, *, now: _dt.datetime | None) -> None:
+    """Move an aside left behind by an interrupted install out of the way. Never delete it.
+
+    An install interrupted between moving the previous payload aside and committing or restoring
+    it (Ctrl-C, a kill, a power loss) leaves ``aside`` behind, and renaming a directory onto a
+    non-empty one fails, so without this every later install would stop at the aside step. The
+    aside is preserved rather than restored: :func:`install` always replaces the payload, so a
+    restored aside would be moved aside again at once; no journal says which step was
+    interrupted, and an interrupted commit leaves a partial aside that looks whole; and preserving
+    needs no branch on whether the payload exists. The dated name sits beside the conf backups,
+    on the same filesystem, and a taken name — anything that exists, since renaming onto an empty
+    directory silently replaces it — gets the smallest free ``.N`` suffix instead. Neither
+    ``prune`` nor ``uninstall`` touches the preserved copy; it is the user's to delete, which is
+    why the one stderr line names it.
+    """
+    if not (aside.exists() or aside.is_symlink()):
+        return
+    base = kitty_dir / f"{aside.name}.{_utc_timestamp(now)}"
+    destination = base
+    suffix = 0
+    while destination.exists() or destination.is_symlink():
+        suffix += 1
+        destination = base.with_name(f"{base.name}.{suffix}")
+    try:
+        aside.rename(destination)
+    except OSError as exc:
+        raise ConfigUpdaterError(
+            f"a payload aside from an interrupted install is at {aside} and could not be moved "
+            f"to {destination}: {exc}. Nothing was changed; move it out of the way by hand."
+        ) from exc
+    print(
+        f"config: preserved a payload aside from an interrupted install at {destination}",
+        file=sys.stderr,
+    )
+
+
+def _restore_payload(payload_dir: Path, aside: Path | None, failure: BaseException) -> None:
+    """Undo a failed install's payload copy: remove the partial target, rename the aside back.
+
+    Runs inside the ``except`` block that caught ``failure``, so anything raised here chains to
+    it. With an aside, a failed step keeps the aside — the only copy of the previous payload —
+    and raises :class:`ConfigUpdaterError` naming it and repeating ``failure``, so a parser's
+    diagnosis is not lost behind the restore error. With no aside nothing of the user's is at
+    risk, and the ``OSError`` propagates as is.
+    """
+    try:
+        if payload_dir.exists():
+            shutil.rmtree(payload_dir)
+        if aside is not None:
+            aside.rename(payload_dir)
+    except OSError as exc:
+        if aside is None:
+            raise
+        raise ConfigUpdaterError(
+            f"install failed and the previous payload could not be put back: {exc}\n"
+            f"The previous payload is kept, untouched, at {aside}; move it back to "
+            f"{payload_dir} by hand.\n"
+            f"Original failure ({type(failure).__name__}): {failure}"
+        ) from exc
 
 
 def install(
@@ -226,19 +321,48 @@ def install(
     mutated only by appending the marker block when the block is missing or
     has drifted. A timestamped backup is created before any mutating write.
 
-    When ``kitty_bin`` is provided the resulting ``conf_file`` is parsed with
-    ``kitty --debug-config``; on a non-zero exit code the latest backup is
-    restored and :class:`ConfigUpdaterError` is raised.
+    When ``kitty_bin`` is provided the resulting ``conf_file`` is loaded by
+    kitty's own config parser (see :func:`_parse_check`); on a rejection the
+    latest backup is restored and :class:`ConfigUpdaterError` is raised, naming
+    the command that ran and carrying the parser's stderr.
+
+    The previous payload is never destroyed before the new one is accepted. It
+    is renamed to a ``.rollback`` sibling first; the sibling is deleted only
+    after the copy, the conf mutation and the parse check all succeed. On any
+    failure of those — ``KeyboardInterrupt`` and ``SystemExit`` included — the
+    partial payload is removed and the sibling renamed back.
     """
     if not payload_source.is_dir():
         raise FileNotFoundError(f"payload source not a directory: {payload_source}")
 
     paths.kitty_dir.mkdir(parents=True, exist_ok=True)
-    if paths.payload_dir.exists():
-        shutil.rmtree(paths.payload_dir)
-    shutil.copytree(payload_source, paths.payload_dir)
-    _select_clear_variant(paths.payload_dir)
+    aside = paths.payload_dir.with_name(paths.payload_dir.name + ROLLBACK_SUFFIX)
+    _preserve_stale_aside(aside, paths.kitty_dir, now=now)
+    previous = aside if paths.payload_dir.exists() else None
+    if previous is not None:
+        paths.payload_dir.rename(previous)
+    try:
+        shutil.copytree(payload_source, paths.payload_dir)
+        _select_clear_variant(paths.payload_dir)
+        result = _write_block_and_check(paths, kitty_bin=kitty_bin, now=now)
+    except BaseException as exc:
+        _restore_payload(paths.payload_dir, previous, exc)
+        raise
+    # Commit, outside the checked region: a failure here cannot roll back an accepted payload,
+    # and the aside it leaves is the stale case the next install preserves and reports.
+    if previous is not None:
+        shutil.rmtree(previous)
+    return result
 
+
+def _write_block_and_check(
+    paths: ConfigPaths, *, kitty_bin: str | Path | None, now: _dt.datetime | None
+) -> InstallResult:
+    """Inject the marker block into the conf, then parse-check it when it changed.
+
+    On the parser's rejection the conf is restored (or the created conf deleted) *before*
+    :class:`ConfigUpdaterError` is raised, so the payload rollback that follows never races it.
+    """
     conf = paths.conf_file
     backup_path: Path | None = None
     created_conf = False
@@ -270,15 +394,14 @@ def install(
 
     parse_ok: bool | None = None
     if kitty_bin is not None and (created_conf or updated_block):
-        parse_ok = _parse_check(conf, kitty_bin)
-        if not parse_ok:
+        check = _parse_check(conf, kitty_bin)
+        parse_ok = check.ok
+        if not check.ok:
             if backup_path is not None:
                 shutil.copy2(backup_path, conf)
             elif created_conf:
                 conf.unlink()
-            raise ConfigUpdaterError(
-                "kitty --debug-config rejected the mutated kitty.conf; rolled back"
-            )
+            raise ConfigUpdaterError(_rejection_message(check))
 
     return InstallResult(
         conf_file=conf,
