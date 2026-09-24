@@ -43,7 +43,7 @@ make uninstall                   # remove EVERYTHING we created (config + payloa
 make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files; remove the rest
 make uninstall KEEP_CONFIG=1     # preserve entire ~/.config/kitty/ footprint; still removes kitty.app
 make uninstall KEEP_KITTY=1      # preserve kitty.app + symlink + desktop; remove config + backups
-make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
+make clean              # strip our config block + payload, wipe ./tmp/ scratch (keeps kitty + backups)
 make prune              # keep 3 most recent kitty.conf backups, delete the rest
 my-kitty prune          # dry-run: list backups + total size, no deletions
 my-kitty prune --backups --older-than 60   # non-default policy: trim by age (days)
