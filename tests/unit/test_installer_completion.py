@@ -12,6 +12,8 @@ against a ``tmp_path`` home; ``HOME`` is also redirected so nothing can reach th
 from __future__ import annotations
 
 import argparse
+import errno
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -221,6 +223,39 @@ def test_cli_install_completion_write_failure_is_one_clean_line(
     assert str(_completion_dir(tmp_path)) in err_lines[0]
     assert "Traceback" not in captured.out
     assert "Traceback" not in captured.err
+
+
+def test_cli_install_path_rc_oserror_is_one_clean_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """R1.7: an ``OSError`` from the rc edit is one stderr line and exit 1, not a traceback.
+
+    Only ``install()`` is stubbed; the rc edit is real. ``~/.zshrc`` is made a directory, so
+    the real write inside ``ensure_local_bin_in_path()`` raises ``IsADirectoryError``. Nothing
+    after the failed edit runs, so no completion script is written.
+    """
+    _redirect_default_dir(monkeypatch, tmp_path)
+
+    def fake_install(
+        *, dest: Path = installer.DEFAULT_DEST, inject_config: bool = True
+    ) -> installer.InstallReport:
+        return _fake_report()
+
+    monkeypatch.setattr(installer, "install", fake_install)
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    rc_file = tmp_path / ".zshrc"
+    rc_file.mkdir()
+    rc = installer.cli_install(argparse.Namespace(dest=installer.DEFAULT_DEST, no_config=False))
+    captured = capsys.readouterr()
+    assert rc == 1
+    err_lines = [line for line in captured.err.splitlines() if line.strip()]
+    assert len(err_lines) == 1, captured.err
+    assert str(rc_file) in err_lines[0]
+    assert os.strerror(errno.EISDIR) in err_lines[0]
+    assert "Traceback" not in captured.out
+    assert "Traceback" not in captured.err
+    assert not _completion_dir(tmp_path).exists()
+    assert rc_file.is_dir() and not any(rc_file.iterdir())
 
 
 # --------------------------------------------------------------------------- removal
