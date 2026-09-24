@@ -164,7 +164,7 @@ Each defect is a requirement with a regression test.
       in `except HarnessCommandError: pass`, so implementing it literally would leak one kitty process
       per integration test **silently**; `close-window` was measured correct with 2 OS windows and 3
       windows; U-1 in 02-RESEARCH.md); doctor "skipped" → real SKIP state; PATH-migration messages
-      printed as specified; unsupported-shell hint prints both lines.
+      printed as specified; the unsupported-shell hint prints every manual line the result carries — the PATH export, and, because no completion file is generated for a shell outside bash/zsh, an explicit statement that completion is not set up for that shell, **never** a completion line in another shell's syntax (amended 2026-09-23: the original "prints both lines" predates R1.1's static completion file, and taken literally would hand a fish user a bash `source` line — the class of untruth R1.1 exists to remove).
 - [ ] **R1.8**: Introspection macOS attribution — normalise payload chords through kitty's own
       `parse_shortcut` (in the same `+runpy` call) so `cmd+k` ≡ `super+k` attributes to our file
       (mechanism decided 2026-09-22, phase-3 discussion D-06; both verified to parse to
