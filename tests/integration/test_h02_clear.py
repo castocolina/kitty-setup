@@ -12,8 +12,8 @@ default ``scroll_to_prompt 1``. See
 
 The behavioural half (`clear_terminal scrollback active` + `send_text \\x0c`
 clears the screen and scrollback) is exercised via ``session.action`` /
-``session.send_text`` rather than ``session.send_key`` — kitty's remote
-control ``send-key`` injects raw key events that do NOT traverse the keymap,
+``session.send_text`` — kitty's remote control ``send-key`` injects raw key
+events that do NOT traverse the keymap,
 so chord-triggered behaviour cannot be exercised through the harness. The
 chord registration itself is validated through the introspection module:
 ``my-kitty keys`` confirms each chord lives under source ``clear``.

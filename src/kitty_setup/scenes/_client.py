@@ -40,7 +40,7 @@ def _parse_listen_on_base(remote_control_conf: Path) -> str | None:
 def _pgrep_kitty_pids() -> list[int]:
     """Return the PIDs of running kitty processes (`pgrep -x kitty`)."""
     try:
-        result = subprocess.run(  # noqa: S603 — fixed argv, trusted binary
+        result = subprocess.run(
             ["pgrep", "-x", "kitty"],
             capture_output=True,
             text=True,
@@ -92,9 +92,7 @@ def _resolve_socket(to: str | None) -> str:
 
     pids = _pgrep_kitty_pids()
     if not pids:
-        raise SceneClientError(
-            "no kitty process found; run kitty first or pass --to unix:<path>"
-        )
+        raise SceneClientError("no kitty process found; run kitty first or pass --to unix:<path>")
     if len(pids) > 1:
         pid_list = ", ".join(str(p) for p in pids)
         raise SceneClientError(

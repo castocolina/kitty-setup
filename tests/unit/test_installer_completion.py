@@ -161,7 +161,7 @@ def _patch_install_side_effects(monkeypatch: pytest.MonkeyPatch, detected: str |
         return _fake_report()
 
     def fake_ensure(
-        home: Path | None = None, shell: str | None = None, env_path: str | None = None
+        home: Path | None = None, shell: str | None = None
     ) -> path_integration.PathEditResult:
         return path_integration.PathEditResult(
             changed=False,

@@ -29,7 +29,6 @@ __all__ = [
     "EXPORT_LINE",
     "MARKER_BEGIN",
     "MARKER_END",
-    "TARGET_DIR_REL",
     "ZSH_COMPINIT_LINE",
     "PathEditResult",
     "_block_body_lines",
@@ -56,7 +55,6 @@ EXPORT_LINE: Final[str] = 'export PATH="$HOME/.local/bin:$PATH"'
 ZSH_COMPINIT_LINE: Final[str] = (
     "(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }"
 )
-TARGET_DIR_REL: Final[str] = ".local/bin"
 # The rc is text a user reads and may copy between machines, so the completion file is named
 # through ``$HOME`` rather than the path resolved at install time.
 _RC_HOME: Final[Path] = Path("$HOME")
@@ -196,7 +194,6 @@ def _splice_lines(rc_text: str, start: int, end: int, replacement: list[str]) ->
 def ensure_local_bin_in_path(
     home: Path | None = None,
     shell: str | None = None,
-    env_path: str | None = None,  # kept for kwarg back-compat; no longer consulted
 ) -> PathEditResult:
     """Ensure the sentinel-bracketed block is present and current in the user's shell rc.
 
