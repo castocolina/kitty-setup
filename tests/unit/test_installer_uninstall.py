@@ -10,11 +10,14 @@ invoked. The self-removal banner ALWAYS prints.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import pytest
 
-from kitty_setup import config_updater, installer, pruner
+from kitty_setup import cli, config_updater, installer, pruner
+
+MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _ns(**flags: bool) -> argparse.Namespace:
@@ -44,12 +47,17 @@ def isolated_completion_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[object]]:
-    """Patch all four side-effect helpers; record invocations."""
+    """Patch the five side-effect helpers; record invocations.
+
+    ``remove_completion`` records ``installer.remove_completion_script``, the
+    completion-file removal plan 02-01 tied to ``do_kitty``.
+    """
     record: dict[str, list[object]] = {
         "uninstall": [],
         "list_backups": [],
         "delete_each": [],
         "remove_kitty": [],
+        "remove_completion": [],
     }
     fake_backups = [Path("/tmp/kitty.conf.bak.20260101T000000Z")]
 
@@ -83,10 +91,15 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[object]]:
             desktop_entry_removed=True,
         )
 
+    def fake_remove_completion(*, home: Path | None = None) -> list[Path]:
+        record["remove_completion"].append(home)
+        return []
+
     monkeypatch.setattr(config_updater, "uninstall", fake_uninstall)
     monkeypatch.setattr(config_updater, "list_backups", fake_list_backups)
     monkeypatch.setattr(pruner, "delete_each", fake_delete_each)
     monkeypatch.setattr(installer, "remove_kitty_install", fake_remove_kitty)
+    monkeypatch.setattr(installer, "remove_completion_script", fake_remove_completion)
     return record
 
 
@@ -133,6 +146,42 @@ def test_keep_backups_and_kitty_compose(calls: dict[str, list[object]]) -> None:
     assert calls["delete_each"] == []
     assert len(calls["uninstall"]) == 1
     assert calls["remove_kitty"] == []
+
+
+def _clean_recipe_uninstall_flags() -> list[str]:
+    """The ``--keep-*`` flags the Makefile's ``clean`` recipe passes to ``my-kitty uninstall``.
+
+    Read from the tab-indented lines under the one ``clean:`` target, so the case below
+    follows the recipe rather than a hand-built namespace the Makefile might not match.
+    """
+    lines = MAKEFILE.read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("clean:")]
+    assert len(starts) == 1, f"expected exactly one clean: target, found {len(starts)}"
+    recipe: list[str] = []
+    for line in lines[starts[0] + 1 :]:
+        if not line.startswith("\t"):
+            break
+        recipe.append(line)
+    uninstall = [line for line in recipe if "my-kitty uninstall" in line]
+    assert len(uninstall) == 1, f"clean recipe={recipe!r}"
+    return re.findall(r"--keep-[a-z]+", uninstall[0])
+
+
+def test_clean_recipe_flags_keep_kitty_and_backups(calls: dict[str, list[object]]) -> None:
+    """``make clean``'s own flags, through the real CLI parser and dispatch (D-04).
+
+    Preserves ``kitty.app``, the ``~/.local/bin/kitty`` symlink and the desktop entry
+    (``remove_kitty_install`` not called), every ``kitty.conf.bak.*`` (no backup listing
+    or deletion) and the completion file (``remove_completion_script`` not called), while
+    still stripping the config block and removing the payload directory.
+    """
+    rc = cli.main(["uninstall", *_clean_recipe_uninstall_flags()])
+    assert rc == 0
+    assert calls["list_backups"] == []
+    assert calls["delete_each"] == []
+    assert len(calls["uninstall"]) == 1
+    assert calls["remove_kitty"] == []
+    assert calls["remove_completion"] == []
 
 
 def test_all_three_keep_flags_reduce_to_banner_only(

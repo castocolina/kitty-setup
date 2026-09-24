@@ -9,7 +9,7 @@ help:
 	@echo "kitty-setup targets:"
 	@echo "  install                  provision uv → uv tool install → kitty + config (tools/setup.sh)"
 	@echo "  setup                    alias of 'install'"
-	@echo "  clean                    strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)"
+	@echo "  clean                    strip our config block + payload, wipe ./tmp/ scratch (keeps kitty + backups)"
 	@echo "  doctor                   diagnose install state and config-include health"
 	@echo "  test                     run pytest (unit tree; integration items skip — see test-integration)"
 	@echo "  test-integration         run tests/integration headless under a nested compositor (PYTEST_ARGS='<files> -k <expr>' for a subset)"
@@ -25,8 +25,9 @@ install: setup
 setup:
 	@./tools/setup.sh
 
+# `|| true`: the safe reset verb must succeed with nothing installed, even without my-kitty.
 clean:
-	@my-kitty uninstall || true
+	@my-kitty uninstall --keep-kitty --keep-backups || true
 	@rm -rf tmp/
 
 doctor:
