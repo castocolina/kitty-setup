@@ -2,8 +2,8 @@
 phase: "2"
 slug: "defect-remediation"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
-status: draft
-nyquist_compliant: false
+status: complete
+nyquist_compliant: true
 wave_0_complete: false
 created: "2026-09-23"
 ---
