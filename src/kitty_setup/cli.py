@@ -32,6 +32,23 @@ PROG: str = "my-kitty"
 Handler = Callable[[argparse.Namespace], int]
 
 
+def _non_negative_int(raw: str) -> int:
+    """``type=`` for a count or an age: an int that is ``>= 0``, else argparse's usage error.
+
+    Both messages go through ``ArgumentTypeError``, so argparse prints them verbatim after
+    ``argument <option>:`` and exits 2. The non-integer message keeps argparse's own wording
+    for ``type=int``. ``pruner.prune_by_keep`` / ``prune_by_age`` keep their own guards for
+    direct callers.
+    """
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {raw!r}") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+    return value
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROG,
@@ -106,7 +123,7 @@ def _build_parser() -> argparse.ArgumentParser:
     policy = p_prune.add_mutually_exclusive_group()
     policy.add_argument(
         "--keep",
-        type=int,
+        type=_non_negative_int,
         default=None,
         metavar="N",
         help="keep the N most recent backups (default 3 when --backups is passed alone)",
@@ -114,7 +131,7 @@ def _build_parser() -> argparse.ArgumentParser:
     policy.add_argument(
         "--older-than",
         dest="older_than",
-        type=int,
+        type=_non_negative_int,
         default=None,
         metavar="DAYS",
         help="delete backups whose mtime is older than DAYS days",
