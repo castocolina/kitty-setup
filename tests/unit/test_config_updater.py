@@ -6,9 +6,15 @@ small fake binary script written into ``tmp_path`` for the cases that need it.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
+import errno
 import os
+import shlex
+import shutil
 import stat
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -45,12 +51,45 @@ def payload_source(tmp_path: Path) -> Path:
     return src
 
 
-def _fake_kitty_bin(tmp_path: Path, *, exit_code: int) -> Path:
-    """Write a tiny shell script that exits with ``exit_code`` regardless of args."""
-    script = tmp_path / f"fake-kitty-{exit_code}"
-    script.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n", encoding="utf-8")
+def _fake_kitty_bin(
+    tmp_path: Path,
+    *,
+    exit_code: int,
+    stderr: str = "",
+    argv_log: Path | None = None,
+    name: str | None = None,
+) -> Path:
+    """Write a tiny shell script that exits with ``exit_code`` regardless of args.
+
+    ``stderr`` is written to the script's stderr verbatim before it exits (kept in a sidecar
+    file and ``cat``-ed, so no byte is re-quoted). ``argv_log`` receives the script's own argv,
+    ``$0`` included, NUL-separated, so a case can compare it with the command it was told ran.
+    """
+    script = tmp_path / (name or f"fake-kitty-{exit_code}")
+    lines = ["#!/usr/bin/env bash"]
+    if argv_log is not None:
+        lines.append(f'printf \'%s\\0\' "$0" "$@" > {shlex.quote(str(argv_log))}')
+    if stderr:
+        sidecar = script.with_name(script.name + ".stderr")
+        sidecar.write_text(stderr, encoding="utf-8")
+        lines.append(f"cat {shlex.quote(str(sidecar))} >&2")
+    lines.append(f"exit {exit_code}")
+    script.write_text("\n".join(lines) + "\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return script
+
+
+def _recorded_argv(argv_log: Path) -> list[str]:
+    return argv_log.read_bytes().decode("utf-8").split("\0")[:-1]
+
+
+def _parse_check(conf_file: Path, kitty_bin: Path) -> Any:
+    """Call ``config_updater._parse_check`` through the module namespace.
+
+    Looked up by name rather than by attribute so these cases add no pyright
+    ``reportPrivateUsage`` finding; ``02-10`` renames the function and updates this one string.
+    """
+    return vars(config_updater)["_parse_check"](conf_file, kitty_bin)
 
 
 def _read(path: Path) -> str:
@@ -378,3 +417,297 @@ def test_latest_backup_uses_list_backups(tmp_path: Path) -> None:
     newest = tmp_path / "kitty.conf.bak.20260102T000000Z"
     newest.write_text("b")
     assert config_updater._latest_backup(conf) == newest
+
+
+# --- R1.5 (D-09): the parse check returns its diagnostics --------------------------------------
+# ``ParseCheckResult`` is reached as a module attribute inside each body, so at RED a missing name
+# fails its own case instead of erroring the module at collection.
+
+BAD_LINE_DIAG = (
+    "BadLine(number=1, line='cursor_shape banana', exception=ValueError('Invalid cursor shape: "
+    "banana allowed values are block, beam, underline'), file='kitty-setup/kitty-setup.conf')\n"
+)
+MISSING_INCLUDE_WARNING = (
+    "[0.009] Could not find included config file: /x/kitty-setup/kitty-setup.conf, ignoring\n"
+)
+
+
+def _conf(tmp_path: Path) -> Path:
+    conf = tmp_path / "check" / "kitty.conf"
+    conf.parent.mkdir()
+    conf.write_text("font_size 12\n", encoding="utf-8")
+    return conf
+
+
+def test_parse_result_carries_ok_command_and_stderr_fields(tmp_path: Path) -> None:
+    result = _parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
+    # Before the type assertion, which would narrow ``result`` and make this a type error.
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.ok = False
+    assert type(result) is config_updater.ParseCheckResult
+    assert [f.name for f in dataclasses.fields(result)] == ["ok", "command", "stderr"]
+
+
+def test_parse_result_command_names_runpy_not_debug_config(tmp_path: Path) -> None:
+    result = _parse_check(_conf(tmp_path), _fake_kitty_bin(tmp_path, exit_code=0))
+    assert "+runpy" in result.command
+    assert "--debug-config" not in result.command
+
+
+def test_parse_result_failure_carries_parser_stderr_verbatim(tmp_path: Path) -> None:
+    failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+    result = _parse_check(_conf(tmp_path), failing)
+    assert result.ok is False
+    assert result.stderr == BAD_LINE_DIAG
+
+
+def test_parse_result_success_passes_stderr_through(tmp_path: Path) -> None:
+    conf = _conf(tmp_path)
+    silent = _parse_check(conf, _fake_kitty_bin(tmp_path, exit_code=0, name="silent"))
+    assert silent.ok is True
+    assert silent.stderr == ""
+    warned = _fake_kitty_bin(tmp_path, exit_code=0, stderr=MISSING_INCLUDE_WARNING, name="warned")
+    result = _parse_check(conf, warned)
+    assert result.ok is True
+    assert result.stderr == MISSING_INCLUDE_WARNING
+
+
+def test_parse_result_command_is_the_complete_argv_executed(tmp_path: Path) -> None:
+    argv_log = tmp_path / "argv.bin"
+    kitty = _fake_kitty_bin(tmp_path, exit_code=0, argv_log=argv_log)
+    conf = _conf(tmp_path)
+    result = _parse_check(conf, kitty)
+    recorded = _recorded_argv(argv_log)
+    assert recorded[0] == str(kitty)
+    assert recorded[1] == "+runpy"
+    assert recorded[-1] == str(conf)
+    assert shlex.split(result.command) == recorded
+
+
+def test_install_parse_result_error_carries_command_and_stderr(
+    paths: ConfigPaths, payload_source: Path, tmp_path: Path
+) -> None:
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_text("font_size 12\n", encoding="utf-8")
+    argv_log = tmp_path / "argv.bin"
+    failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG, argv_log=argv_log)
+
+    with pytest.raises(ConfigUpdaterError) as exc_info:
+        install(paths, payload_source, kitty_bin=failing)
+
+    message = str(exc_info.value)
+    assert shlex.join(_recorded_argv(argv_log)) in message
+    assert BAD_LINE_DIAG.rstrip() in message
+    assert "--debug-config" not in message
+
+
+# --- R1.5 (D-09): the payload directory rolls back too -----------------------------------------
+# "Restored" means the previous bytes are back, not merely that a directory exists. The conf is
+# drifted (no block) wherever the parse check must run, so the install mutates it.
+
+NOW = dt.datetime(2026, 9, 24, 12, 0, 0, tzinfo=dt.UTC)
+PREVIOUS_MARKER = b"# previous payload marker - must survive a failed install\n"
+STALE_MARKER = b"# stale aside from an interrupted install\n"
+
+
+def _aside(paths: ConfigPaths) -> Path:
+    return paths.payload_dir.with_name(paths.payload_dir.name + ".rollback")
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()
+    }
+
+
+def _seed_previous_install(paths: ConfigPaths) -> dict[str, bytes]:
+    paths.payload_dir.mkdir(parents=True)
+    (paths.payload_dir / "kitty-setup.conf").write_bytes(b"# previous payload\n")
+    (paths.payload_dir / "previous-marker.conf").write_bytes(PREVIOUS_MARKER)
+    paths.conf_file.write_text("font_size 12\n", encoding="utf-8")
+    return _snapshot(paths.payload_dir)
+
+
+def _entries(paths: ConfigPaths) -> list[str]:
+    return sorted(p.name for p in paths.kitty_dir.iterdir())
+
+
+@pytest.mark.parametrize(
+    "injected",
+    [
+        pytest.param(OSError(errno.ENOSPC, "injected: no space left mid-copy"), id="oserror"),
+        pytest.param(KeyboardInterrupt(), id="ctrl_c"),
+    ],
+)
+def test_rollback_copy_fails_restores_previous_payload(
+    paths: ConfigPaths,
+    payload_source: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    injected: BaseException,
+) -> None:
+    previous = _seed_previous_install(paths)
+
+    def partial_copy_then_fail(src: Any, dst: Any, *args: Any, **kwargs: Any) -> Any:
+        del src, args, kwargs
+        Path(dst).mkdir()
+        (Path(dst) / "partial.conf").write_text("# half-copied\n", encoding="utf-8")
+        raise injected
+
+    monkeypatch.setattr(config_updater.shutil, "copytree", partial_copy_then_fail)
+
+    # A KeyboardInterrupt is raised only inside pytest.raises: one that escaped a case would abort
+    # the whole session instead of failing this item.
+    with pytest.raises(type(injected)):
+        install(paths, payload_source, now=NOW)
+
+    assert _snapshot(paths.payload_dir) == previous
+    assert not _aside(paths).exists()
+    assert _entries(paths) == ["kitty-setup", "kitty.conf"]
+    assert _read(paths.conf_file) == "font_size 12\n"
+
+
+def test_rollback_parse_fails_restores_previous_payload(
+    paths: ConfigPaths, payload_source: Path, tmp_path: Path
+) -> None:
+    previous = _seed_previous_install(paths)
+    failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+
+    with pytest.raises(ConfigUpdaterError):
+        install(paths, payload_source, kitty_bin=failing, now=NOW)
+
+    assert _snapshot(paths.payload_dir) == previous
+    assert b"# fake payload\n" not in _snapshot(paths.payload_dir).values()
+    assert not _aside(paths).exists()
+    assert _read(paths.conf_file) == "font_size 12\n"
+    # The backup made before the conf mutation is left on disk (Hidden Coupling #8).
+    backup = f"kitty.conf.bak.{NOW.strftime(config_updater.BACKUP_SUFFIX_FMT)}"
+    assert _entries(paths) == ["kitty-setup", "kitty.conf", backup]
+
+
+@pytest.mark.parametrize("failing_step", ["rename_back", "remove_target"])
+def test_rollback_restore_fails_keeps_and_names_the_aside(
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_step: str,
+) -> None:
+    previous = _seed_previous_install(paths)
+    conf_before = paths.conf_file.read_bytes()
+    aside = _aside(paths)
+    failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+    injected = OSError(errno.EIO, f"injected {failing_step} failure")
+
+    if failing_step == "rename_back":
+        real_rename = Path.rename
+
+        def rename(self: Path, target: Any) -> Path:
+            if self == aside:
+                raise injected
+            return real_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", rename)
+    else:
+        real_rmtree = shutil.rmtree
+
+        def rmtree(path: Any, ignore_errors: bool = False) -> None:
+            if Path(path) == paths.payload_dir:
+                raise injected
+            real_rmtree(path, ignore_errors=ignore_errors)
+
+        monkeypatch.setattr(config_updater.shutil, "rmtree", rmtree)
+
+    with pytest.raises(ConfigUpdaterError) as exc_info:
+        install(paths, payload_source, kitty_bin=failing, now=NOW)
+
+    message = str(exc_info.value)
+    assert exc_info.value.__cause__ is injected
+    assert str(aside) in message
+    assert BAD_LINE_DIAG.rstrip() in message
+    assert _snapshot(aside) == previous
+    assert paths.conf_file.read_bytes() == conf_before
+
+
+def test_rollback_no_previous_payload_leaves_no_payload_dir(
+    paths: ConfigPaths, payload_source: Path, tmp_path: Path
+) -> None:
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_text("font_size 12\n", encoding="utf-8")
+    failing = _fake_kitty_bin(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+
+    with pytest.raises(ConfigUpdaterError):
+        install(paths, payload_source, kitty_bin=failing, now=NOW)
+
+    assert not paths.payload_dir.exists()
+    assert not _aside(paths).exists()
+    assert _read(paths.conf_file) == "font_size 12\n"
+
+
+def _seed_stale_aside(paths: ConfigPaths) -> Path:
+    stale = _aside(paths)
+    stale.mkdir()
+    (stale / "stale-marker.conf").write_bytes(STALE_MARKER)
+    return stale
+
+
+def test_rollback_stale_aside_preserved_under_a_dated_name(
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _seed_previous_install(paths)
+    stale = _seed_stale_aside(paths)
+    passing = _fake_kitty_bin(tmp_path, exit_code=0)
+    preserved = stale.with_name(stale.name + "." + NOW.strftime(config_updater.BACKUP_SUFFIX_FMT))
+
+    install(paths, payload_source, kitty_bin=passing, now=NOW)
+
+    assert (preserved / "stale-marker.conf").read_bytes() == STALE_MARKER
+    assert _snapshot(paths.payload_dir) == _snapshot(payload_source)
+    assert not stale.exists()
+    err_lines = capsys.readouterr().err.splitlines()
+    assert len(err_lines) == 1
+    assert str(preserved) in err_lines[0]
+
+
+def test_rollback_stale_aside_preserved_under_the_smallest_free_suffix(
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A taken name means "exists": renaming onto an *empty* directory silently replaces it."""
+    _seed_previous_install(paths)
+    stale = _seed_stale_aside(paths)
+    dated = stale.with_name(stale.name + "." + NOW.strftime(config_updater.BACKUP_SUFFIX_FMT))
+    dated.mkdir()  # empty: the case a bare rename would silently overwrite
+    taken_1 = dated.with_name(dated.name + ".1")
+    taken_1.write_bytes(b"not ours to overwrite\n")
+    preserved = dated.with_name(dated.name + ".2")
+    passing = _fake_kitty_bin(tmp_path, exit_code=0)
+
+    install(paths, payload_source, kitty_bin=passing, now=NOW)
+
+    assert (preserved / "stale-marker.conf").read_bytes() == STALE_MARKER
+    assert dated.is_dir()
+    assert not any(dated.iterdir())
+    assert taken_1.read_bytes() == b"not ours to overwrite\n"
+    assert not stale.exists()
+    err_lines = capsys.readouterr().err.splitlines()
+    assert len(err_lines) == 1
+    assert str(preserved) in err_lines[0]
+
+
+def test_guard_success_leaves_no_aside(
+    paths: ConfigPaths, payload_source: Path, tmp_path: Path
+) -> None:
+    _seed_previous_install(paths)
+    passing = _fake_kitty_bin(tmp_path, exit_code=0)
+
+    result = install(paths, payload_source, kitty_bin=passing, now=NOW)
+
+    assert result.parse_ok is True
+    assert _snapshot(paths.payload_dir) == _snapshot(payload_source)
+    assert not _aside(paths).exists()
+    assert not [name for name in _entries(paths) if ".rollback" in name]
