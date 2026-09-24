@@ -161,7 +161,10 @@ else in the rc file is touched. For zsh, the block starts zsh's completion
 system (`compinit`) itself if your rc has not, and install keeps it as the
 last command in `~/.zshrc`, moving it there when anything but comments
 follows it, because a `compinit` that runs after it would undo the
-registration. Open a fresh shell after the install — `my-kitty <TAB>` expands to
+registration. A plugin manager that defers `compinit` until after `~/.zshrc`
+(zinit turbo `wait`, zsh-defer) undoes it the same way, and neither install nor
+doctor can see that; check with `echo ${_comps[my-kitty]}` in a new shell.
+Open a fresh shell after the install — `my-kitty <TAB>` expands to
 the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
 `--keep-*` flags.
 
