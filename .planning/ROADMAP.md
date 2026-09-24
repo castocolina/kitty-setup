@@ -233,7 +233,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   1. `uv run pyright` reports **0 errors** across `include = ["src", "tests"]`, or `pyproject.toml` records a deliberate, justified narrowing (e.g. a laxer `typeCheckingMode` for `tests`) with the rationale written next to it — a silent scope reduction does not satisfy this.
   2. `uv run ruff check src tests tools` and `uv run black --check src tests tools` both exit 0.
   3. `uv run vulture src tests` reports no finding that is a real dead-code defect; each remaining report is either removed or whitelisted with a one-line reason.
-  4. `uv run bandit -q -r src` has no high-severity issue, and every medium is either fixed or carries an inline `# nosec` with a stated reason.
+  4. `uv run bandit -c pyproject.toml -q -r src` has no high-severity issue (the `-c` is load-bearing: bandit 1.9.4 does not auto-load `pyproject.toml`, so without it `[tool.bandit]` never applies — measured 2026-09-23, 1094 issues bare vs 30 with `-c` over `src tests`), and every medium is either fixed or carries an inline `# nosec` with a stated reason.
   5. No test's **behaviour** changed to satisfy a type checker: the suite's pass/fail set before and after is identical, evidenced by a captured run of both.
   6. The Universal Phase Gate's step 5 is updated to drop the `tests/` no-regression clause, because the baseline is now zero.
 
