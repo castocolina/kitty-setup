@@ -15,34 +15,40 @@ kitty switches layout with Modifier (ctrl+shift on Linux, cmd on macOS) + `L`. T
 equivalent chord that toggles/alternates the **entire background of a tab** (all its windows). The
 owner's proposal: Modifier + Alt + C, "or any other free chord".
 
+## Ergonomic rule (owner, 2026-10-15)
+
+Same letter on both OSes, only the common modifier changes: `cmd+X` on macOS is `ctrl+shift+X` on
+Linux, and `cmd+alt+X` is `ctrl+shift+alt+X`. Never a different key per OS.
+
 ## Research (2026-10-15, kitty 0.49.2, evidence in `tmp/h38-tab-bg-chord-research/`)
 
-Introspected kitty's own default map (`definition.iter_all_maps()`: 134 maps, 80 all-OS, 54 macOS):
+Introspected kitty's own default map (`definition.iter_all_maps()`: 134 maps, 80 all-OS, 54 macOS).
+Under the rule above, one letter is one pair:
 
-- **Linux:** the only ctrl+shift+alt defaults are `ctrl+shift+alt+t` (set_tab_title) and
-  `ctrl+shift+alt+h`. `ctrl+shift+alt+c` is **free**, and so is `ctrl+shift+alt+b`.
-- **macOS:** opt+cmd defaults are only `s`, `r`, `k`, `h`, `,`, `page_up`, `page_down`.
-  `opt+cmd+c` (= `cmd+alt+c`, kitty treats `opt`/`alt`/`option` as one modifier, verified through
-  `parse_shortcut`) is **free**, and so is `opt+cmd+b`.
-- The payload itself uses only `ctrl+shift+alt+{k,d}`; nothing on `c` or `b`.
-- **So the owner's Modifier+Alt+C works on both OSes** as far as kitty defaults go. The only
-  problem is internal: Phase 6 already assigns `ctrl+shift+alt+c` to the focused-**pane** color
-  cycle.
-- Not verified: macOS system shortcuts and KDE/compositor grabs for these chords (Phase 10 and the
-  R2.8 oracle are the gates).
+| Letter | Linux | macOS | Free in kitty defaults |
+|--------|-------|-------|------------------------|
+| `c` | `ctrl+shift+alt+c` | `cmd+alt+c` | yes, both |
+| `b` | `ctrl+shift+alt+b` | `cmd+alt+b` | yes, both |
+
+- Linux ctrl+shift+alt defaults are only `t` (set_tab_title) and `h`; macOS opt+cmd defaults are
+  only `s`, `r`, `k`, `h`, `,`, `page_up`, `page_down`.
+- kitty treats `opt`, `alt` and `option` as one modifier (verified through `parse_shortcut`), so
+  `cmd+alt+c` and `opt+cmd+c` are the same chord.
+- The payload uses only `ctrl+shift+alt+{k,d}`; nothing on `c` or `b`.
+- The owner's Modifier+Alt+C works on both OSes. The only conflict is internal: Phase 6 already
+  assigns `ctrl+shift+alt+c` (and so `cmd+alt+c`) to the focused-**pane** color cycle.
+- Not verified: macOS system shortcuts and KDE/compositor grabs (Phase 10 and the R2.8 oracle).
 
 ## Solution
 
 TBD, decide in discuss-phase. Options:
 
 1. **Same chord, wider scope:** Phase 6 gets a tab-wide mode (`--tab` on
-   `my-kitty window cycle-color`), still one CLI path. No new chord, but pane and tab scope then
-   need two chords or a modifier to tell them apart.
-2. **Second chord, same family (suggested):** keep `ctrl+shift+alt+c` for the pane and add
-   `ctrl+shift+alt+b` (**b**ackground, whole tab) on Linux and `opt+cmd+b` on macOS. Both free
-   per the research; `b` is a mnemonic for background. Avoid making `ctrl+shift+alt+c` a key-sequence
-   prefix (`ctrl+shift+alt+c > t`): it would collide with the chord Phase 6 maps directly.
-3. Use `ctrl+shift+alt+c` for the tab and pick another free chord for the pane.
+   `my-kitty window cycle-color`), still one CLI path. No new chord.
+2. **Second chord, same family:** keep `c` for the pane and add `b` (**b**ackground, whole tab) as
+   `ctrl+shift+alt+b` / `cmd+alt+b`. Avoid a key-sequence prefix (`ctrl+shift+alt+c > t`): it would
+   collide with the chord Phase 6 maps directly.
+3. Swap roles: `c` for the tab, another free letter for the pane.
 
 Implementation notes:
 
