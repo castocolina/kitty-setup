@@ -194,6 +194,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   6. `my-kitty keys` lists the new chord, `doctor`'s `<N> ours` count matches, and the Phase 3 oracle is green.
 
 **Plans**: TBD
+**Pending scope input** (2026-10-15): [todo — toggle whole-tab background with a chord](todos/pending/2026-10-15-tab-wide-background-toggle-chord.md). It changes R4.x scope (same chord with a `--tab` mode, a second `ctrl+shift+alt+b` / `cmd+alt+b` chord, or swapped roles), so re-run `/gsd-discuss-phase 6` (update the existing CONTEXT) before this phase is planned.
 
 ### Phase 7: Presets & Chord→Scene
 
@@ -254,6 +255,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
 
 **Plans**: TBD
 **Note**: Added 2026-09-22 during Phase 1 discussion, modeled on `../wezterm-setup/tools/install.sh`; moved ahead of macOS verification on 2026-09-22 at the user's request. The installer's macOS run moved with it — it is now criterion 5 of Phase 10, which owns every Mac-side check. Out of scope: publishing to a package manager (brew/apt), and any signing/notarization work.
+**Pending scope input** (2026-10-15): [todo — headless install that always fetches latest kitty](todos/pending/2026-10-15-headless-install-latest-kitty.md). It adds a non-interactive install path and an explicit "latest kitty" choice (owner-decided: a user choice, not the out-of-scope auto-upgrade) to R8.1/R8.2, with a scriptable contract for `../tools-installer`. `/gsd-discuss-phase 9` folds it in when this phase is reached.
 
 ### Phase 10: macOS E2E Over SSH
 
