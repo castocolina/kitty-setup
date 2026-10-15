@@ -21,13 +21,16 @@ TBD. Likely folds into Phase 9 (Distribution & Release Channels): `tools/install
 "latest kitty" resolution via the upstream installer. Needs a stable, scriptable contract for
 `../tools-installer` (exit codes, flags, idempotence).
 
-Conflicts to settle in discuss-phase before planning:
+Decided (owner, 2026-10-15): "latest" is an explicit user choice, not an auto-upgrade. The case is
+a user who runs the headless installer (e.g. after an uninstall) and thereby asks for the latest
+kitty. That is compatible with `PROJECT.md`'s out-of-scope "kitty auto-upgrade on reinstall",
+which is about upgrading kitty without being asked. How `../tools-installer` consumes this is
+decided in that project.
 
-- `PROJECT.md` Out of Scope: "kitty auto-upgrade on reinstall — upgrading kitty stays the user's
-  action; doctor only reports a too-old version (R3.4)". "Always latest" in headless mode contradicts
-  this; decide whether it is opt-in headless-only or amends that decision.
+Still to settle when planned:
+
 - Phase 9 channel selection (rolling vs pinned release) is about kitty-setup itself; define how it
-  interacts with the kitty version (latest kitty on any channel, or pinned per channel).
+  interacts with the kitty version.
 - Version floor (R3.4, 0.49) still applies after a "latest" install; doctor stays the check.
 - macOS path: headless kitty.app placement is a Phase 9/10 hypothesis until run on a real Mac.
 - Bash allow-list (`AGENTS.md` Stack): any new shell must stay inside `tools/setup.sh` /
