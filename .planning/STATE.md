@@ -71,6 +71,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
+- [2026-10-15] [tooling] Headless install that always fetches latest kitty — [todo file](.planning/todos/pending/2026-10-15-headless-install-latest-kitty.md)
+- [2026-10-15] [general] Toggle whole-tab background with a chord — [todo file](.planning/todos/pending/2026-10-15-tab-wide-background-toggle-chord.md)
 - [Phase 5 — found by 02-05, measured on kitty 0.49.0]: the install-time parse check (a) passes a `kitty.conf` whose `include` of our own payload is missing — `load_config(accumulate_bad_lines=…)` only collects value-conversion failures, so the diagnosis reaches stderr (and doctor's PASS line) but not the verdict — and (b) runs only when `install()` changed the conf, so an ordinary reinstall never checks the new payload and the payload rollback never engages. Proposed requirement: the check fails on a missing include of our own payload and runs on every payload replacement. It changes when `my-kitty install` exits non-zero, so it needs its own decision; Phase 5 is the next phase to touch `config_updater`. Evidence: `02-05-SUMMARY.md` § T-2-19.
 
 ### Blockers/Concerns
