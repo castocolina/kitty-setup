@@ -52,7 +52,7 @@
     "ui_review": false,
     "use_worktrees": true,
     "plan_review_convergence": true,
-    "cross_ai_execution": true,
+    "cross_ai_execution": false,
     "cross_ai_command": "opencode run --auto --model router-env/my-coding",
     "live_dom_uat": false,
     "cross_ai_timeout": 7200
@@ -81,14 +81,24 @@
   },
   "review": {
     "default_reviewers": [
-      "opencode"
+      "opencode-referee-one"
     ],
-    "models": {
-      "opencode": "router-env/my-plan-review"
-    },
     "effort": {
       "opencode": "high"
+    },
+    "reviewer_instances": {
+      "opencode-referee-one": {
+        "cli": "opencode",
+        "model": "router-env/my-referee-one"
+      },
+      "opencode-referee-three": {
+        "cli": "opencode",
+        "model": "router-env/my-referee-three"
+      }
     }
   },
-  "granularity": "fine"
+  "granularity": "fine",
+  "model_overrides": {
+    "gsd-executor": "haiku"
+  }
 }

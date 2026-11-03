@@ -6,7 +6,7 @@ severity: minor
 files:
   - .planning/ROADMAP.md (Phase 6)
   - .planning/REQUIREMENTS.md (R4.1-R4.4)
-  - tmp/h38-tab-bg-chord-research/ (local, gitignored)
+  - tmp/h42-tab-bg-chord-research/ (local, gitignored)
 ---
 
 ## Problem
@@ -20,7 +20,7 @@ owner's proposal: Modifier + Alt + C, "or any other free chord".
 Same letter on both OSes, only the common modifier changes: `cmd+X` on macOS is `ctrl+shift+X` on
 Linux, and `cmd+alt+X` is `ctrl+shift+alt+X`. Never a different key per OS.
 
-## Research (2026-10-15, kitty 0.49.2, evidence in `tmp/h38-tab-bg-chord-research/`)
+## Research (2026-10-15, kitty 0.49.2, evidence in `tmp/h42-tab-bg-chord-research/`)
 
 Introspected kitty's own default map (`definition.iter_all_maps()`: 134 maps, 80 all-OS, 54 macOS).
 Under the rule above, one letter is one pair:
