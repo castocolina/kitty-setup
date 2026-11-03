@@ -331,3 +331,21 @@ Rejected: none. One threat ID is new, T-2-78, the first after 02-13's T-2-77. 02
 All 27 `<automated>` blocks pass `bash -n`. The 20 that start no compositor and run neither `make test` nor `make doctor` were dry-run at `6e6b863`, and each exits 1 except the five-tools gate, which exits 0 (`round2-plan-gates-head.out`). The new conftest AST gate exits 0 on `conftest_shape.py`. `verify.plan-structure`: valid, no errors, no warnings, 3 tasks. `frontmatter.validate --schema plan-gap-closure`: valid. Not run: the runner gates, kitty, `make test` and `make doctor`. Planning makes no commits.
 
 For the orchestrator: every `make test-integration` run so far has passed the real HOME to kitty and its `bash --noprofile --norc`. That covers the `02-09-T3`/`02-10-T3` whole-suite sweeps, 02-11's runs and the planned 02-13/02-14 runs. The 143 history lines above are the measured result. bash runs without `histappend` here, so it rewrites `~/.bash_history` on SIGHUP. History was not truncated only because this host exports `HISTSIZE=50000`; elsewhere the default would cut it to 500 lines. No kitty cache write was seen (`~/.cache/kitty/main.json` is dated 2026-10-24). 02-15's fixture closes this for every run from its GREEN on. Until then, any integration run, 02-13's and 02-14's included, still writes the real history unless it is collect-only.
+
+## 02-12 — round 2 (re-run, my-referee-one)
+
+The 10:05 launch died at 11:10 with `Combo has no executable targets` (exit 1, no findings). Re-run 2026-11-03 on my-referee-one, with my-referee-three as fallback (not needed).
+
+- [HIGH] `02-12-PLAN.md:334–380` — Step 0 never requires a green prototype against a real kitty session before implementation. Patched subprocess calls, scratch-HOME uninstalls and a standalone `load_config` verdict do not satisfy `AGENTS.md:33–41` and `docs/agent-iteration.md:17–20`; the kitty probe also lacks the required integration entry point — Add an isolated, headless hypothesis/prototype run through `make test-integration PYTEST_ARGS=...`, record its green output under `tmp/h38-conf-lifecycle/` before shipping-file edits, and stop if the runner is unavailable.
+
+- [HIGH] `02-12-PLAN.md:470–482` — The guard resolves event paths against the test process’s working directory, ignoring the operation’s own path context. For example, `Popen(["./my-kitty"], cwd=<real HOME>/.local/bin)` reports executable `./my-kitty` separately from `cwd`; `_forms` checks the wrong file and permits the protected executable. Relative mutations using `dir_fd` have the same gap. These are ordinary audited Python operations, not the accepted child-process limitation — Resolve executable paths using `Popen.cwd`, honor directory descriptors on mutation events, fail closed when their context cannot be resolved, and add sandboxed negative controls for both cases.
+
+- [MEDIUM] `02-12-PLAN.md:731–732,870–884` — `make test` is captured only into a temporary shell variable, and the SUMMARY requirements omit its exit status and transcript. Later gates overwrite `OUT`, leaving only doctor’s evidence explicitly retained despite the binding requirement to preserve both commands — Require the fresh `make test` exit status and output in `02-12-SUMMARY.md`, include them in GREEN, and verify their presence alongside the doctor capture.
+
+- [MEDIUM] Sibling threat registers, `02-13-PLAN.md:965` and `02-15-PLAN.md:1186` — Both revisions allocate `T-2-78` to unrelated threats: recipe NUL handling and integration HOME isolation. Sequential execution does not resolve the identifier collision, so later security reconciliation cannot identify either threat unambiguously — Keep `T-2-78` with the earlier `02-13` plan and renumber `02-15`’s HOME-isolation threat to the next unused ID, updating all corresponding references.
+
+VERDICT: REVISE
+
+### 02-12 round 2 — disposition
+
+Not applied yet: all four findings are carried into the next revision pass (round 3) together with the open cross-plan items in the handoff. The `T-2-78` collision (finding 4) is resolved there by renumbering 02-15's HOME-isolation threat to `T-2-79`.
