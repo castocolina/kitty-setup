@@ -95,6 +95,9 @@
         "cli": "opencode",
         "model": "router-env/my-referee-three"
       }
+    },
+    "timeouts": {
+      "opencode": 2400
     }
   },
   "granularity": "fine",
