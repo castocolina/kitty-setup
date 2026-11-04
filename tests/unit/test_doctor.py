@@ -139,6 +139,14 @@ def test_run_checks_uses_supplied_home_root(
 
     monkeypatch.setattr(doctor.config_updater.ConfigPaths, "for_user", spy)
     monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+    monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
+    monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
+
+    def missing_kitty(dest: Path) -> Path:
+        del dest
+        return tmp_path / "missing-kitty"
+
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", missing_kitty)
 
     doctor.run_checks(home=tmp_path)
     assert captured["home"] == tmp_path
@@ -470,3 +478,35 @@ def test_guard_all_pass_or_skip_exits_zero(
         "PASS alpha: ok",
         "SKIP beta: not applicable on this host",
     ]
+
+
+_OUR_BLOCK = (
+    f"{doctor.config_updater.MARKER_BEGIN}\n{doctor.config_updater.INCLUDE_LINE}\n"
+    f"{doctor.config_updater.MARKER_END}\n"
+).encode()
+
+
+def test_parse_cannot_run_is_a_fail_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A parse check that times out is a FAIL line naming the timeout, not a traceback (WR-01)."""
+    paths = doctor.config_updater.ConfigPaths.for_user(home=_doctor_home(tmp_path))
+
+    def timed_out(*args: Any, **kwargs: Any) -> None:
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=15)
+
+    monkeypatch.setattr(doctor.config_updater.subprocess, "run", timed_out)
+    check_parse = vars(doctor)["_check_parse"]
+    result = check_parse(paths, Path("/nonexistent/kitty"))
+    assert not result.passed
+    assert not result.skipped
+    assert "did not finish within" in result.detail
+
+
+def test_sentinel_non_utf8(tmp_path: Path) -> None:
+    """A Latin-1 byte outside our block does not break doctor's sentinel check (WR-06)."""
+    home = tmp_path / "home"
+    conf = home / ".config" / "kitty" / "kitty.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_bytes(b"# caf\xe9 comment\nfont_size 13\n" + _OUR_BLOCK)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    check_sentinel = vars(doctor)["_check_sentinel_block"]
+    assert check_sentinel(paths).passed

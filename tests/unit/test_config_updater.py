@@ -13,6 +13,7 @@ import os
 import shlex
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -711,3 +712,191 @@ def test_guard_success_leaves_no_aside(
     assert _snapshot(paths.payload_dir) == _snapshot(payload_source)
     assert not _aside(paths).exists()
     assert not [name for name in _entries(paths) if ".rollback" in name]
+
+
+# 02-12 WR-01, WR-04, WR-06 (kitty.conf half) and IN-04: the kitty.conf lifecycle defect cases.
+
+USER_TEXT = b"font_size 13\n"
+DRIFT_BLOCK = f"{MARKER_BEGIN}\ninclude kitty-setup/old.conf\n{MARKER_END}\n".encode()
+OUR_BLOCK = f"{MARKER_BEGIN}\n{INCLUDE_LINE}\n{MARKER_END}\n".encode()
+LATIN1_CONF = b"# caf\xe9 comment\nfont_size 13\n"
+
+
+def _raise_timeout(*args: Any, **kwargs: Any) -> None:
+    raise subprocess.TimeoutExpired(cmd=args[0], timeout=15)
+
+
+def _raise_interrupt(*args: Any, **kwargs: Any) -> None:
+    raise KeyboardInterrupt
+
+
+def _partial_conf_write(conf: Path) -> Any:
+    """A ``Path.write_text`` that truncates ``conf``, writes 7 bytes and raises ENOSPC."""
+    real_write_text = Path.write_text
+
+    def partial(self: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        if self == conf:
+            with self.open("wb") as fh:
+                fh.write(data.encode("utf-8")[:7])
+            raise OSError(errno.ENOSPC, "No space left on device", str(self))
+        return real_write_text(self, data, *args, **kwargs)
+
+    return partial
+
+
+@pytest.mark.parametrize(
+    "kind", ["timeout", "ctrl_c", "unrunnable", "missing_binary", "write_oserror"]
+)
+def test_conf_restore_on(
+    kind: str,
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure from the first conf write through the check restores the conf's exact bytes."""
+    paths.kitty_dir.mkdir(parents=True)
+    before = USER_TEXT + DRIFT_BLOCK
+    paths.conf_file.write_bytes(before)
+    kitty_bin: Path = _fake_kitty_bin(tmp_path, exit_code=0)
+    expected: type[BaseException] = ConfigUpdaterError
+    if kind == "timeout":
+        monkeypatch.setattr(config_updater.subprocess, "run", _raise_timeout)
+    elif kind == "ctrl_c":
+        monkeypatch.setattr(config_updater.subprocess, "run", _raise_interrupt)
+        expected = KeyboardInterrupt
+    elif kind == "unrunnable":
+        kitty_bin = tmp_path / "not-executable"
+        kitty_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    elif kind == "missing_binary":
+        kitty_bin = tmp_path / "no-such-kitty"
+    else:
+        monkeypatch.setattr(Path, "write_text", _partial_conf_write(paths.conf_file))
+        expected = OSError
+    with pytest.raises(expected):
+        install(paths, payload_source, kitty_bin=kitty_bin, now=NOW)
+    assert paths.conf_file.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["timeout", "write_oserror"])
+def test_conf_restore_first_install(
+    kind: str,
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no conf before, a failure leaves neither a conf nor a payload directory."""
+    kitty_bin: Path | None = _fake_kitty_bin(tmp_path, exit_code=0)
+    expected: type[BaseException] = ConfigUpdaterError
+    if kind == "timeout":
+        monkeypatch.setattr(config_updater.subprocess, "run", _raise_timeout)
+    else:
+        kitty_bin = None
+        monkeypatch.setattr(Path, "write_text", _partial_conf_write(paths.conf_file))
+        expected = OSError
+    with pytest.raises(expected):
+        install(paths, payload_source, kitty_bin=kitty_bin, now=NOW)
+    assert not paths.conf_file.exists()
+    assert not paths.payload_dir.exists()
+
+
+@pytest.mark.parametrize("kind", ["timeout", "permission"])
+def test_parse_check_cannot_run(kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``parse_check`` turns a timeout and a permission error into ConfigUpdaterError."""
+    conf = tmp_path / "kitty.conf"
+    conf.write_text("font_size 13\n", encoding="utf-8")
+    kitty_bin: Path = _fake_kitty_bin(tmp_path, exit_code=0)
+    if kind == "timeout":
+        monkeypatch.setattr(config_updater.subprocess, "run", _raise_timeout)
+    else:
+        kitty_bin = tmp_path / "not-executable"
+        kitty_bin.write_text("x", encoding="utf-8")
+    with pytest.raises(ConfigUpdaterError) as info:
+        parse_check(conf, kitty_bin)
+    if kind == "timeout":
+        assert "did not finish within" in str(info.value)
+    else:
+        assert str(kitty_bin) in str(info.value)
+
+
+def test_uninstall_skips_block_bearing_backup(paths: ConfigPaths) -> None:
+    """A block-bearing backup is never restored, so a second uninstall is a no-op (WR-04)."""
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_bytes(OUR_BLOCK)
+    (paths.kitty_dir / "kitty.conf.bak.20250101T000000Z").write_bytes(
+        b"font_size 11\n" + DRIFT_BLOCK
+    )
+    result = uninstall(paths)
+    assert result.conf_restored_from is None
+    assert result.conf_deleted
+    assert not paths.conf_file.exists()
+    assert uninstall(paths).block_removed is False
+
+
+def test_uninstall_restores_newest_marker_free_backup(paths: ConfigPaths) -> None:
+    """The newest marker-free backup is restored, not a newer block-bearing one (WR-04)."""
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_bytes(OUR_BLOCK)
+    older = paths.kitty_dir / "kitty.conf.bak.20250101T000000Z"
+    older.write_bytes(b"font_size 11\n")
+    newer = paths.kitty_dir / "kitty.conf.bak.20250601T000000Z"
+    newer.write_bytes(b"font_size 12\n" + DRIFT_BLOCK)
+    result = uninstall(paths)
+    assert result.conf_restored_from == older
+    assert paths.conf_file.read_bytes() == b"font_size 11\n"
+
+
+@pytest.mark.parametrize("kind", ["install", "is_block_present", "uninstall"])
+def test_conf_non_utf8(kind: str, paths: ConfigPaths, payload_source: Path) -> None:
+    """A Latin-1 byte outside our block is read and kept byte for byte (WR-06, kitty.conf half)."""
+    paths.kitty_dir.mkdir(parents=True)
+    if kind == "install":
+        paths.conf_file.write_bytes(LATIN1_CONF)
+        install(paths, payload_source)
+        assert paths.conf_file.read_bytes().startswith(LATIN1_CONF)
+    elif kind == "is_block_present":
+        paths.conf_file.write_bytes(LATIN1_CONF + OUR_BLOCK)
+        assert is_block_present(paths) is True
+    else:
+        paths.conf_file.write_bytes(LATIN1_CONF + OUR_BLOCK)
+        uninstall(paths)
+        assert paths.conf_file.read_bytes() == LATIN1_CONF
+
+
+@pytest.mark.parametrize("kind", ["symlinked_aside", "rmtree_oserror"])
+def test_commit_failure(
+    kind: str,
+    paths: ConfigPaths,
+    payload_source: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A failure after an accepted install never fails the install (IN-04)."""
+    paths.kitty_dir.mkdir(parents=True)
+    if kind == "symlinked_aside":
+        target = tmp_path / "dotfiles-kitty-setup"
+        target.mkdir()
+        (target / "marker.txt").write_text("keep\n", encoding="utf-8")
+        paths.payload_dir.symlink_to(target)
+        install(paths, payload_source)
+        assert not paths.payload_dir.is_symlink()
+        assert (paths.payload_dir / "kitty-setup.conf").is_file()
+        assert (target / "marker.txt").read_text(encoding="utf-8") == "keep\n"
+    else:
+        paths.payload_dir.mkdir()
+        (paths.payload_dir / "old.conf").write_text("old\n", encoding="utf-8")
+        aside = _aside(paths)
+        real_rmtree = vars(shutil)["rmtree"]
+
+        def failing_rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
+            if Path(path) == aside:
+                raise OSError(errno.EACCES, "Permission denied", str(aside))
+            real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", failing_rmtree)
+        install(paths, payload_source)
+        err_lines = capsys.readouterr().err.splitlines()
+        assert len(err_lines) == 1
+        assert str(aside) in err_lines[0]

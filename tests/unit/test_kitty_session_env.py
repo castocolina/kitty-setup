@@ -67,11 +67,17 @@ def test_runtime_dir_fallback_is_gettempdir(recorder: list[dict[str, str]], tmp_
 
 
 def test_guard_runtime_dir_kept_when_set(
-    recorder: list[dict[str, str]], monkeypatch: pytest.MonkeyPatch
+    recorder: list[dict[str, str]], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A set XDG_RUNTIME_DIR reaches the child unchanged."""
-    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
-    with KittySession(cwd=Path("/tmp"), binaries=_FAKE_BINARIES) as session:
+    """A set XDG_RUNTIME_DIR reaches the child unchanged.
+
+    The directory is made under the fixture's short directory, so the session never touches the
+    live runtime directory, and a deep tmp_path would overflow the socket path budget.
+    """
+    runtime = Path(tempfile.gettempdir()) / "rt"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    with KittySession(cwd=tmp_path, binaries=_FAKE_BINARIES) as session:
         del session
     assert len(recorder) == 1, "exactly one child env must be observed"
-    assert recorder[0]["XDG_RUNTIME_DIR"] == "/run/user/1000"
+    assert recorder[0]["XDG_RUNTIME_DIR"] == str(runtime)
