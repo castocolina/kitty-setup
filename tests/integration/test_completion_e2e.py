@@ -215,8 +215,7 @@ def test_zsh_stale_dump_after_block_is_a_disclosed_limitation(tmp_path: Path) ->
     block = path_integration._block_text("zsh")
     shapes = {
         "dash_d": (
-            f"{block}autoload -Uz compinit && compinit -C -d "
-            '"$HOME/.cache/zcompdump-other"\n'
+            f"{block}autoload -Uz compinit && compinit -C -d " '"$HOME/.cache/zcompdump-other"\n'
         ),
         "skipped_self_init": f"{_USER_COMPINIT}\n{block}autoload -Uz compinit && compinit -C\n",
     }
