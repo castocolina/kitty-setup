@@ -69,21 +69,59 @@ def test_rc_block_renders_path_export_and_completion_lines(tmp_path: Path) -> No
     assert path_integration.completion_source_line("zsh") in text
 
 
-def test_completion_old_path_only_block_rewritten_and_moved_last_in_zsh(tmp_path: Path) -> None:
-    """A stale zsh block followed by an executable line is rewritten *and* moved to the end."""
+_ZSH_CURRENT = path_integration._block_text("zsh")
+_ALREADY_CURRENT = "rc block already matches current template"
+_REWRITTEN = "rewrote rc block body to current template"
+_TRAILING_PYENV = 'export PATH="/opt/sdkman/bin:$PATH"\neval "$(pyenv init -)"\n'
+_TRAILING_FRAMEWORK = 'source "$HOME/.framework/init.zsh"\n'
+_PRE_USER = "# my own stuff\nalias ll='ls -la'\n"
+_POST_USER = "\n# trailing user content\nexport EDITOR=vim\n"
+_OLD_PATH_ONLY_BLOCK = (
+    f"{path_integration.MARKER_BEGIN}\n{path_integration.EXPORT_LINE}\n"
+    f"{path_integration.MARKER_END}\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("rc_text", "reason", "expected"),
+    [
+        pytest.param(
+            _ZSH_CURRENT + _TRAILING_PYENV,
+            _ALREADY_CURRENT,
+            _ZSH_CURRENT + _TRAILING_PYENV,
+            id="pyenv_sdkman",
+        ),
+        pytest.param(
+            _ZSH_CURRENT + _USER_COMPINIT + "\n",
+            _ALREADY_CURRENT,
+            _ZSH_CURRENT + _USER_COMPINIT + "\n",
+            id="compinit_after",
+        ),
+        pytest.param(
+            _ZSH_CURRENT + _TRAILING_FRAMEWORK,
+            _ALREADY_CURRENT,
+            _ZSH_CURRENT + _TRAILING_FRAMEWORK,
+            id="framework_after",
+        ),
+        pytest.param(
+            _PRE_USER + _OLD_PATH_ONLY_BLOCK + _POST_USER,
+            _REWRITTEN,
+            _PRE_USER + _ZSH_CURRENT + _POST_USER,
+            id="stale_body_rewritten",
+        ),
+    ],
+)
+def test_zsh_block_stays_in_place(
+    tmp_path: Path, rc_text: str, reason: str, expected: str
+) -> None:
+    """A zsh block stays where the user put it, whatever runs after it (02-14, WR-05)."""
     home = tmp_path / "home"
     home.mkdir()
     rc = home / ".zshrc"
-    pre = "# my own stuff\nalias ll='ls -la'\n"
-    post = "\n# trailing user content\nexport EDITOR=vim\n"
-    old_body = path_integration.EXPORT_LINE
-    old_block = f"{path_integration.MARKER_BEGIN}\n{old_body}\n{path_integration.MARKER_END}\n"
-    rc.write_text(pre + old_block + post)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
-    assert result.changed is True
-    assert result.reason == "rewrote rc block body to current template"
-    text = rc.read_text()
-    assert text == pre + post + path_integration._block_text("zsh")
+    rc.write_text(rc_text, encoding="utf-8")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
+    assert result.reason == reason
+    assert rc.read_text(encoding="utf-8") == expected
 
 
 def test_legacy_block_migrates_with_completion_line(tmp_path: Path) -> None:
@@ -296,21 +334,19 @@ def test_completion_bash_body_sources_file_without_compdef(tmp_path: Path) -> No
     assert "compdef" not in text
 
 
-def test_completion_zsh_body_self_initialises_then_sources() -> None:
+def test_zsh_body_adds_fpath() -> None:
+    """The four zsh body lines, literal: the fpath line puts the script's directory on fpath."""
     body = path_integration._block_body_lines("zsh")
-    completion_file = installer.completion_script_path("zsh", home=Path("$HOME"))
-    assert path_integration.ZSH_COMPINIT_LINE == (
-        "(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }"
-    )
-    quoted = f'"{completion_file}"'
     assert body == (
-        path_integration.EXPORT_LINE,
-        path_integration.ZSH_COMPINIT_LINE,
-        f"[ -f {quoted} ] && command -v compdef >/dev/null 2>&1 && . {quoted}",
+        'export PATH="$HOME/.local/bin:$PATH"',
+        'fpath=("$HOME/.local/share/kitty-setup" $fpath)',
+        "(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }",
+        '[ -f "$HOME/.local/share/kitty-setup/_my-kitty" ] && command -v compdef >/dev/null 2>&1'
+        ' && . "$HOME/.local/share/kitty-setup/_my-kitty"',
     )
-    assert path_integration.completion_source_line("zsh") == body[2]
-    assert "my-kitty-completion.zsh" in body[2]
-    assert "-D" not in body[1].split()
+    assert path_integration.completion_source_line("zsh") == body[3]
+    assert "_my-kitty" in body[3]
+    assert "-D" not in body[2].split()
 
 
 def test_completion_template_match_is_per_shell() -> None:
@@ -364,21 +400,120 @@ def test_completion_dual_markers_rewrite_retained_obsolete_body(
     assert _without_our_block(text) == head + middle + tail
 
 
-def test_completion_zsh_block_above_compinit_moves_to_end(tmp_path: Path) -> None:
-    """H4: a current-template zsh block above a ``compinit`` registers nothing; move it last."""
+def test_zsh_upgrade_rewrites_in_place(tmp_path: Path) -> None:
+    """The 02-02-era body (hard-coded) is rewritten between its markers, and nothing moves."""
     home = tmp_path / "home"
     home.mkdir()
     rc = home / ".zshrc"
-    pre = "# user zshrc\n"
-    post = f"{_USER_COMPINIT}\nbindkey -e\n"
-    rc.write_text(pre + path_integration._block_text("zsh") + post)
-    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh", )
-    assert result.changed is True
-    assert result.reason == "moved rc block to end of file"
-    text = rc.read_text()
-    assert text == pre + post + path_integration._block_text("zsh")
-    lines = text.splitlines()
-    assert lines.index(_USER_COMPINIT) < lines.index(path_integration.MARKER_BEGIN)
+    old_body = (
+        'export PATH="$HOME/.local/bin:$PATH"',
+        "(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }",
+        '[ -f "$HOME/.local/share/kitty-setup/my-kitty-completion.zsh" ] && command -v compdef '
+        '>/dev/null 2>&1 && . "$HOME/.local/share/kitty-setup/my-kitty-completion.zsh"',
+    )
+    rc.write_text(_block(old_body) + _USER_COMPINIT + "\n", encoding="utf-8")
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
+    assert result.reason == "rewrote rc block body to current template"
+    assert rc.read_text(encoding="utf-8") == _ZSH_CURRENT + _USER_COMPINIT + "\n"
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_duplicate_rc_blocks_converge(tmp_path: Path, shell: str) -> None:
+    """IN-01: two current blocks converge in one install; the rest are no-ops (T-2-63)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / (".bashrc" if shell == "bash" else ".zshrc")
+    block = path_integration._block_text(shell)
+    pre = "# user rc\n"
+    post = "alias ll='ls -la'\n"
+    rc.write_text(pre + block + post + block, encoding="utf-8")
+    first = path_integration.ensure_local_bin_in_path(home=home, shell=shell)
+    assert first.reason == "removed duplicate rc block"
+    text = rc.read_text(encoding="utf-8")
+    assert text == pre + block + post
+    assert text.count(path_integration.MARKER_BEGIN) == 1
+    for _ in range(2):
+        again = path_integration.ensure_local_bin_in_path(home=home, shell=shell)
+        assert again.changed is False
+        assert again.reason == "rc block already matches current template"
+    assert rc.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize(("shell", "rc_name"), [("bash", ".bashrc"), ("zsh", ".zshrc")])
+def test_rc_non_utf8_survives(tmp_path: Path, shell: str, rc_name: str) -> None:
+    """WR-06: a Latin-1 byte in the rc survives, and nothing raises (no text-mode I/O)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    original = b"# caf\xe9 alias\n"
+    rc = home / rc_name
+    rc.write_bytes(original)
+    path_integration.ensure_local_bin_in_path(home=home, shell=shell)
+    assert rc.read_bytes().startswith(original)
+
+
+_MIXED_ENDINGS = b"# a\r\nalias x=1\rlone\nlast\r\n"
+
+
+@pytest.mark.parametrize("case", ["bash_append", "zsh_rewrite_in_place"])
+def test_rc_line_endings_kept(tmp_path: Path, case: str) -> None:
+    """WR-06: CRLF, a lone CR and LF outside the block survive byte for byte. ASCII only."""
+    home = tmp_path / "home"
+    home.mkdir()
+    if case == "bash_append":
+        rc = home / ".bashrc"
+        rc.write_bytes(_MIXED_ENDINGS)
+        path_integration.ensure_local_bin_in_path(home=home, shell="bash")
+        assert rc.read_bytes().startswith(_MIXED_ENDINGS)
+        return
+    pre = _MIXED_ENDINGS
+    post = b"tail\rlone\r\n"
+    rc = home / ".zshrc"
+    rc.write_bytes(pre + _OLD_PATH_ONLY_BLOCK.encode("utf-8") + post)
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
+    assert result.reason == _REWRITTEN
+    assert rc.read_bytes() == pre + _ZSH_CURRENT.encode("utf-8") + post
+
+
+_LEGACY_BEGIN: str = vars(path_integration)["_LEGACY_MARKER_BEGIN"]
+_LEGACY_END: str = vars(path_integration)["_LEGACY_MARKER_END"]
+_LEGACY_BLOCK_TEXT = f"{_LEGACY_BEGIN}\nlegacy body line\n{_LEGACY_END}\n"
+
+
+@pytest.mark.parametrize(
+    ("eol", "last_block", "reason"),
+    [
+        pytest.param(
+            "\n",
+            path_integration._block_text("bash")[:-1],
+            "removed duplicate rc block",
+            id="duplicate_lf",
+        ),
+        pytest.param(
+            "\r\n",
+            path_integration._block_text("bash")[:-1],
+            "removed duplicate rc block",
+            id="duplicate_crlf",
+        ),
+        pytest.param(
+            "\r\n",
+            _LEGACY_BLOCK_TEXT[:-1],
+            "removed duplicate legacy marker",
+            id="legacy_crlf",
+        ),
+    ],
+)
+def test_rc_unterminated_tail_removal(
+    tmp_path: Path, eol: str, last_block: str, reason: str
+) -> None:
+    """WR-06 and IN-01: removing an unterminated last block keeps the line before it (bash)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    rc = home / ".bashrc"
+    expected = "# pre\n" + path_integration._block_text("bash") + "alias keep=yes" + eol
+    rc.write_bytes((expected + last_block).encode("utf-8"))
+    result = path_integration.ensure_local_bin_in_path(home=home, shell="bash")
+    assert result.reason == reason
+    assert rc.read_bytes() == expected.encode("utf-8")
 
 
 def test_print_path_result_unsupported_shell_prints_manual_lines_without_completion(
@@ -431,9 +566,9 @@ _REASON_STATES: list[tuple[str, Callable[[], str], str]] = [
     ),
     ("migrated-legacy", _legacy_block, "migrated legacy marker"),
     (
-        "moved-zsh",
-        lambda: _current_block("zsh") + _USER_COMPINIT + "\n",
-        "moved rc block to end of file",
+        "removed_duplicate_rc",
+        lambda: _current_block("zsh") + _current_block("zsh"),
+        "removed duplicate rc block",
     ),
     ("rewrote-body", _new_block, "rewrote rc block body to current template"),
     ("appended", lambda: "# user zshrc\nalias ll='ls -la'\n", "appended sentinel-bracketed block"),

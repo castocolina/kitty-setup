@@ -15,6 +15,7 @@ import argparse
 import errno
 import os
 import re
+import stat
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final
@@ -68,12 +69,55 @@ def test_write_bash_shellcode_matches_fresh_generation(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == _fresh_shellcode(shell="bash")
 
 
-def test_write_zsh_shellcode_matches_fresh_generation(tmp_path: Path) -> None:
+def test_zsh_script_written_as_fpath_function(tmp_path: Path) -> None:
+    """The zsh script is ``_my-kitty``: its ``#compdef`` header lets fpath autoload it (02-14)."""
     path = installer.write_completion_script("zsh", home=tmp_path)
     assert path is not None
-    assert path == _completion_dir(tmp_path) / "my-kitty-completion.zsh"
+    assert path == _completion_dir(tmp_path) / "_my-kitty"
     assert path == installer.completion_script_path("zsh", home=tmp_path)
     assert path.read_text(encoding="utf-8") == _fresh_shellcode(shell="zsh")
+    assert path.read_text(encoding="utf-8").splitlines()[0] == "#compdef my-kitty"
+
+
+def test_legacy_zsh_script_removed_on_zsh_write(tmp_path: Path) -> None:
+    directory = _completion_dir(tmp_path)
+    directory.mkdir(parents=True)
+    legacy = directory / "my-kitty-completion.zsh"
+    legacy.write_text("legacy\n", encoding="utf-8")
+    installer.write_completion_script("zsh", home=tmp_path)
+    assert not legacy.exists()
+    assert (directory / "_my-kitty").is_file()
+
+
+def test_legacy_zsh_script_removed_on_uninstall(tmp_path: Path) -> None:
+    directory = _completion_dir(tmp_path)
+    directory.mkdir(parents=True)
+    current = directory / "_my-kitty"
+    current.write_text("current\n", encoding="utf-8")
+    legacy = directory / "my-kitty-completion.zsh"
+    legacy.write_text("legacy\n", encoding="utf-8")
+    removed = installer.remove_completion_script(home=tmp_path)
+    assert sorted(removed) == sorted([current, legacy])
+    assert not legacy.exists()
+
+
+def test_bash_write_leaves_legacy_zsh_file(tmp_path: Path) -> None:
+    """A bash write keeps the 02-02-era zsh file: an untouched ~/.zshrc still sources it."""
+    directory = _completion_dir(tmp_path)
+    directory.mkdir(parents=True)
+    legacy = directory / "my-kitty-completion.zsh"
+    legacy.write_bytes(b"legacy zsh bytes\n")
+    installer.write_completion_script("bash", home=tmp_path)
+    assert legacy.read_bytes() == b"legacy zsh bytes\n"
+
+
+def test_zsh_script_dir_not_group_or_world_writable(tmp_path: Path) -> None:
+    """A zsh write clears group and world write on the directory: zsh's compaudit rule (02-14)."""
+    directory = _completion_dir(tmp_path)
+    directory.mkdir(parents=True)
+    directory.chmod(0o777)
+    installer.write_completion_script("zsh", home=tmp_path)
+    assert stat.S_IMODE(directory.stat().st_mode) & 0o022 == 0
 
 
 def test_generate_completion_script_is_the_in_process_shellcode() -> None:
@@ -175,14 +219,14 @@ def _patch_install_side_effects(monkeypatch: pytest.MonkeyPatch, detected: str |
     monkeypatch.setattr(path_integration, "ensure_local_bin_in_path", fake_ensure)
 
 
-def test_cli_install_writes_shellcode_for_detected_shell(
+def test_cli_install_writes_zsh_script_for_detected_shell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _redirect_default_dir(monkeypatch, tmp_path)
     _patch_install_side_effects(monkeypatch, "zsh")
     rc = installer.cli_install(argparse.Namespace(dest=installer.DEFAULT_DEST, no_config=False))
     assert rc == 0
-    written = _completion_dir(tmp_path) / "my-kitty-completion.zsh"
+    written = _completion_dir(tmp_path) / "_my-kitty"
     assert written.read_text(encoding="utf-8") == _fresh_shellcode(shell="zsh")
     assert not (_completion_dir(tmp_path) / "my-kitty-completion.bash").exists()
     assert str(written) in capsys.readouterr().out

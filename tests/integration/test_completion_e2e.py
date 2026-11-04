@@ -29,6 +29,8 @@ from kitty_setup import doctor, installer, path_integration
 _USER_COMPINIT = "autoload -Uz compinit && compinit"
 _ZSH_PROBE = "print -r -- ${_comps[my-kitty]-<none>}"
 _ARGCOMPLETE_FN = "_python_argcomplete"
+# The name zsh registers when it autoloads the fpath file (02-14); sourcing registers the other.
+_MY_KITTY_FN = "_my-kitty"
 _TIMEOUT_S = 30
 
 
@@ -73,7 +75,7 @@ def _zsh_registrations(zsh: str, home: Path) -> list[subprocess.CompletedProcess
 
 
 def _registered(starts: list[subprocess.CompletedProcess[str]]) -> bool:
-    return all(start.stdout.strip() == _ARGCOMPLETE_FN for start in starts)
+    return all(start.stdout.strip() in (_ARGCOMPLETE_FN, _MY_KITTY_FN) for start in starts)
 
 
 def test_bash_registers_completion_from_rendered_block(tmp_path: Path) -> None:
@@ -90,8 +92,7 @@ def test_zsh_registers_completion_after_user_compinit(tmp_path: Path) -> None:
     home = _home(tmp_path, "home", "zsh")
     rc = f"{_USER_COMPINIT}\n" + path_integration._block_text("zsh")
     (home / ".zshrc").write_text(rc, encoding="utf-8")
-    starts = _zsh_registrations(zsh, home)
-    assert [s.stdout.strip() for s in starts] == [_ARGCOMPLETE_FN, _ARGCOMPLETE_FN]
+    assert _registered(_zsh_registrations(zsh, home))
 
 
 def test_zsh_registers_completion_with_no_user_compinit(tmp_path: Path) -> None:
@@ -104,7 +105,7 @@ def test_zsh_registers_completion_with_no_user_compinit(tmp_path: Path) -> None:
         path_integration.ZSH_COMPINIT_LINE, ""
     )
     starts = _zsh_registrations(zsh, home)
-    assert [s.stdout.strip() for s in starts] == [_ARGCOMPLETE_FN, _ARGCOMPLETE_FN]
+    assert _registered(starts)
     for start in starts:
         assert "command not found: compdef" not in start.stderr
 
@@ -130,26 +131,42 @@ def test_producer_protocol_returns_candidates_on_fd8(tmp_path: Path) -> None:
     assert "doctor" in candidates
 
 
-def test_zsh_block_above_compinit_is_moved_by_install_and_registers(tmp_path: Path) -> None:
-    """H4: install moves a current-template zsh block from above ``compinit`` to the end."""
+def test_zsh_block_above_compinit_stays_and_registers(tmp_path: Path) -> None:
+    """02-14: install leaves a current block above ``compinit`` where it is; it still registers."""
     zsh = _require(shutil.which("zsh"), "zsh")
     home = _home(tmp_path, "home", "zsh")
     rc = home / ".zshrc"
     rc.write_text(path_integration._block_text("zsh") + f"{_USER_COMPINIT}\n", encoding="utf-8")
     result = path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
-    assert result.reason == "moved rc block to end of file"
+    assert result.reason == "rc block already matches current template"
     lines = rc.read_text(encoding="utf-8").splitlines()
-    assert lines.index(_USER_COMPINIT) < lines.index(path_integration.MARKER_BEGIN)
-    starts = _zsh_registrations(zsh, home)
-    assert [s.stdout.strip() for s in starts] == [_ARGCOMPLETE_FN, _ARGCOMPLETE_FN]
+    assert lines.index(path_integration.MARKER_BEGIN) < lines.index(_USER_COMPINIT)
+    assert _registered(_zsh_registrations(zsh, home))
+
+
+def test_zsh_block_first_keeps_path_order(tmp_path: Path) -> None:
+    """The committed twin of the kitty probe: install never reorders the user's PATH (WR-05)."""
+    zsh = _require(shutil.which("zsh"), "zsh")
+    home = _home(tmp_path, "home", "zsh")
+    rc = home / ".zshrc"
+    rc.write_text(
+        path_integration._block_text("zsh") + 'export PATH="$HOME/sdk/bin:$PATH"\n',
+        encoding="utf-8",
+    )
+    before = rc.read_bytes()
+    path_integration.ensure_local_bin_in_path(home=home, shell="zsh")
+    assert rc.read_bytes() == before
+    proc = _run([zsh, "-i", "-c", "print -r -- $PATH"], _env(home, zsh))
+    parts = proc.stdout.strip().split(":")
+    assert parts.index(f"{home}/sdk/bin") < parts.index(f"{home}/.local/bin"), proc.stdout
 
 
 def test_doctor_verdict_matches_real_zsh_registration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """H4, doctor half: doctor's verdict equals what real zsh registers, across four shapes.
+    """H4, doctor half: doctor's verdict equals what real zsh registers, across five shapes.
 
-    Two shapes register and two do not, so a check and a shell that were wrong the same way
+    Three shapes register and two do not, so a check and a shell that were wrong the same way
     cannot pass together. One function, not parametrized, so the RED count stays exact.
     """
     zsh = _require(shutil.which("zsh"), "zsh")
@@ -163,11 +180,20 @@ def test_doctor_verdict_matches_real_zsh_registration(
             path_integration.MARKER_END,
         ]
     )
+    # The 02-02-era body, hard-coded: a host that has not yet run the 02-14 install.
+    old_body = (
+        'export PATH="$HOME/.local/bin:$PATH"',
+        "(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }",
+        '[ -f "$HOME/.local/share/kitty-setup/my-kitty-completion.zsh" ] && command -v compdef '
+        '>/dev/null 2>&1 && . "$HOME/.local/share/kitty-setup/my-kitty-completion.zsh"',
+    )
+    old_block = "\n".join([path_integration.MARKER_BEGIN, *old_body, path_integration.MARKER_END])
     shapes: dict[str, tuple[str, bool]] = {
         "S1 compinit then our block last": (f"{_USER_COMPINIT}\n{block}", True),
         "S2 our block last, no compinit": (block, True),
-        "S3 our block above a compinit": (f"{block}{_USER_COMPINIT}\n", False),
+        "S3 our block above a compinit": (f"{block}{_USER_COMPINIT}\n", True),
         "S4 guard-only body last, no compinit": (f"{guard_only}\n", False),
+        "S5 02-02-era body above a compinit": (f"{old_block}\n{_USER_COMPINIT}\n", False),
     }
     for index, (shape, (rc_text, expected)) in enumerate(shapes.items()):
         home = _home(tmp_path, f"s{index + 1}", "zsh")
@@ -176,3 +202,38 @@ def test_doctor_verdict_matches_real_zsh_registration(
         registered = _registered(_zsh_registrations(zsh, home))
         assert registered is expected, f"{shape}: zsh registered={registered}"
         assert verdict.passed is registered, f"{shape}: doctor said {verdict.render()!r}"
+
+
+def test_zsh_stale_dump_after_block_is_a_disclosed_limitation(tmp_path: Path) -> None:
+    """Pins the one unsupported shape README discloses (02-14, T-2-75).
+
+    A ``compinit -C`` that runs after the block and loads a dump written without ``_my-kitty``
+    drops the registration, for a ``-d`` dump and for the default dump an earlier compinit wrote.
+    Both shapes register nothing, so doctor's PASS detail names the case instead of hiding it.
+    """
+    zsh = _require(shutil.which("zsh"), "zsh")
+    block = path_integration._block_text("zsh")
+    shapes = {
+        "dash_d": (
+            f"{block}autoload -Uz compinit && compinit -C -d "
+            '"$HOME/.cache/zcompdump-other"\n'
+        ),
+        "skipped_self_init": f"{_USER_COMPINIT}\n{block}autoload -Uz compinit && compinit -C\n",
+    }
+    for name, rc_text in shapes.items():
+        home = tmp_path / name
+        home.mkdir()
+        installer.write_completion_script("zsh", home=home)
+        (home / ".cache").mkdir()
+        # One start with no block seeds a default dump and a -d dump, neither holding _my-kitty.
+        _run(
+            [
+                zsh,
+                "-f",
+                "-c",
+                'autoload -Uz compinit; compinit -i; compinit -i -d "$HOME/.cache/zcompdump-other"',
+            ],
+            _env(home, zsh),
+        )
+        (home / ".zshrc").write_text(rc_text, encoding="utf-8")
+        assert _registered(_zsh_registrations(zsh, home)) is False, name

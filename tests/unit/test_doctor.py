@@ -259,18 +259,58 @@ def test_completion_check_passes_zsh_and_says_what_it_did_not_observe(
     assert "_comps" in result.detail
 
 
-def test_completion_check_fails_zsh_block_followed_by_commands(
+def test_completion_block_position_is_not_a_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Measured: a ``compinit`` after our block resets ``_comps``, so a structural PASS lies."""
+    """02-14: zsh registers through fpath wherever the block sits, so a later compinit is no FAIL.
+
+    Doctor must not FAIL an rc that a tool appended to: the position FAIL is gone.
+    """
     home = _completion_home(tmp_path, monkeypatch, "zsh")
     rc = home / ".zshrc"
-    rc.write_text(rc.read_text(encoding="utf-8") + "autoload -Uz compinit && compinit\n")
+    rc.write_text(
+        rc.read_text(encoding="utf-8") + "autoload -Uz compinit && compinit\n", encoding="utf-8"
+    )
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert result.skipped is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_completion_rc_non_utf8_passes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, shell: str
+) -> None:
+    """WR-06: a Latin-1 byte in the rc is read with surrogateescape, not a traceback."""
+    home = _completion_home(tmp_path, monkeypatch, shell)
+    rc = home / (".bashrc" if shell == "bash" else ".zshrc")
+    rc.write_bytes(b"# caf\xe9 alias\n" + rc.read_bytes())
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+
+
+def test_completion_byte_compare_flags_crlf_only_as_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A-4: the staleness check compares bytes, so a script whose only change is CRLF is stale."""
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.write_bytes(script.read_bytes().replace(b"\n", b"\r\n"))
     result = doctor._check_completion(home=home)
     assert result.passed is False
-    assert result.skipped is False
-    assert str(rc) in result.detail
-    assert "my-kitty install" in result.detail
+    assert "stale" in result.detail
+
+
+def test_completion_zsh_pass_detail_names_fpath(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The zsh PASS detail names fpath and the one shape it cannot see (02-14, T-2-75)."""
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert "fpath" in result.detail
+    assert "compinit -C" in result.detail
+    assert "last command" not in result.detail
+    assert "not observe" in result.detail
 
 
 def test_completion_check_fails_zsh_body_without_self_init(

@@ -35,7 +35,9 @@ SCRIPT: Final[Path] = REPO_ROOT / "tools" / "uninstall.sh"
 RUN_TIMEOUT_S: Final[float] = 30.0
 TAG: Final[str] = "[uninstall]"
 LEGACY_NOTICE: Final[str] = "using legacy binary"
-COMPLETION_LINE: Final[str] = "  - ~/.local/share/kitty-setup/my-kitty-completion.{bash,zsh}"
+COMPLETION_LINE: Final[str] = (
+    "  - ~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty,my-kitty-completion.zsh}"
+)
 STUB: Final[str] = '#!/usr/bin/env bash\nprintf \'STUB %s invoked: %s\\n\' "$0" "$*"\nexit 0\n'
 
 
