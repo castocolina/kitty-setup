@@ -87,13 +87,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--keep-backups",
         dest="keep_backups",
         action="store_true",
-        help="preserve every kitty.conf.bak.* file under ~/.config/kitty/",
+        help=(
+            "preserve every kitty.conf.bak.* file and kitty-setup.rollback* payload aside "
+            "under ~/.config/kitty/"
+        ),
     )
     p_uninstall.add_argument(
         "--keep-config",
         dest="keep_config",
         action="store_true",
-        help="preserve the entire ~/.config/kitty/ footprint (block + payload + backups)",
+        help=(
+            "preserve the entire ~/.config/kitty/ footprint (block + payload + backups + "
+            "payload asides)"
+        ),
     )
     p_uninstall.add_argument(
         "--keep-kitty",

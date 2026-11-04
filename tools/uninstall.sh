@@ -67,6 +67,7 @@ print_will_remove() {
         printf '  - payload directory ~/.config/kitty/kitty-setup/\n'
         if [[ "${keep_backups}" != "1" ]]; then
             printf '  - all kitty.conf.bak.* backup files\n'
+            printf '  - payload asides ~/.config/kitty/kitty-setup.rollback* left by interrupted installs\n'
         fi
     fi
     if [[ "${keep_kitty}" != "1" ]]; then

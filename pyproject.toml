@@ -111,6 +111,9 @@ ignore = []
 #       with shell=False and a complete sandbox env built from literals and tmp_path values. Scoped to
 #       this one file for the reason given above.
 "tests/unit/test_unit_hermeticity.py" = ["S603"]
+# S603: test_bandit_scope.py (02-15, IN-05) runs `sys.executable -m bandit` over src/ with shell=False
+#       and a fixed argv of literals and the repo root. Scoped to this one file for the reason given above.
+"tests/unit/test_bandit_scope.py" = ["S603"]
 # --- src/ entries (R0.11, 02-10): these replace the last inline `# noqa` directives, in the
 # same edit that removes them, because adding an id to a config ignore list turns every
 # existing directive for it into a RUF100 finding (the measured Phase 1 lesson recorded
@@ -126,11 +129,7 @@ ignore = []
 #       host may legitimately vary and add a lookup that can fail for a binary the OS
 #       guarantees — the same decision as the git-binary precedent recorded above at the
 #       test_git_hooks.py entry. Absolutising was considered and rejected.
-# S310: installer.py's urlopen is guarded in code: the URL is parsed and a non-https scheme
-#       raises ValueError before mkstemp creates a file or the connection opens (the ASVS V12
-#       control). The rule is AST-based and cannot see the guard, so this entry is the
-#       compensating control naming it.
-"src/kitty_setup/installer.py" = ["S603", "S607", "S310"]
+"src/kitty_setup/installer.py" = ["S603", "S607"]
 "src/kitty_setup/doctor.py" = ["S603"]
 "src/kitty_setup/config_updater.py" = ["S603"]
 "src/kitty_setup/binding_introspection.py" = ["S603"]
@@ -159,10 +158,10 @@ exclude_dirs = ["tests", "tmp"]
 #   shell-injection sink. No subprocess call carries shell=True anywhere in src/.
 # B607 (x2): the same two partial-path sites as ruff's S607 (installer.py's `sh`,
 #   _client.py's `pgrep`) — deliberately PATH-resolved, see the ruff rationale above.
-# B310 (x1, installer.py urlopen): guarded in code — a non-https scheme raises ValueError
-#   before mkstemp or the connection (the ASVS V12 control); the rule is AST-based and cannot
-#   see the guard, so this skip names it as the compensating control.
-skips = ["B404", "B603", "B604", "B607", "B310"]
+#   B604 and B607 are scoped per site (file, id, enclosing def, callee) by
+#   tests/unit/test_bandit_scope.py, which `make test` runs: bandit's config cannot scope an id to a file.
+# The URL-fetch id is no longer skipped: its one site, the installer download's urlopen, is gone (IN-06).
+skips = ["B404", "B603", "B604", "B607"]
 
 [tool.vulture]
 # Pytest resolves a fixture by name — as a test parameter, via @pytest.mark.usefixtures, or as

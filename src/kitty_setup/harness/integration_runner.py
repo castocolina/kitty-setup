@@ -9,14 +9,18 @@ executes the suite inside a nested compositor instead, so no window reaches the 
 Contract, in the order the code enforces it:
 
 * ``PYTEST_ARGS`` may only narrow the run. With no path selector the run is all of
-  ``tests/integration``; a path selector outside it is a usage error (``EXIT_USAGE``).
+  ``tests/integration``; a path selector outside it is a usage error (``EXIT_USAGE``). An option's
+  value is never a selector; an option or ``@`` argument file that could stop pytest loading
+  ``tests/conftest.py``, and ``--child``, are usage errors, and ``PYTEST_ADDOPTS`` is dropped;
+  ``tests/conftest.py`` refuses any collected item outside ``tests/integration/``.
 * No compositor on ``PATH``, or no usable ``XDG_RUNTIME_DIR``, is a loud failure
   (``EXIT_UNAVAILABLE``) — the suite was NOT run, and that is never reported as a skip.
 * The compositor starts in its own session with the display and kitty remote-control
   variables scrubbed and stdin detached, so the run has no controlling terminal and cannot
   reach the user's live kitty.
-* The verdict is pytest's own exit status, written by this module's ``--child`` mode into a
-  status file inside the compositor. The compositor's exit status is recorded, never returned:
+* The verdict is pytest's own exit status, written by this module's child entry point, which
+  ``run()`` starts as a ``-c`` program and ``main`` never reaches, into a status file inside the
+  compositor. The compositor's exit status is recorded, never returned:
   a wrapper that exits 0 regardless would otherwise turn every failure into a pass. A missing
   status file, a timeout, or a process left behind is ``EXIT_RUNNER_FAILURE``.
 * The compositor's process group is terminated on every exit path, including interrupt,
@@ -56,6 +60,8 @@ SCRUBBED_VARIABLES: Final = (
     "KITTY_WINDOW_ID",
     "KITTY_PID",
     "KITTY_PUBLIC_KEY",
+    # pytest prepends it to its argv unchecked, so PYTEST_ARGS is the one way options reach pytest.
+    "PYTEST_ADDOPTS",
 )
 
 # Set for the compositor and, through it, for the child. KITTI_INTEGRATION=1 is set here and
@@ -77,6 +83,73 @@ EXIT_RUNNER_FAILURE: Final = 70
 
 RUN_TIMEOUT_S: Final = 600.0
 LEFTOVER_GRACE_S: Final = 5.0
+
+# pytest 9.0.3 with pytest-cov 7.1.0: the option strings that take a value, as argparse reads each
+# action's nargs (tmp/h43-runner-selectors/nargs.out, bypass.out). 55 take a mandatory value; the 3
+# in _OPTIONAL_VALUE_OPTIONS take one only when the next argument does not start with "-".
+_VALUE_OPTIONS: Final = frozenset(
+    [
+        "--assert",
+        "--basetemp",
+        "--capture",
+        "--code-highlight",
+        "--color",
+        "--confcutdir",
+        "--config-file",
+        "--cov-config",
+        "--cov-context",
+        "--cov-fail-under",
+        "--cov-precision",
+        "--cov-report",
+        "--deselect",
+        "--doctest-glob",
+        "--doctest-report",
+        "--durations",
+        "--durations-min",
+        "--ignore",
+        "--ignore-glob",
+        "--import-mode",
+        "--junit-prefix",
+        "--junit-xml",
+        "--junitprefix",
+        "--junitxml",
+        "--last-failed-no-failures",
+        "--lfnf",
+        "--log-auto-indent",
+        "--log-cli-date-format",
+        "--log-cli-format",
+        "--log-cli-level",
+        "--log-date-format",
+        "--log-disable",
+        "--log-file",
+        "--log-file-date-format",
+        "--log-file-format",
+        "--log-file-level",
+        "--log-file-mode",
+        "--log-format",
+        "--log-level",
+        "--maxfail",
+        "--override-ini",
+        "--pastebin",
+        "--pdbcls",
+        "--pythonwarnings",
+        "--rootdir",
+        "--show-capture",
+        "--tb",
+        "--verbosity",
+        "-W",
+        "-c",
+        "-k",
+        "-m",
+        "-o",
+        "-p",
+        "-r",
+    ]
+)
+_OPTIONAL_VALUE_OPTIONS: Final = frozenset({"--cache-show", "--cov", "--debug"})
+# Options that stop pytest loading tests/conftest.py (the collection hook), measured through
+# tmp/h43-runner-selectors/bypass.out. `-o`/`--override-ini` are bypasses only with addopts.
+_CONFTEST_BYPASS_OPTIONS: Final = frozenset({"--noconftest", "--confcutdir", "-c", "--config-file"})
 
 _MODULE: Final = "kitty_setup.harness.integration_runner"
 _CHILD_FLAG: Final = "--child"
@@ -174,17 +247,81 @@ def resolve_compositor() -> Path | None:
     return None
 
 
+def _split_options(arg: str) -> list[tuple[str, str | None]]:
+    """The option strings one argument carries, each with its glued value, as argparse reads them.
+
+    ``--name=value`` is ``--name`` with a value. A single-dash token is a cluster read left to
+    right: a value option takes the rest of the token (one ``=`` right after it is not part of
+    the value), or the next argument when nothing is left. Any other argument carries no option.
+    """
+    if arg.startswith("--"):
+        name, equals, value = arg.partition("=")
+        return [(name, value if equals else None)]
+    if len(arg) < 2 or not arg.startswith("-"):
+        return []
+    found: list[tuple[str, str | None]] = []
+    for position in range(1, len(arg)):
+        option = "-" + arg[position]
+        if option in _VALUE_OPTIONS:
+            rest = arg[position + 1 :]
+            found.append((option, rest[1:] if rest.startswith("=") else rest or None))
+            break
+        found.append((option, None))
+    return found
+
+
+def _refuse_bypass(option: str, value: str | None) -> None:
+    """Refuse an option that would stop pytest loading tests/conftest.py, in any spelling."""
+    addopts = (
+        option in {"-o", "--override-ini"}
+        and value is not None
+        and value.split("=", 1)[0] == "addopts"
+    )
+    if option in _CONFTEST_BYPASS_OPTIONS or addopts:
+        raise UsageError(
+            f"{option!r} would stop pytest loading tests/conftest.py, whose collection hook keeps "
+            "the run inside tests/integration/ — PYTEST_ARGS may only narrow the run"
+        )
+
+
 def build_pytest_args(argv: Sequence[str], *, cwd: Path | None = None) -> list[str]:
     """Turn ``PYTEST_ARGS`` into pytest's argv; never widen the run past ``tests/integration``.
 
     An argument is a path selector when it names an existing path (after stripping any
-    ``::node`` suffix). Every selector must resolve inside ``INTEGRATION_ROOT``; with none,
-    ``INTEGRATION_ROOT`` is prepended so a bare ``-k`` never reaches the unit tree.
+    ``::node`` suffix), and it is never a value that an option before it takes. Every selector
+    must resolve inside ``INTEGRATION_ROOT``; with none, ``INTEGRATION_ROOT`` is prepended so a
+    bare ``-k`` never reaches the unit tree. Any argument file, ``--child``, or option that could
+    stop pytest loading ``tests/conftest.py`` is refused before the run starts.
     """
     base = Path.cwd() if cwd is None else cwd
     root = (base / INTEGRATION_ROOT).resolve()
     has_selector = False
+    pending: str | None = None
     for arg in argv:
+        if arg.startswith("@"):
+            raise UsageError(
+                f"{arg!r} is a pytest argument file, whose options could stop pytest loading "
+                "tests/conftest.py, whose collection hook keeps the run inside tests/integration/ "
+                "— PYTEST_ARGS may only narrow the run"
+            )
+        if arg == _CHILD_FLAG:
+            raise UsageError(
+                f"{arg!r} is the runner's own child entry point, never a pytest option — "
+                "PYTEST_ARGS may only narrow the run"
+            )
+        if pending is not None:
+            option, pending = pending, None
+            if option in _VALUE_OPTIONS or not arg.startswith("-"):
+                _refuse_bypass(option, arg)
+                continue
+        found = _split_options(arg)
+        for option, value in found:
+            _refuse_bypass(option, value)
+        if found:
+            option, value = found[-1]
+            if value is None and (option in _VALUE_OPTIONS or option in _OPTIONAL_VALUE_OPTIONS):
+                pending = option
+            continue
         if not arg:
             continue
         candidate = base / arg.split("::", 1)[0]
@@ -227,9 +364,8 @@ def run(
             str(compositor),
             "--",
             sys.executable,
-            "-m",
-            _MODULE,
-            _CHILD_FLAG,
+            "-c",
+            _CHILD_PROGRAM,
             str(status_path),
             "--",
             *pytest_args,
@@ -290,7 +426,7 @@ def run(
 def _child(args: Sequence[str]) -> int:
     """Inside the compositor: run pytest, write its status to the status file, return it."""
     if len(args) < 2 or args[1] != "--":
-        _say(f"usage error — {_CHILD_FLAG} <status-file> -- <pytest args>")
+        _say("usage error — child entry: <status-file> -- <pytest args>")
         return EXIT_USAGE
     status_path = Path(args[0])
     completed = subprocess.run(
@@ -300,14 +436,18 @@ def _child(args: Sequence[str]) -> int:
     return completed.returncode
 
 
-def main(argv: Sequence[str]) -> int:
-    args = list(argv)
-    if args[:1] == [_CHILD_FLAG]:
-        return _child(args[1:])
+# The child's only entry point: `run()` starts it as `python -c`, and no PYTEST_ARGS reach it,
+# because `main` never calls `_child` and `build_pytest_args` refuses `--child`.
+_CHILD_PROGRAM: Final = (
+    f"import sys; from {_MODULE} import {_child.__name__}; "
+    f"raise SystemExit({_child.__name__}(sys.argv[1:]))"
+)
 
+
+def main(argv: Sequence[str]) -> int:
     cwd = Path.cwd()
     try:
-        pytest_args = build_pytest_args(args, cwd=cwd)
+        pytest_args = build_pytest_args(list(argv), cwd=cwd)
     except UsageError as exc:
         _say(f"usage error — {exc}")
         return EXIT_USAGE

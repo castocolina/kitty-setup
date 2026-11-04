@@ -80,9 +80,16 @@ def _check_desktop_entry() -> CheckResult:
 
 
 def _check_payload(paths: config_updater.ConfigPaths) -> CheckResult:
+    # A payload aside an interrupted install left is named on the one line, PASS or FAIL (02-15).
+    asides = config_updater.list_payload_asides(paths)
+    note = (
+        f"; payload aside(s) kept from an interrupted install: {', '.join(str(a) for a in asides)}"
+        if asides
+        else ""
+    )
     if paths.payload_entry.is_file():
-        return CheckResult("config payload", True, str(paths.payload_entry))
-    return CheckResult("config payload", False, f"missing: {paths.payload_entry}")
+        return CheckResult("config payload", True, f"{paths.payload_entry}{note}")
+    return CheckResult("config payload", False, f"missing: {paths.payload_entry}{note}")
 
 
 def _check_sentinel_block(paths: config_updater.ConfigPaths) -> CheckResult:

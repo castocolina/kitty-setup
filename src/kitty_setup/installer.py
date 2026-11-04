@@ -8,6 +8,7 @@ The install path is intentionally per-user and ``sudo``-free:
 * ``~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty}`` — shell completion.
 * ``~/.config/kitty/kitty-setup/`` — our configuration payload.
 * ``~/.config/kitty/kitty.conf`` — modified between sentinel markers only.
+* ``~/.config/kitty/kitty-setup.rollback*`` — payload asides an interrupted install left (02-15).
 
 The CLI handlers in this module (``cli_install`` / ``cli_uninstall``) are
 dispatched from :mod:`kitty_setup.cli` under the ``my-kitty-setup`` entry point.
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import enum
+import http.client
 import os
 import shutil
 import stat
@@ -28,7 +30,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import IO, Final
 
 import argcomplete
 
@@ -165,16 +167,46 @@ def _capture_version(kitty_bin: Path) -> str:
     return result.stdout.strip()
 
 
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuses a redirect to any scheme but https, on every hop (ASVS V12, IN-06 / A-1, 02-15).
+
+    ``http_error_302`` resolves each Location to an absolute URL and calls ``redirect_request``
+    with it, so this override sees every hop, relative ones included.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        if urllib.parse.urlparse(newurl).scheme.lower() != "https":
+            fp.close()
+            raise ValueError(f"installer download redirected to a non-https URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _download_installer(url: str = INSTALLER_URL) -> Path:
     scheme = urllib.parse.urlparse(url).scheme.lower()
     if scheme != "https":
         # ASVS V12: the fetched script is executed with `sh`, so a scheme downgrade is a
         # code-execution path. Raised (not asserted, so -O cannot strip it) and checked
-        # before mkstemp, so a rejected URL creates no file and opens no connection.
+        # before mkstemp, so a rejected URL creates no file and opens no connection. The
+        # redirect handler checks every hop the same way, so no redirect can downgrade the fetch.
         raise ValueError(f"installer URL must use https, got scheme {scheme!r}: {url}")
-    tmp = Path(tempfile.mkstemp(prefix="kitty-installer-", suffix=".sh")[1])
-    with urllib.request.urlopen(url, timeout=30) as response:
-        tmp.write_bytes(response.read())
+    opener = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
+    fd, name = tempfile.mkstemp(prefix="kitty-installer-", suffix=".sh")
+    tmp = Path(name)
+    try:
+        # The fd is entered first, so a failed fetch closes it as well as a successful one.
+        with os.fdopen(fd, "wb") as out, opener.open(url, timeout=30) as response:
+            out.write(response.read())
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return tmp
 
 
@@ -457,7 +489,12 @@ def cli_install(args: argparse.Namespace) -> int:
     """Handler for ``my-kitty install``."""
     try:
         report = install(dest=args.dest, inject_config=not args.no_config)
-    except (subprocess.CalledProcessError, OSError, config_updater.ConfigUpdaterError) as exc:
+    except (
+        subprocess.CalledProcessError,
+        OSError,
+        ValueError,
+        config_updater.ConfigUpdaterError,
+    ) as exc:
         print(f"install failed: {exc}", file=sys.stderr)
         return 1
     _print_install_report(report)
@@ -502,9 +539,12 @@ def cli_uninstall(args: argparse.Namespace) -> int:
     """Handler for ``my-kitty uninstall`` — remove everything by default.
 
     ``--keep-config`` preserves the entire ``~/.config/kitty/`` footprint we
-    created (block + payload + backups). ``--keep-backups`` preserves only the
-    backup files. ``--keep-kitty`` preserves kitty.app + symlink + desktop
-    entry. Flags compose; the self-removal banner always prints.
+    created (block + payload + backups + payload asides). ``--keep-backups``
+    preserves the backup files and the payload asides. ``--keep-kitty``
+    preserves kitty.app + symlink + desktop entry. Flags compose; the
+    self-removal banner always prints. A full uninstall removes each payload
+    aside an interrupted install left and names it; any other uninstall keeps
+    and names it (02-15, IN-03).
     """
     do_config = not args.keep_config
     do_backups = not args.keep_config and not args.keep_backups
@@ -523,6 +563,27 @@ def cli_uninstall(args: argparse.Namespace) -> int:
             print(f"backups:       deleted {deleted} file(s) under {paths.kitty_dir}/")
         else:
             print(f"backups:       nothing to delete under {paths.kitty_dir}/")
+
+    # Payload asides (IN-03, 02-15): a full uninstall removes each one and names it; an uninstall
+    # that keeps backups keeps each one and names it, so the user knows it is theirs to delete.
+    asides_failed = False
+    for aside in config_updater.list_payload_asides(paths):
+        if not do_backups:
+            print(
+                f"config:        kept payload aside {aside} "
+                "(left by an interrupted install; delete it by hand)"
+            )
+            continue
+        try:
+            config_updater.discard_payload_aside(aside)
+        except OSError as exc:
+            asides_failed = True
+            print(
+                f"uninstall failed: cannot remove payload aside {aside}: {exc}; delete it by hand",
+                file=sys.stderr,
+            )
+        else:
+            print(f"config:        removed payload aside {aside}")
 
     if do_config:
         cfg = config_updater.uninstall(paths)
@@ -558,4 +619,4 @@ def cli_uninstall(args: argparse.Namespace) -> int:
             print(f"completion:    removed {path}")
 
     print(_SELF_REMOVAL_BANNER)
-    return 0
+    return 1 if asides_failed else 0

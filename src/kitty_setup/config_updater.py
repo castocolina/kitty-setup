@@ -267,6 +267,34 @@ def _rejection_message(check: ParseCheckResult) -> str:
     )
 
 
+# The dated name and the ``.N`` suffix that _preserve_stale_aside and install() may add to an aside.
+_PAYLOAD_ASIDE_TAIL: Final[str] = r"(?:\.\d{8}T\d{6}Z)?(?:\.\d+)?"
+
+
+def list_payload_asides(paths: ConfigPaths) -> list[Path]:
+    """The payload asides an interrupted install left under ``kitty_dir``, sorted (02-15, IN-03).
+
+    Matches the live name, the dated one and the ``.N`` one, symlinks included. A look-alike such
+    as ``kitty-setup.rollback-mine`` never matches, so it is never listed or removed.
+    """
+    if not paths.kitty_dir.is_dir():
+        return []
+    pattern = re.compile(re.escape(paths.payload_dir.name + ROLLBACK_SUFFIX) + _PAYLOAD_ASIDE_TAIL)
+    return sorted(entry for entry in paths.kitty_dir.iterdir() if pattern.fullmatch(entry.name))
+
+
+def discard_payload_aside(path: Path) -> None:
+    """Remove one payload aside. A symlink is unlinked and its target left alone (rmtree refuses
+    a symlink and must never follow one into a dotfiles repo); anything else is removed whole.
+
+    The one removal rule for asides: ``install``'s commit step and ``cli_uninstall`` both call it.
+    """
+    if path.is_symlink():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+
+
 def _preserve_stale_aside(aside: Path, kitty_dir: Path, *, now: _dt.datetime | None) -> None:
     """Move an aside left behind by an interrupted install out of the way. Never delete it.
 
@@ -279,8 +307,8 @@ def _preserve_stale_aside(aside: Path, kitty_dir: Path, *, now: _dt.datetime | N
     needs no branch on whether the payload exists. The dated name sits beside the conf backups,
     on the same filesystem, and a taken name — anything that exists, since renaming onto an empty
     directory silently replaces it — gets the smallest free ``.N`` suffix instead. Neither
-    ``prune`` nor ``uninstall`` touches the preserved copy; it is the user's to delete, which is
-    why the one stderr line names it.
+    ``prune`` never touches the preserved copy; a full uninstall removes it with the backups,
+    ``--keep-backups`` and ``--keep-config`` keep it, and every uninstall names it.
     """
     if not (aside.exists() or aside.is_symlink()):
         return
@@ -374,10 +402,7 @@ def install(
     # aside is unlinked (rmtree refuses a symlink), so the dotfiles target stays untouched.
     if previous is not None:
         try:
-            if previous.is_symlink():
-                previous.unlink()
-            else:
-                shutil.rmtree(previous)
+            discard_payload_aside(previous)
         except OSError as exc:
             print(
                 f"config: installed, but the previous payload could not be removed ({exc}); "

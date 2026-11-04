@@ -38,9 +38,9 @@ my-kitty keys           # list every active binding grouped by source; flags con
 my-kitty keys --json    # same data as machine-readable JSON
 my-kitty <TAB>          # bash + zsh tab completion (after one make install + new shell)
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
-KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
-make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups)
-make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files; remove the rest
+make test-integration            # run tests/integration headless under a nested compositor (cage)
+make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups + payload asides)
+make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files + payload asides; remove the rest
 make uninstall KEEP_CONFIG=1     # preserve entire ~/.config/kitty/ footprint; still removes kitty.app
 make uninstall KEEP_KITTY=1      # preserve kitty.app + symlink + desktop; remove config + backups
 make clean              # strip our config block + payload, wipe ./tmp/ scratch (keeps kitty + backups)
@@ -111,7 +111,7 @@ Every `make install` that detects drift on `~/.config/kitty/kitty.conf`
 writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install **never**
 deletes those files. Uninstall **deletes them by default** (per
 simplify-uninstall-defaults — "uninstall = remove everything we put on your
-system"); pass `KEEP_BACKUPS=1` to preserve them. For routine maintenance
+system"); pass `KEEP_BACKUPS=1` to preserve them. An interrupted install keeps the previous payload as `~/.config/kitty/kitty-setup.rollback.<UTC-ts>`; uninstall removes those with the backups, `KEEP_BACKUPS=1` keeps them, `prune` never touches them, and `my-kitty doctor` names any that exist. For routine maintenance
 without uninstalling, use `prune`:
 
 ```

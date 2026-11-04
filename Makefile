@@ -14,7 +14,7 @@ help:
 	@echo "  test                     run pytest (unit tree; integration items skip — see test-integration)"
 	@echo "  test-integration         run tests/integration headless under a nested compositor (PYTEST_ARGS='<files> -k <expr>' for a subset)"
 	@echo "  uninstall                remove EVERYTHING we created (tools/uninstall.sh)"
-	@echo "  uninstall KEEP_BACKUPS=1 preserve kitty.conf.bak.* files; remove the rest"
+	@echo "  uninstall KEEP_BACKUPS=1 preserve kitty.conf.bak.* files + payload asides; remove the rest"
 	@echo "  uninstall KEEP_CONFIG=1  preserve entire ~/.config/kitty/ footprint; remove kitty.app"
 	@echo "  uninstall KEEP_KITTY=1   preserve kitty.app + symlink + desktop; remove config + backups"
 	@echo "  prune                    keep 3 most recent kitty.conf backups, delete the rest"
