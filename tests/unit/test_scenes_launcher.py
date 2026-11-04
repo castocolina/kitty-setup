@@ -7,7 +7,7 @@ import json
 import re
 import shlex
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 import pytest
 
@@ -596,9 +596,9 @@ def test_pane0_injection_cwd_is_shell_quoted(monkeypatch: pytest.MonkeyPatch) ->
     # Negative form: with every single-quoted span removed, no metacharacter is left.
     unquoted = re.sub(r"'[^']*'", "", payload)
     assert ";" not in unquoted, f"shell metacharacter outside quotes in payload {payload!r}"
-    # Positive form: the exact contract — `cd`, the whole path as one quoted word, newline.
-    assert payload == f"cd {shlex.quote(_INJECT_CWD)}\n"
-    assert shlex.split(payload) == ["cd", _INJECT_CWD]
+    # Positive form (02-13, D-08 amended): `cd --`, the whole path as one single-quoted word.
+    assert payload == f"cd -- '{_INJECT_CWD}'\n"
+    assert shlex.split(payload) == ["cd", "--", _INJECT_CWD]
 
 
 def test_pane0_cmd_runs_under_bash_lc(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -606,11 +606,117 @@ def test_pane0_cmd_runs_under_bash_lc(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload == f"bash -lc {shlex.quote('echo hi')}\n"
 
 
-def test_pane0_roundtrip_cmd_with_embedded_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
-    cmd = """echo "a b" 'c'"""
-    (payload,) = _fill_tab_send_texts(monkeypatch, launcher.Pane(cmd=cmd))
-    assert payload.endswith("\n")
-    assert shlex.split(payload) == ["bash", "-lc", cmd]
+# --------------------------------------------------------------------------- #
+# 02-13 (WR-02, WR-03; amends D-08 from measurement, see 02-CONTEXT.md). A pane-0 value is typed
+# only when it is typeable: printable, with no single quote or backslash, and a `cwd` that is
+# absolute and `$`-free. Anything else takes the new-tab argv path with one stderr line. The
+# `cmd_quote` item is the deleted roundtrip case, inverted: it now falls back, because typing that
+# `cmd` was the injection surface.
+# --------------------------------------------------------------------------- #
+
+_UNTYPEABLE_CASES = [
+    pytest.param(launcher.Pane(cwd="/tmp/a'b"), {}, ("--cwd=/tmp/a'b",), id="cwd_quote"),
+    pytest.param(
+        launcher.Pane(cwd="/tmp/a\\x01b"), {}, ("--cwd=/tmp/a\\x01b",), id="cwd_backslash"
+    ),
+    pytest.param(launcher.Pane(cwd="/tmp/a\x01b"), {}, ("--cwd=/tmp/a\x01b",), id="cwd_control"),
+    pytest.param(launcher.Pane(cwd="/tmp/a\nb"), {}, ("--cwd=/tmp/a\nb",), id="cwd_newline"),
+    pytest.param(launcher.Pane(cwd="/tmp/x‮y"), {}, ("--cwd=/tmp/x‮y",), id="cwd_bidi"),
+    pytest.param(launcher.Pane(cwd="~/d"), {}, ("--cwd=~/d",), id="cwd_tilde"),
+    pytest.param(
+        launcher.Pane(cwd="$KS_PANE0_DIR/sub"),
+        {"KS_PANE0_DIR": "/tmp/kd"},
+        ("--cwd=$KS_PANE0_DIR/sub",),
+        id="cwd_var",
+    ),
+    pytest.param(launcher.Pane(cwd="sub/dir"), {}, ("--cwd=sub/dir",), id="cwd_relative"),
+    pytest.param(launcher.Pane(cwd="-x"), {}, ("--cwd=-x",), id="cwd_dash_x"),
+    pytest.param(launcher.Pane(cwd="-"), {}, ("--cwd=-",), id="cwd_dash"),
+    pytest.param(
+        launcher.Pane(cwd="$KS_PANE0_EVIL"),
+        {"KS_PANE0_EVIL": "/tmp/a'b"},
+        ("--cwd=$KS_PANE0_EVIL",),
+        id="cwd_var_expands_to_quote",
+    ),
+    pytest.param(
+        launcher.Pane(cwd="~/d"),
+        {"HOME": "/tmp/home\\x"},
+        ("--cwd=~/d",),
+        id="cwd_tilde_home_backslash",
+    ),
+    pytest.param(
+        launcher.Pane(cmd="echo \"a b\" 'c'"),
+        {},
+        ("bash", "-lc", "echo \"a b\" 'c'"),
+        id="cmd_quote",
+    ),
+    pytest.param(
+        launcher.Pane(cmd="echo \\x01"), {}, ("bash", "-lc", "echo \\x01"), id="cmd_backslash"
+    ),
+]
+
+
+def _contains_run(argv: Sequence[str], run: tuple[str, ...]) -> bool:
+    """True when ``run`` appears as consecutive elements of ``argv``."""
+    width = len(run)
+    return any(tuple(argv[i : i + width]) == run for i in range(len(argv)))
+
+
+def _fill_or_fallback_calls(
+    monkeypatch: pytest.MonkeyPatch, pane0: launcher.Pane
+) -> tuple[list[tuple[tuple[str, ...], dict[str, object]]], int]:
+    """Run a solo-tab scene ``[pane0, Pane(title="p1")]``; return the recorded calls and the rc.
+
+    The recorder answers ``ls`` (a solo tab) and then two launches, which covers the argv path's
+    two launches as well as the fill path's sends and one launch. Neither path is asserted here.
+    """
+    recorder = _Recorder([_ok(_ls_json([7])), _ok("201\n"), _ok("202\n")])
+    monkeypatch.setattr(_KITTEN_AT, recorder)
+    rc = launcher.launch_scene(
+        None, None, None, [pane0, launcher.Pane(title="p1")], origin_window=7
+    )
+    return recorder.calls, rc
+
+
+@pytest.mark.parametrize(("pane0", "env", "run"), _UNTYPEABLE_CASES)
+def test_pane0_untypeable_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    pane0: launcher.Pane,
+    env: dict[str, str],
+    run: tuple[str, ...],
+) -> None:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    calls, rc = _fill_or_fallback_calls(monkeypatch, pane0)
+    assert rc == 0
+    assert not [argv for argv, _ in calls if argv[0] == "send-text"], "no value may be typed"
+    launches = [argv for argv, _ in calls if argv[0] == "launch"]
+    assert "--type=tab" in launches[0], "pane 0 must open the scene in a new tab"
+    assert _contains_run(launches[0], run), f"pane 0 argv {launches[0]!r} lacks {run!r}"
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1 and "pane 0" in err and "new tab" in err, f"stderr {err!r}"
+
+
+@pytest.mark.parametrize(
+    ("pane0", "payload"),
+    [
+        pytest.param(launcher.Pane(cmd="=bash"), "bash -lc '=bash'\n", id="cmd_equals"),
+        pytest.param(launcher.Pane(cmd="%self"), "bash -lc '%self'\n", id="cmd_percent"),
+        pytest.param(launcher.Pane(cwd="/x/a==bash"), "cd -- '/x/a==bash'\n", id="cwd_equals"),
+    ],
+)
+def test_pane0_typed_literal_is_single_quoted(
+    monkeypatch: pytest.MonkeyPatch, pane0: launcher.Pane, payload: str
+) -> None:
+    assert _fill_tab_send_texts(monkeypatch, pane0) == [payload]
+
+
+def test_pane0_cwd_absolute_is_normalised(monkeypatch: pytest.MonkeyPatch) -> None:
+    # kitty's abspath of an absolute path is its normpath, so the shell enters the same directory.
+    assert _fill_tab_send_texts(monkeypatch, launcher.Pane(cwd="/tmp/x/../y//z")) == [
+        "cd -- '/tmp/y/z'\n"
+    ]
 
 
 def test_pane0_none_early_out_sends_no_text(monkeypatch: pytest.MonkeyPatch) -> None:
