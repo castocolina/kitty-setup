@@ -4,6 +4,10 @@ Integration tests live under ``tests/integration/`` and are skipped unless
 the environment variable ``KITTI_INTEGRATION`` is set to ``1``. This keeps
 the default `pytest` run fast and host-independent; the autonomous Kitty
 sessions spawn real windows (minimized) and need a working `~/.local/kitty.app`.
+
+With ``KITTI_INTEGRATION=1`` the collection hook also refuses every collected item outside
+``tests/integration/`` (02-15, IN-02): the runner may only narrow the run, and this hook is the one
+place that sees pytest's real collection, so a widening the runner cannot see fails loudly.
 """
 
 from __future__ import annotations
@@ -42,12 +46,23 @@ def copy_clear_payload(dest_dir: Path) -> Path:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip ``tests/integration/`` items unless ``KITTI_INTEGRATION=1`` is set."""
+    """With the variable set, refuse items outside tests/integration/; else skip those inside it.
+
+    Under ``KITTI_INTEGRATION=1`` any collected item outside the integration tree is a usage error
+    (pytest exit status 4, and no test body runs). Without the variable, ``tests/integration/``
+    items are skipped as before.
+    """
     del config
+    integration_dir = REPO_ROOT / "tests" / "integration"
     if os.environ.get(INTEGRATION_ENV_VAR) == "1":
+        outside = [item for item in items if not item.path.is_relative_to(integration_dir)]
+        if outside:
+            raise pytest.UsageError(
+                f"{INTEGRATION_ENV_VAR}=1 runs only tests/integration/; collected {len(outside)} "
+                f"item(s) outside it, first: {outside[0].nodeid}"
+            )
         return
     skip = pytest.mark.skip(reason=f"set {INTEGRATION_ENV_VAR}=1 to run integration tests")
-    integration_dir = REPO_ROOT / "tests" / "integration"
     for item in items:
         if str(item.path).startswith(str(integration_dir)):
             item.add_marker(skip)

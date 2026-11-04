@@ -37,7 +37,7 @@ The pipeline (added with the first Python module) is:
 | black   | canonical formatter, 100 cols     | `pyproject.toml`    |
 | ruff    | lint-only (no formatting), 100 c. | `pyproject.toml`    |
 | pyright | strict type checking              | `pyproject.toml`    |
-| bandit  | security lint                     | `pyproject.toml`    |
+| bandit  | security lint                     | `pyproject.toml` (read only via `-c pyproject.toml`) |
 | vulture | dead-code detection               | `vulture_allowlist` |
 | pytest  | tests + coverage                  | `pyproject.toml`    |
 
@@ -51,8 +51,8 @@ task ID — never a dumping ground.
 uv run black <file>
 uv run ruff check <file> --fix
 uv run pyright <file>
-uv run bandit -r <file>
-uv run vulture
+uv run bandit -c pyproject.toml -q -r <path>
+uv run vulture src tests vulture_allowlist.py
 uv run pytest tests/unit/test_<module>.py
 ```
 
@@ -63,7 +63,7 @@ make format            # black + ruff --fix on src/ and tests/
 make validate          # full pre-commit pipeline
 make test              # pytest with coverage
 make test-unit
-make test-integration  # real Kitty session; KITTI_INTEGRATION=1 to enable
+make test-integration  # tests/integration headless under a nested compositor (cage); fails loudly without one
 ```
 
 Never commit code that fails `make validate`.

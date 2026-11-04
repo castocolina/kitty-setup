@@ -119,9 +119,91 @@ def test_none_sentinel_passes_through() -> None:
     assert normalize_color("none") == "NONE"
 
 
-def test_functional_and_rgb_forms_pass_through() -> None:
+def test_passthrough_rejects_rgba_function_but_keeps_rgb_colon() -> None:
+    # Inverted by 02-06 (D-12 as amended by U-2). This test used to assert that
+    # rgba(1,2,3,0.5) passes through; kitty 0.49.0 rejects it at both kitten verbs
+    # (`set-colors background=` and `set-tab-color active_bg=`: exit 1 "is not a
+    # valid color"), so the only passthrough form is `rgb:`.
     assert normalize_color("rgb:00/ff/00") == "rgb:00/ff/00"
-    assert normalize_color("rgba(1,2,3,0.5)") == "rgba(1,2,3,0.5)"
+    with pytest.raises(ColorError):
+        normalize_color("rgba(1,2,3,0.5)")
+
+
+# Every value below was measured against kitty 0.49.0 at both kitten verbs
+# (`set-colors background=<v>`, `set-tab-color active_bg=<v>`, headless kitty via
+# `make test-integration`) and against its own parser, `kitty.options.utils.to_color`.
+# Evidence: tmp/h32-color-forms/ (live-matrix-before.json, run-before.txt).
+@pytest.mark.parametrize(
+    "value",
+    [
+        # rgba: colon form — kitten exit 1 "rgba:00/ff/00/80 is not a valid color" at both
+        # verbs; to_color: ValueError "Invalid color name".
+        "rgba:00/ff/00/80",
+        # CSS rgb() — kitten exit 1 "rgb(1,2,3) is not a valid color" at both verbs;
+        # to_color: ValueError "Invalid color name".
+        "rgb(1,2,3)",
+        # CSS rgba() — kitten exit 1 "rgba(1,2,3,0.5) is not a valid color" at both verbs;
+        # to_color: ValueError "Invalid color name".
+        "rgba(1,2,3,0.5)",
+        # CSS hsl() — kitten exit 1 "hsl(120,50%,50%) is not a valid color" at both verbs;
+        # to_color: ValueError "Invalid color name".
+        "hsl(120,50%,50%)",
+    ],
+)
+def test_passthrough_rejects_kitty_rejected_form(value: str) -> None:
+    with pytest.raises(ColorError):
+        normalize_color(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Contains a colon, so the old contains-a-colon rule passed it through;
+        # kitten exit 1 "foo:bar is not a valid color" at both verbs.
+        "foo:bar",
+        # Contains a parenthesis, so the old rule passed it through;
+        # kitten exit 1 "a(b is not a valid color" at both verbs.
+        "a(b",
+    ],
+)
+def test_passthrough_rejects_junk(value: str) -> None:
+    with pytest.raises(ColorError):
+        normalize_color(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Non-hex group — kitten exit 1 "rgb:xyz/00/00 is not a valid color" at both verbs.
+        "rgb:xyz/00/00",
+        # Two groups — kitten exit 1 "rgb:00/00 is not a valid color" at both verbs.
+        "rgb:00/00",
+        # Four groups — kitten exit 1 "rgb:0/0/0/0 is not a valid color" at both verbs
+        # (to_color alone accepts it; the kitten, which normalize_color feeds, does not).
+        "rgb:0/0/0/0",
+        # Five-digit group — the kitten PANICS (exit 2, "slice bounds out of range") at
+        # both verbs; to_color alone accepts it. Hence one to four digits per group.
+        "rgb:fffff/0/0",
+    ],
+)
+def test_passthrough_rejects_malformed_rgb_colon(value: str) -> None:
+    with pytest.raises(ColorError):
+        normalize_color(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # kitten exit 0 at both verbs; to_color accepts.
+        "rgb:00/ff/00",
+        # kitten exit 0 at both verbs; to_color accepts (one-digit groups).
+        "rgb:0/f/0",
+        # kitten exit 0 at both verbs; the prefix and digits are case-insensitive.
+        "RGB:00/FF/00",
+    ],
+)
+def test_guard_rgb_colon_forms_pass(value: str) -> None:
+    assert normalize_color(value) == value
 
 
 def test_empty_and_none_become_absent() -> None:

@@ -140,7 +140,7 @@ def _resolve_kitty_bin() -> Path:
     on_path = shutil.which("kitty")
     if on_path is not None:
         return Path(on_path)
-    candidates = [installer.SYMLINK_PATH, installer._kitty_bin(installer.DEFAULT_DEST)]
+    candidates = [installer.SYMLINK_PATH, installer.kitty_bin_path(installer.DEFAULT_DEST)]
     for c in candidates:
         if c.is_file() or c.is_symlink():
             return c
@@ -152,7 +152,7 @@ def _resolve_kitty_bin() -> Path:
 def _run_kitty_runpy(kitty_bin: Path, conf_path: Path) -> list[dict[str, str]]:
     """Invoke ``kitty +runpy <snippet> <conf_path>``; return parsed JSON list."""
     try:
-        result = subprocess.run(  # noqa: S603 — args are constructed from trusted paths
+        result = subprocess.run(
             [str(kitty_bin), "+runpy", _RUNPY_SNIPPET, str(conf_path)],
             capture_output=True,
             text=True,

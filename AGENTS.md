@@ -107,9 +107,14 @@ or stdin parse plus one guarded call); a hook that outgrows
 `tools/uninstall.sh`'s dispatcher delegates to a `my-kitty` subcommand. No
 shell scripts outside those two clauses — anything beyond them is a
 subcommand under `src/kitty_setup/cli.py`, the single `[project.scripts]`
-entry point (`my-kitty`). The Makefile is thin glue: each target is at most
-five lines, and any target that grows past that dispatches into `tools/` or a
-subcommand of `my-kitty`.
+entry point (`my-kitty`). One exception, for developer-only tooling that is
+not part of the installed product: it may be a Python module under
+`src/kitty_setup/harness/` run as `uv run python -m kitty_setup.harness.<name>`
+— today, only the integration-test runner. It adds no shell and ships no
+end-user command; a `my-kitty` subcommand would hand users a pytest runner
+for a `tests/` tree they do not have. The Makefile is thin glue: each target
+is at most five lines, and any target that grows past that dispatches into
+`tools/`, a subcommand of `my-kitty`, or such a harness module.
 
 ## Pluggable rules
 

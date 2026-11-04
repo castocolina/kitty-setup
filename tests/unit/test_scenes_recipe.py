@@ -10,6 +10,7 @@ dispatch.
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -318,3 +319,41 @@ def test_named_scene_invokes_launch_scene_with_loaded_args(
     assert recorded["layout"] == "tall"
     assert recorded["tab_title"] == "T"
     assert recorded["panes"] == [Pane(title="p1", cmd="echo p1")]
+
+
+# --------------------------------------------------------------------------- #
+# 02-13 (WR-02, T-2-78) — a NUL in any recipe string is refused by the loader before any kitten
+# call. argv cannot carry a NUL, so `subprocess.run` raised an uncaught ValueError at HEAD.
+# --------------------------------------------------------------------------- #
+
+_NUL_BODIES = [
+    pytest.param('[[pane]]\ncwd = "/tmp/a\\u0000b"\n\n[[pane]]\ntitle = "p1"\n', id="pane_cwd"),
+    pytest.param('[[pane]]\ncmd = "echo a\\u0000b"\n\n[[pane]]\ntitle = "p1"\n', id="pane_cmd"),
+    pytest.param(
+        'tab_title = "t\\u0000"\n\n[[pane]]\ntitle = "p0"\n\n[[pane]]\ntitle = "p1"\n',
+        id="tab_title",
+    ),
+]
+
+
+@pytest.mark.parametrize("body", _NUL_BODIES)
+def test_recipe_nul_refused_before_any_kitten_call(
+    scenes_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+) -> None:
+    _write(scenes_root, "nul", body)
+    monkeypatch.delenv("KITTY_WINDOW_ID", raising=False)
+    calls: list[tuple[str, ...]] = []
+
+    def _recorder(verb: str, *args: str, to: str | None = None) -> subprocess.CompletedProcess[str]:
+        calls.append((verb, *args))
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="201\n", stderr="")
+
+    monkeypatch.setattr("kitty_setup.scenes._client.kitten_at", _recorder)
+    rc = launcher.cli_scene_launch(_launch_ns(name="nul"))
+    lines = capsys.readouterr().err.splitlines()
+    assert rc == 1
+    assert calls == [], f"no kitten call may run for a refused recipe: {calls}"
+    assert len(lines) == 1 and lines[0].startswith("my-kitty scene launch: ") and "NUL" in lines[0]

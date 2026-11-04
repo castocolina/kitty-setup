@@ -88,6 +88,56 @@ ignore = []
 # noqa" finding — growing the repo's recorded lint baseline from 19 findings to 21 instead of
 # holding it. The narrower entry holds it at 19. See 01-01-SUMMARY.md "Deviations".
 "tests/unit/test_git_hooks.py" = ["S603", "S607"]
+# S603/S607: test_tools_uninstall_sh.py (R1.3, 02-03) runs a fixed argv of `bash` and the tracked
+#       tools/uninstall.sh with shell=False and a complete replacement env built from literals and
+#       tmp_path values. `bash` is named without an absolute path on purpose: it is resolved from
+#       that sandbox PATH, never the developer's. Scoped to this one file for the reason above.
+"tests/unit/test_tools_uninstall_sh.py" = ["S603", "S607"]
+# S603: the headless integration runner (R0.13, 02-11) passes every argv as a list with
+#       shell=False, built from shutil.which's absolute compositor path and sys.executable.
+#       The only caller-supplied part is the developer's own PYTEST_ARGS, which reaches pytest
+#       as arguments and never a shell. Scoped to this one file for the reason given above.
+"src/kitty_setup/harness/integration_runner.py" = ["S603"]
+# S603: the completion e2e module (R1.1, 02-02) starts real bash and zsh with a list argv and
+#       shell=False; the shell path comes from shutil.which and the script text is a module
+#       literal, so no untrusted input reaches the call. Scoped to this one file for the reason
+#       given above.
+"tests/integration/test_completion_e2e.py" = ["S603"]
+# S603: test_makefile_clean.py (02-12, IN-07) runs `make` by the absolute path shutil.which resolved,
+#       with shell=False and a complete sandbox env built from literals and tmp_path values. Scoped to
+#       this one file for the reason given above.
+"tests/unit/test_makefile_clean.py" = ["S603"]
+# S603: test_unit_hermeticity.py (02-12, IN-08) runs `sys.executable -m pytest` over a sandbox project,
+#       with shell=False and a complete sandbox env built from literals and tmp_path values. Scoped to
+#       this one file for the reason given above.
+"tests/unit/test_unit_hermeticity.py" = ["S603"]
+# S603: test_bandit_scope.py (02-15, IN-05) runs `sys.executable -m bandit` over src/ with shell=False
+#       and a fixed argv of literals and the repo root. Scoped to this one file for the reason given above.
+"tests/unit/test_bandit_scope.py" = ["S603"]
+# --- src/ entries (R0.11, 02-10): these replace the last inline `# noqa` directives, in the
+# same edit that removes them, because adding an id to a config ignore list turns every
+# existing directive for it into a RUF100 finding (the measured Phase 1 lesson recorded
+# above at the test_git_hooks.py entry). Each entry is scoped to the one module that carries
+# the call shape, never appended to a broad glob.
+# S603: every remaining src/ subprocess call passes a list argv with shell=False, built from
+#       module constants, shutil.which results, or paths under the user's own HOME; there is
+#       no untrusted input to re-check at each call site. Covers the nine sites ruff named
+#       when the directives were removed (installer, doctor, config_updater,
+#       binding_introspection, harness/kitty_session, scenes/_client).
+# S607: installer.py's `sh` (upstream installer script) and _client.py's `pgrep` are
+#       deliberately PATH-resolved. Absolutising them with shutil.which would pin a path the
+#       host may legitimately vary and add a lookup that can fail for a binary the OS
+#       guarantees — the same decision as the git-binary precedent recorded above at the
+#       test_git_hooks.py entry. Absolutising was considered and rejected.
+"src/kitty_setup/installer.py" = ["S603", "S607"]
+"src/kitty_setup/doctor.py" = ["S603"]
+"src/kitty_setup/config_updater.py" = ["S603"]
+"src/kitty_setup/binding_introspection.py" = ["S603"]
+"src/kitty_setup/harness/kitty_session.py" = ["S603"]
+"src/kitty_setup/scenes/_client.py" = ["S603", "S607"]
+# B018: vulture_allowlist.py — the useless expression (`_.name` assignments) is the allowlist
+#       mechanism itself and is intentional (R0.11, 02-10).
+"vulture_allowlist.py" = ["B018", "E501"]
 
 [tool.pyright]
 include = ["src", "tests"]
@@ -97,6 +147,28 @@ reportMissingTypeStubs = false
 
 [tool.bandit]
 exclude_dirs = ["tests", "tmp"]
+# Every id is named with its own reason (R0.11, 02-10); a blanket skip is deliberately not used.
+# B404 (x8, every module that imports subprocess): the tool's purpose is driving kitty; the
+#   import is unavoidable, not a finding.
+# B603 (x12): every subprocess call passes a list argv with shell=False; the same trusted-input
+#   reasoning as ruff's S603 entries above, which cover the same call sites.
+# B604 (x8, path_integration.py x7 + installer.py x1): a false positive — each is a `shell=`
+#   keyword argument to a function that runs nothing (PathEditResult(...) dataclass
+#   constructors, argcomplete's shellcode(..., shell=...)), which bandit mistakes for a
+#   shell-injection sink. No subprocess call carries shell=True anywhere in src/.
+# B607 (x2): the same two partial-path sites as ruff's S607 (installer.py's `sh`,
+#   _client.py's `pgrep`) — deliberately PATH-resolved, see the ruff rationale above.
+#   B604 and B607 are scoped per site (file, id, enclosing def, callee) by
+#   tests/unit/test_bandit_scope.py, which `make test` runs: bandit's config cannot scope an id to a file.
+# The URL-fetch id is no longer skipped: its one site, the installer download's urlopen, is gone (IN-06).
+skips = ["B404", "B603", "B604", "B607"]
+
+[tool.vulture]
+# Pytest resolves a fixture by name — as a test parameter, via @pytest.mark.usefixtures, or as
+# autouse — and no static scan sees that. Every fixture is set aside by its decorator rather
+# than listed by name. This covers fake_home, uninstall_stubs, isolated_completion_dir today
+# and any fixture a later phase adds.
+ignore_decorators = ["@pytest.fixture"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -32,10 +32,14 @@ repeated in each phase's success criteria — they are preconditions for calling
    - **`src/` must be clean** under ruff, black, pyright, bandit and vulture. Phase 2 brings it
      there (R0.11); from then on this is a hard gate.
    - **`tests/` must not regress** — no tool's finding count may grow against the recorded
-     baseline (measured at `5452f54`: ruff 28, black 11 files, pyright 571 errors of which 19 are
-     in `src/`, bandit 0 high / 8 medium / 19 low, vulture 12). Phase 8.5 drives the `tests/`
+     baseline (measured at `5452f54`: ruff 28, black 11 files, pyright 571 errors of which 15 are
+     in `src/` (`uv run pyright src`), bandit 0 high / 8 medium / 19 low, vulture 12 (`uv run vulture src tests`; `src` alone reports 13)). Phase 8.5 drives the `tests/`
      remainder down.
    - A phase that *adds* a file owns that file being clean, wherever it lives.
+   - **The integration suite must have been run, headless, with its output captured** (R0.13,
+     from Phase 2 onward). `make test` alone skips all 70 integration tests, so a phase that
+     reports only `make test` has verified nothing under `tests/integration/`. A skipped
+     integration run never counts as a green one.
 6. **Commit + merge + push** — each phase runs in its own git worktree on branch
    `gsd/phase-{phase}-{slug}`; work lands as **one commit per plan** — the granularity rule
    lives in `AGENTS.md` and is pointed to, not restated here — then at phase end (gates
@@ -59,7 +63,7 @@ discuss-phase.
 - Decimal phases (2.1, 2.2): urgent insertions (marked INSERTED), executing between integers
 
 - [ ] **Phase 1: Governance & Freeze** - Lock the mantra, the git policy, and `.planning/` as the one source of truth; archive and freeze `openspec/`
-- [ ] **Phase 2: Defect Remediation** - Fix every known audit defect with a regression test so a fresh install is all PASS/SKIP
+- [x] **Phase 2: Defect Remediation** - Fix every known audit defect with a regression test so a fresh install is all PASS/SKIP (completed 2026-11-04)
 - [ ] **Phase 3: Keybinding Research & Oracle** - Build the `keys`-vs-live-kitty oracle test first, then the chord matrix and the categorisation experiment
 - [ ] **Phase 4: Keybinding Harmonization** - Make chords kitty-organic per OS, judged by the oracle
 - [ ] **Phase 5: Component Separation & Version Floor** - Foundation and scenes install independently, no cross-imports, doctor enforces a minimum kitty version
@@ -113,17 +117,34 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
 
 **Goal**: A fresh install on Bazzite is provably healthy — `my-kitty doctor` is all PASS/SKIP and every known audit defect is fixed and pinned by a regression test, giving later phases a green baseline they can trust.
 **Depends on**: Phase 1
-**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R0.11
+**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R0.11, R0.13
 **Success Criteria** (what must be TRUE):
 
   1. `my-kitty doctor` exits 0 with every check PASS or SKIP on a fresh Bazzite uv-tool install: completion works via an install-generated static completion file that the rc block sources (no runtime `register-python-argcomplete` PATH lookup), and checks that previously printed "skipped" now report a real SKIP state.
   2. `make clean` never removes `kitty.app` or backups and its help text matches what it does; `tools/uninstall.sh` logs `resolve_binary` failures to stderr where they are visible and its legacy-binary branch works — both branches covered by tests.
   3. A scene whose `cwd` contains spaces fills the current tab correctly (pane-0 `cwd` shell-quoted), and pane 0 honours the same `bash -lc` semantics as every other pane.
   4. A failing config-parse check reports the actual command it ran, surfaces the parser's stderr, rolls the payload directory back, and is labelled correctly in doctor; the integration suite passes when run from inside a kitty window (`KITTY_WINDOW_ID` stripped in h25 and `scene_recipe_e2e`).
-  5. Every remaining minor defect has a regression test: the install log removed outright, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors treated as absent and passthrough restricted to real `rgb:`/`rgba:`/functional forms, `prune --keep <0` raising an argparse error, harness teardown issuing `close-os-window`, and the PATH-migration and unsupported-shell hint messages printed exactly as specified (both lines).
+  5. Every remaining minor defect has a regression test: the install log removed outright, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors treated as absent and passthrough restricted to **`rgb:` only** (narrowed 2026-09-23 — kitty 0.49.0's parser rejects `rgba:`, `rgb()`, `rgba()` and `hsl()`), `prune --keep <0` raising an argparse error, the harness teardown verb **left as `close-window`** (`close-os-window` is not a `kitten @` subcommand in kitty 0.49.0; see R1.7), the PATH-migration messages printed exactly as specified, and the unsupported-shell hint printing the PATH export plus an explicit "no completion for this shell" statement rather than another shell's completion line (amended 2026-09-23, see R1.7).
 
-  6. `uv run ruff check src`, `uv run black --check src`, `uv run pyright` over `src`, `uv run bandit -q -r src` and `uv run vulture src` all report clean for `src/` (R0.11) — the Universal Phase Gate's src half becomes a hard gate from this phase onward. `tests/` is out of scope here; Phase 8.5 owns it.
-**Plans**: TBD
+  6. `uv run ruff check src`, `uv run black --check src`, `uv run pyright src`, `uv run bandit -c pyproject.toml -q -r src` and `uv run vulture src tests vulture_allowlist.py` all report clean for `src/` (R0.11) — the Universal Phase Gate's src half becomes a hard gate from this phase onward. `tests/` is out of scope here; Phase 8.5 owns it.
+
+  7. **The integration suite runs, and is seen to run** (R0.13): `make test-integration` executes all of `tests/integration/` headless under a nested compositor and reports its real count — measured green today at **70 passed in 43.81s** — while `make test` keeps its fast unit-only default. A run that skips because no compositor was found says so loudly and does not count as green. Genuinely dead code found on the way is **deleted**, not allowlisted; only framework idioms that a static checker cannot see through (argcomplete's `completer` attribute, `__exit__`'s signature parameters, pytest's own hooks, and an enum member reached only by value lookup or iteration — today `CompletionShell.BASH`, via `CompletionShell(shell)` and `for member in CompletionShell`) go in `vulture_allowlist.py`, each with a one-line reason. Pytest fixtures, which pytest resolves by parameter name or `usefixtures`, are excluded generically through vulture's `ignore_decorators = ["@pytest.fixture"]` in `[tool.vulture]` rather than named one by one. (Amended 2026-09-24 from a measured decision: 02-01/02-02 added these four vulture findings, and deleting any of them breaks bash completion or the tests that use the fixtures.)
+**Plans**: 15/15 plans complete
+- [x] 02-01-PLAN.md
+- [x] 02-02-PLAN.md
+- [x] 02-03-PLAN.md
+- [x] 02-04-PLAN.md
+- [x] 02-05-PLAN.md
+- [x] 02-06-PLAN.md
+- [x] 02-07-PLAN.md
+- [x] 02-08-PLAN.md
+- [x] 02-09-PLAN.md
+- [x] 02-10-PLAN.md
+- [x] 02-11-PLAN.md
+- [x] 02-12-PLAN.md
+- [x] 02-13-PLAN.md
+- [x] 02-14-PLAN.md
+- [x] 02-15-PLAN.md
 
 ### Phase 3: Keybinding Research & Oracle
 
@@ -188,6 +209,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   6. `my-kitty keys` lists the new chord, `doctor`'s `<N> ours` count matches, and the Phase 3 oracle is green.
 
 **Plans**: TBD
+**Pending scope input** (2026-10-15): [todo — toggle whole-tab background with a chord](todos/pending/2026-10-15-tab-wide-background-toggle-chord.md). It changes R4.x scope (same chord with a `--tab` mode, a second `ctrl+shift+alt+b` / `cmd+alt+b` chord, or swapped roles), so re-run `/gsd-discuss-phase 6` (update the existing CONTEXT) before this phase is planned.
 
 ### Phase 7: Presets & Chord→Scene
 
@@ -227,7 +249,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   1. `uv run pyright` reports **0 errors** across `include = ["src", "tests"]`, or `pyproject.toml` records a deliberate, justified narrowing (e.g. a laxer `typeCheckingMode` for `tests`) with the rationale written next to it — a silent scope reduction does not satisfy this.
   2. `uv run ruff check src tests tools` and `uv run black --check src tests tools` both exit 0.
   3. `uv run vulture src tests` reports no finding that is a real dead-code defect; each remaining report is either removed or whitelisted with a one-line reason.
-  4. `uv run bandit -q -r src` has no high-severity issue, and every medium is either fixed or carries an inline `# nosec` with a stated reason.
+  4. `uv run bandit -c pyproject.toml -q -r src` has no high-severity issue (the `-c` is load-bearing: bandit 1.9.4 does not auto-load `pyproject.toml`, so without it `[tool.bandit]` never applies — measured 2026-09-23, 1094 issues bare vs 30 with `-c` over `src tests`), and every medium is either fixed or carries an inline `# nosec` with a stated reason.
   5. No test's **behaviour** changed to satisfy a type checker: the suite's pass/fail set before and after is identical, evidenced by a captured run of both.
   6. The Universal Phase Gate's step 5 is updated to drop the `tests/` no-regression clause, because the baseline is now zero.
 
@@ -248,6 +270,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
 
 **Plans**: TBD
 **Note**: Added 2026-09-22 during Phase 1 discussion, modeled on `../wezterm-setup/tools/install.sh`; moved ahead of macOS verification on 2026-09-22 at the user's request. The installer's macOS run moved with it — it is now criterion 5 of Phase 10, which owns every Mac-side check. Out of scope: publishing to a package manager (brew/apt), and any signing/notarization work.
+**Pending scope input** (2026-10-15): [todo — headless install that always fetches latest kitty](todos/pending/2026-10-15-headless-install-latest-kitty.md). It adds a non-interactive install path and an explicit "latest kitty" choice (owner-decided: a user choice, not the out-of-scope auto-upgrade) to R8.1/R8.2, with a scriptable contract for `../tools-installer`. `/gsd-discuss-phase 9` folds it in when this phase is reached.
 
 ### Phase 10: macOS E2E Over SSH
 
@@ -275,7 +298,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Governance & Freeze | 5/5 | Complete (merge deferred) | 2026-09-23 |
-| 2. Defect Remediation | 0/TBD | Not started | - |
+| 2. Defect Remediation | 15/15 | Complete    | 2026-11-04 |
 | 3. Keybinding Research & Oracle | 0/TBD | Not started | - |
 | 4. Keybinding Harmonization | 0/TBD | Not started | - |
 | 5. Component Separation & Version Floor | 0/TBD | Not started | - |

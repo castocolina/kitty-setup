@@ -14,7 +14,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-log() { printf '[uninstall] %s\n' "$*"; }
+log() { printf '[uninstall] %s\n' "$*" >&2; }
 
 resolve_binary() {
     if command -v my-kitty >/dev/null 2>&1; then
@@ -67,12 +67,14 @@ print_will_remove() {
         printf '  - payload directory ~/.config/kitty/kitty-setup/\n'
         if [[ "${keep_backups}" != "1" ]]; then
             printf '  - all kitty.conf.bak.* backup files\n'
+            printf '  - payload asides ~/.config/kitty/kitty-setup.rollback* left by interrupted installs\n'
         fi
     fi
     if [[ "${keep_kitty}" != "1" ]]; then
         printf '  - ~/.local/kitty.app/\n'
         printf '  - ~/.local/bin/kitty symlink\n'
         printf '  - ~/.local/share/applications/kitty.desktop\n'
+        printf '  - ~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty,my-kitty-completion.zsh}\n'
     fi
     printf '\n'
     printf 'After this completes, run `uv tool uninstall my-kitty` to remove the binary itself.\n'

@@ -34,7 +34,7 @@ def test_resolve_socket_returns_to_when_set(monkeypatch: pytest.MonkeyPatch) -> 
     def boom() -> list[int]:
         raise AssertionError("pgrep must not run when --to is passed")
 
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", boom)
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", boom)
     assert _client._resolve_socket("unix:/tmp/kitty-3333") == "unix:/tmp/kitty-3333"
 
 
@@ -45,7 +45,7 @@ def test_resolve_socket_returns_env_when_set(monkeypatch: pytest.MonkeyPatch) ->
     def boom() -> list[int]:
         raise AssertionError("pgrep must not run when $KITTY_LISTEN_ON is set")
 
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", boom)
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", boom)
     assert _client._resolve_socket(None) == "unix:/tmp/kitty-1111"
 
 
@@ -61,7 +61,7 @@ def test_resolve_socket_pgrep_single_pid_success(
     monkeypatch.setattr(
         config_updater.ConfigPaths, "for_user", classmethod(lambda cls, home=None: paths)
     )
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [4242])
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [4242])
     assert _client._resolve_socket(None) == "unix:/tmp/kitty-4242"
 
 
@@ -79,7 +79,7 @@ def test_resolve_socket_config_absent_raises(
     def boom() -> list[int]:
         raise AssertionError("pgrep must not run when config is absent")
 
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", boom)
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", boom)
     with pytest.raises(_client.SceneClientError, match="remote-control.conf missing"):
         _client._resolve_socket(None)
 
@@ -101,7 +101,7 @@ def test_resolve_socket_config_present_no_directive_raises(
     def boom() -> list[int]:
         raise AssertionError("pgrep must not run when listen_on directive is missing")
 
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", boom)
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", boom)
     with pytest.raises(_client.SceneClientError, match="remote-control.conf missing"):
         _client._resolve_socket(None)
 
@@ -118,7 +118,7 @@ def test_resolve_socket_zero_pids_raises(
     monkeypatch.setattr(
         config_updater.ConfigPaths, "for_user", classmethod(lambda cls, home=None: paths)
     )
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [])
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [])
     with pytest.raises(_client.SceneClientError, match="no kitty process found"):
         _client._resolve_socket(None)
 
@@ -135,7 +135,7 @@ def test_resolve_socket_multi_pids_raises(
     monkeypatch.setattr(
         config_updater.ConfigPaths, "for_user", classmethod(lambda cls, home=None: paths)
     )
-    monkeypatch.setattr(_client, "_pgrep_kitty_pids", lambda: [101, 202])
+    monkeypatch.setattr(_client, "pgrep_kitty_pids", lambda: [101, 202])
     with pytest.raises(_client.SceneClientError, match=r"multiple kitty processes.*101.*202"):
         _client._resolve_socket(None)
 

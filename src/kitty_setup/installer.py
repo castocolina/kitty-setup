@@ -5,8 +5,10 @@ The install path is intentionally per-user and ``sudo``-free:
 * ``~/.local/kitty.app/`` — payload from the upstream installer.
 * ``~/.local/bin/kitty`` — symlink to ``~/.local/kitty.app/bin/kitty``.
 * ``~/.local/share/applications/kitty.desktop`` — desktop entry.
+* ``~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty}`` — shell completion.
 * ``~/.config/kitty/kitty-setup/`` — our configuration payload.
 * ``~/.config/kitty/kitty.conf`` — modified between sentinel markers only.
+* ``~/.config/kitty/kitty-setup.rollback*`` — payload asides an interrupted install left (02-15).
 
 The CLI handlers in this module (``cli_install`` / ``cli_uninstall``) are
 dispatched from :mod:`kitty_setup.cli` under the ``my-kitty-setup`` entry point.
@@ -16,22 +18,59 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import enum
+import http.client
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import IO, Final
+
+import argcomplete
 
 from kitty_setup import config_updater, path_integration, pruner
+
+# ``argcomplete.shellcode`` generates the completion script in-process (D-02). argcomplete 3.6.3,
+# the uv.lock pin, defines it without annotations and leaves it out of ``__all__``, so pyright
+# strict reads the attribute as private and partially Unknown. Taking it from the module namespace
+# yields ``Any``, which this annotation narrows; argcomplete 3.7.2 annotates the same function as
+# ``(executables: Iterable[str], ..., shell: str = "bash", ...) -> str``. No suppression comment.
+_ARGCOMPLETE_SHELLCODE: Final[Callable[..., str]] = vars(argcomplete)["shellcode"]
 
 INSTALLER_URL: Final[str] = "https://sw.kovidgoyal.net/kitty/installer.sh"
 DEFAULT_DEST: Final[Path] = Path.home() / ".local"
 KITTY_APP_DIRNAME: Final[str] = "kitty.app"
 SYMLINK_PATH: Final[Path] = Path.home() / ".local" / "bin" / "kitty"
 DESKTOP_PATH: Final[Path] = Path.home() / ".local" / "share" / "applications" / "kitty.desktop"
+# D-01 names this literal path; ``XDG_DATA_HOME`` is deliberately not consulted, matching the
+# three constants above. ``_COMPLETION_RELDIR`` is the same location relative to an injected home.
+_COMPLETION_RELDIR: Final[Path] = Path(".local") / "share" / "kitty-setup"
+COMPLETION_DIR: Final[Path] = Path.home() / _COMPLETION_RELDIR
+# zsh's script is named ``_my-kitty`` so zsh's ``fpath`` autoload registers it (02-14). The
+# 02-02-era name is only removed, by a zsh write or an uninstall, never written again.
+COMPLETION_BASENAMES: Final[dict[str, str]] = {
+    "bash": "my-kitty-completion.bash",
+    "zsh": "_my-kitty",
+}
+_LEGACY_ZSH_BASENAME: Final[str] = "my-kitty-completion.zsh"
+COMPLETION_PROG: Final[str] = "my-kitty"
+
+
+class CompletionShell(enum.StrEnum):
+    """Shells we generate a completion script for.
+
+    argcomplete's own ``--shell`` choices, narrowed to the two shells whose rc file
+    ``path_integration`` edits.
+    """
+
+    BASH = "bash"
+    ZSH = "zsh"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -113,12 +152,12 @@ def seed_scenes() -> tuple[int, int]:
     return (seeded, kept)
 
 
-def _kitty_bin(dest: Path) -> Path:
+def kitty_bin_path(dest: Path) -> Path:
     return dest / KITTY_APP_DIRNAME / "bin" / "kitty"
 
 
 def _capture_version(kitty_bin: Path) -> str:
-    result = subprocess.run(  # noqa: S603 — args constructed from trusted paths
+    result = subprocess.run(
         [str(kitty_bin), "--version"],
         capture_output=True,
         text=True,
@@ -128,16 +167,52 @@ def _capture_version(kitty_bin: Path) -> str:
     return result.stdout.strip()
 
 
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuses a redirect to any scheme but https, on every hop (ASVS V12, IN-06 / A-1, 02-15).
+
+    ``http_error_302`` resolves each Location to an absolute URL and calls ``redirect_request``
+    with it, so this override sees every hop, relative ones included.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        if urllib.parse.urlparse(newurl).scheme.lower() != "https":
+            fp.close()
+            raise ValueError(f"installer download redirected to a non-https URL: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _download_installer(url: str = INSTALLER_URL) -> Path:
-    tmp = Path(tempfile.mkstemp(prefix="kitty-installer-", suffix=".sh")[1])
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 — pinned URL
-        tmp.write_bytes(response.read())
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme != "https":
+        # ASVS V12: the fetched script is executed with `sh`, so a scheme downgrade is a
+        # code-execution path. Raised (not asserted, so -O cannot strip it) and checked
+        # before mkstemp, so a rejected URL creates no file and opens no connection. The
+        # redirect handler checks every hop the same way, so no redirect can downgrade the fetch.
+        raise ValueError(f"installer URL must use https, got scheme {scheme!r}: {url}")
+    opener = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
+    fd, name = tempfile.mkstemp(prefix="kitty-installer-", suffix=".sh")
+    tmp = Path(name)
+    try:
+        # The fd is entered first, so a failed fetch closes it as well as a successful one.
+        with os.fdopen(fd, "wb") as out, opener.open(url, timeout=30) as response:
+            out.write(response.read())
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return tmp
 
 
 def _run_upstream_installer(installer_script: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 — args constructed from trusted paths
+    subprocess.run(
         ["sh", str(installer_script), "launch=n", f"dest={dest}"],
         check=True,
         timeout=600,
@@ -177,19 +252,13 @@ def _write_desktop_entry(
     )
 
 
-def _record_install_log(version: str) -> None:
-    log_dir = _repo_root() / "tmp"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "install.log").write_text(version + "\n", encoding="utf-8")
-
-
 def install(
     *,
     dest: Path = DEFAULT_DEST,
     inject_config: bool = True,
 ) -> InstallReport:
     """Install upstream Kitty into ``dest`` and (optionally) inject our config block."""
-    kitty_bin = _kitty_bin(dest)
+    kitty_bin = kitty_bin_path(dest)
     skipped = False
     if kitty_bin.is_file() and os.access(kitty_bin, os.X_OK):
         skipped = True
@@ -207,7 +276,6 @@ def install(
         dest / KITTY_APP_DIRNAME / "share" / "icons" / "hicolor" / "256x256" / "apps" / "kitty.png"
     )
     _write_desktop_entry(kitty_bin=kitty_bin, icon_path=icon)
-    _record_install_log(version)
 
     if inject_config:
         paths = config_updater.ConfigPaths.for_user()
@@ -286,6 +354,71 @@ def remove_kitty_install(dest: Path = DEFAULT_DEST) -> KittyRemovalReport:
     )
 
 
+def _completion_dir(home: Path | None) -> Path:
+    return COMPLETION_DIR if home is None else home / _COMPLETION_RELDIR
+
+
+def completion_script_path(shell: str, *, home: Path | None = None) -> Path:
+    """Where the completion script for ``shell`` lives. Pure path arithmetic, no I/O.
+
+    Raises :class:`ValueError` for a shell that is not a :class:`CompletionShell`,
+    because no script is ever written for it.
+    """
+    member = CompletionShell(shell)
+    return _completion_dir(home) / COMPLETION_BASENAMES[member.value]
+
+
+def generate_completion_script(shell: str) -> str:
+    """Return the completion shellcode for ``my-kitty``, generated in-process.
+
+    Deliberately not ``register-python-argcomplete``: ``uv tool install`` exposes only
+    ``my-kitty``, so that helper is never on PATH (D-02). The in-process call runs in the
+    interpreter that owns ``argcomplete`` and cannot be substituted by a PATH entry. The
+    output names no subcommand (U-3): its currency is a byte match against a fresh call.
+    """
+    member = CompletionShell(shell)
+    return _ARGCOMPLETE_SHELLCODE([COMPLETION_PROG], shell=member.value)
+
+
+def write_completion_script(shell: str | None, *, home: Path | None = None) -> Path | None:
+    """Write the completion script for ``shell`` and return its path.
+
+    Returns ``None`` and creates nothing when ``shell`` is ``None`` or unsupported —
+    a bash script a fish user never reads is not written. Idempotent. A zsh write also
+    removes the 02-02-era file, which only the old zsh body sources, and clears the group
+    and world write bits of the directory: zsh's ``compaudit`` would otherwise drop it
+    from ``fpath``. A bash write touches neither.
+    """
+    if shell is None or shell not in {member.value for member in CompletionShell}:
+        return None
+    path = completion_script_path(shell, home=home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(generate_completion_script(shell), encoding="utf-8")
+    if shell == CompletionShell.ZSH:
+        path.parent.chmod(stat.S_IMODE(path.parent.stat().st_mode) & ~0o022)
+        (path.parent / _LEGACY_ZSH_BASENAME).unlink(missing_ok=True)
+    return path
+
+
+def remove_completion_script(*, home: Path | None = None) -> list[Path]:
+    """Delete every completion script we own, the 02-02-era zsh file included.
+
+    Returns the paths removed. The directory is removed only when it is left empty — never
+    recursively, since a user may keep something else there.
+    """
+    directory = _completion_dir(home)
+    owned = [completion_script_path(member.value, home=home) for member in CompletionShell]
+    owned.append(directory / _LEGACY_ZSH_BASENAME)
+    removed: list[Path] = []
+    for path in owned:
+        if path.is_file() or path.is_symlink():
+            path.unlink(missing_ok=True)
+            removed.append(path)
+    if directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
+    return removed
+
+
 def _print_install_report(report: InstallReport) -> None:
     print(f"kitty version: {report.version}")
     print(f"kitty.app:     {report.kitty_app_dir}")
@@ -306,18 +439,34 @@ def _print_install_report(report: InstallReport) -> None:
 
 
 def _print_path_result(result: path_integration.PathEditResult) -> None:
+    """Report what ``ensure_local_bin_in_path`` did, in its own words (D-13, R1.7).
+
+    A change prints the ``reason`` the edit computed: an append, an in-place rewrite, a legacy
+    migration and a duplicate removal are different events. A skip prints each
+    ``manual_lines`` entry on its own line, because each is a line for the rc file; joined onto
+    one line, a ``#`` entry would comment out whatever followed it.
+    """
     if result.skipped:
         print(
             f"PATH:          shell {result.shell or '<unknown>'} not auto-handled; "
-            f"add manually: {result.manual_line}"
+            "add these lines to your shell rc yourself:"
         )
+        for line in result.manual_lines:
+            print(f"                   {line}")
     elif not result.changed:
         print("PATH:          already configured")
     else:
         print(
-            f"PATH:          appended block to {result.rc_file}; "
+            f"PATH:          {result.rc_file}: {result.reason}; "
             f"run `source {result.rc_file}` or restart shell"
         )
+
+
+def _print_completion_result(shell: str | None, written: Path | None) -> None:
+    if written is None:
+        print(f"completion:    shell {shell or '<unknown>'} not supported; no script written")
+    else:
+        print(f"completion:    wrote {written}")
 
 
 LEGACY_BINARY_PATH: Final[Path] = Path.home() / ".local" / "bin" / "my-kitty-setup"
@@ -340,12 +489,34 @@ def cli_install(args: argparse.Namespace) -> int:
     """Handler for ``my-kitty install``."""
     try:
         report = install(dest=args.dest, inject_config=not args.no_config)
-    except (subprocess.CalledProcessError, OSError, config_updater.ConfigUpdaterError) as exc:
+    except (
+        subprocess.CalledProcessError,
+        OSError,
+        ValueError,
+        config_updater.ConfigUpdaterError,
+    ) as exc:
         print(f"install failed: {exc}", file=sys.stderr)
         return 1
     _print_install_report(report)
-    path_result = path_integration.ensure_local_bin_in_path()
+    try:
+        path_result = path_integration.ensure_local_bin_in_path()
+    except OSError as exc:
+        # R1.7: the OS error names the path it refused (the rc file, or its directory for the
+        # mkdir). One line and exit 1, like the completion-write failure below; nothing after a
+        # failed rc edit runs, so no completion script is written for a block that is not there.
+        print(f"install failed: cannot update the shell rc file: {exc}", file=sys.stderr)
+        return 1
     _print_path_result(path_result)
+    # The rc block is read only at the next shell start, so generating after the rc edit
+    # within one install is sound; what matters is that both land in the same install.
+    try:
+        completion = write_completion_script(path_result.shell)
+    except OSError as exc:
+        # E1 (D-13): the rc block now sources this file and doctor FAILs without it, so a
+        # failed write is an install failure, reported as one line rather than a traceback.
+        print(f"install failed: cannot write the shell completion script: {exc}", file=sys.stderr)
+        return 1
+    _print_completion_result(path_result.shell, completion)
     _print_legacy_shim_notice()
     return 0
 
@@ -368,9 +539,12 @@ def cli_uninstall(args: argparse.Namespace) -> int:
     """Handler for ``my-kitty uninstall`` — remove everything by default.
 
     ``--keep-config`` preserves the entire ``~/.config/kitty/`` footprint we
-    created (block + payload + backups). ``--keep-backups`` preserves only the
-    backup files. ``--keep-kitty`` preserves kitty.app + symlink + desktop
-    entry. Flags compose; the self-removal banner always prints.
+    created (block + payload + backups + payload asides). ``--keep-backups``
+    preserves the backup files and the payload asides. ``--keep-kitty``
+    preserves kitty.app + symlink + desktop entry. Flags compose; the
+    self-removal banner always prints. A full uninstall removes each payload
+    aside an interrupted install left and names it; any other uninstall keeps
+    and names it (02-15, IN-03).
     """
     do_config = not args.keep_config
     do_backups = not args.keep_config and not args.keep_backups
@@ -389,6 +563,27 @@ def cli_uninstall(args: argparse.Namespace) -> int:
             print(f"backups:       deleted {deleted} file(s) under {paths.kitty_dir}/")
         else:
             print(f"backups:       nothing to delete under {paths.kitty_dir}/")
+
+    # Payload asides (IN-03, 02-15): a full uninstall removes each one and names it; an uninstall
+    # that keeps backups keeps each one and names it, so the user knows it is theirs to delete.
+    asides_failed = False
+    for aside in config_updater.list_payload_asides(paths):
+        if not do_backups:
+            print(
+                f"config:        kept payload aside {aside} "
+                "(left by an interrupted install; delete it by hand)"
+            )
+            continue
+        try:
+            config_updater.discard_payload_aside(aside)
+        except OSError as exc:
+            asides_failed = True
+            print(
+                f"uninstall failed: cannot remove payload aside {aside}: {exc}; delete it by hand",
+                file=sys.stderr,
+            )
+        else:
+            print(f"config:        removed payload aside {aside}")
 
     if do_config:
         cfg = config_updater.uninstall(paths)
@@ -414,5 +609,14 @@ def cli_uninstall(args: argparse.Namespace) -> int:
         if kitty_report.desktop_entry_removed:
             print(f"kitty:         removed desktop entry {kitty_report.desktop_entry}")
 
+    # The completion script belongs to the *binary*, not to the ~/.config/kitty footprint, so
+    # it is guarded by do_kitty: --keep-kitty is the only flag that preserves binary-adjacent
+    # state, and `make clean` passes --keep-kitty --keep-backups (D-04) but not --keep-config.
+    # Guarding by do_config would make the safe verb delete the completion of a binary that
+    # survives. Its own step, not a line in remove_kitty_install(), whose name means kitty.app.
+    if do_kitty:
+        for path in remove_completion_script():
+            print(f"completion:    removed {path}")
+
     print(_SELF_REMOVAL_BANNER)
-    return 0
+    return 1 if asides_failed else 0

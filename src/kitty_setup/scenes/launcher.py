@@ -160,6 +160,27 @@ def _fail_soft(result: subprocess.CompletedProcess[str], first_error: int) -> in
     return first_error
 
 
+def _parse_window_id(raw: str | None) -> int | None:
+    """The module's one window-id rule: a non-empty all-digit string is an id, else ``None``."""
+    return int(raw) if raw and raw.isdigit() else None
+
+
+def _window_id_from(result: subprocess.CompletedProcess[str], *, verb: str) -> int:
+    """The window id a successful ``kitten @ <verb>`` printed on stdout.
+
+    Raises :class:`SceneClientError` — which both ``cli_scene_launch`` paths catch and
+    print as one ``my-kitty scene launch: …`` line — when stdout is not a window id,
+    instead of letting ``int()`` escape as a ``ValueError`` traceback.
+    """
+    win_id = _parse_window_id(result.stdout.strip())
+    if win_id is None:
+        raise SceneClientError(
+            f"kitten @ {verb} returned no window id "
+            f"(stdout={result.stdout!r}, stderr={result.stderr!r})"
+        )
+    return win_id
+
+
 def _origin_window() -> int | None:
     """The id of the kitty window the scene is launched from, or ``None``.
 
@@ -168,8 +189,7 @@ def _origin_window() -> int | None:
     ``my-kitty`` runs outside kitty (no window to reuse) — e.g. driven over a
     socket from another terminal, or from the integration harness.
     """
-    raw = os.environ.get("KITTY_WINDOW_ID")
-    return int(raw) if raw and raw.isdigit() else None
+    return _parse_window_id(os.environ.get("KITTY_WINDOW_ID"))
 
 
 def _origin_tab_is_solo(origin_window: int, to: str | None) -> bool:
@@ -198,6 +218,40 @@ def _origin_tab_is_solo(origin_window: int, to: str | None) -> bool:
     return False
 
 
+# Printed when pane 0 cannot be typed into the reused shell; the scene then opens in a new tab.
+_UNTYPEABLE_NOTE: str = (
+    "my-kitty scene launch: pane 0's cwd or cmd cannot be typed into the current shell "
+    "unchanged (a quote, a backslash, a control or format character, or a cwd that is not "
+    "an absolute path free of $); opening the scene in a new tab instead\n"
+)
+
+
+def _typeable(text: str) -> bool:
+    """True when ``text`` can be typed inside single quotes and reach the shell unchanged.
+
+    Measured in 02-13 Step 0: fish reads a backslash-quote and a double backslash inside single
+    quotes as escapes, so a quote or a backslash shifts the word. kitten's ``send-text`` decodes
+    Python escapes, and a decoded Ctrl-A reorders the typed line in bash, zsh and fish. zsh
+    expands a bare ``=word`` and fish a bare ``%self``; single quotes stop both. ``isprintable``
+    also refuses format characters such as U+202E.
+    """
+    return text.isprintable() and "'" not in text and "\\" not in text
+
+
+def _pane0_typeable(p0: Pane) -> bool:
+    """True when pane 0's values may be typed into the reused shell (02-13, WR-02 and WR-03).
+
+    A typed ``cwd`` must be absolute, hold no ``$``, and be typed normalised. kitty expands and
+    resolves every other pane's ``--cwd`` in its own process, which this launcher cannot see, so
+    nothing is expanded here: any other ``cwd`` takes the argv path, where kitty resolves it.
+    """
+    if p0.cwd is not None and not (
+        os.path.isabs(p0.cwd) and "$" not in p0.cwd and _typeable(os.path.normpath(p0.cwd))
+    ):
+        return False
+    return p0.cmd is None or _typeable(p0.cmd)
+
+
 def _fill_current_tab(
     layout: str | None,
     tab_title: str | None,
@@ -219,6 +273,13 @@ def _fill_current_tab(
     window already sits in the launch directory, so ``default_cwd`` is applied
     only to the freshly launched panes; an explicit pane-0 ``cwd``/``cmd`` is
     best-effort fed to the reused shell via ``send-text``.
+
+    ``send-text`` delivers a string that shell parses, so only a value that
+    :func:`_pane0_typeable` accepts is typed, always inside single quotes (02-13):
+    ``cd -- '<normpath>'`` and ``bash -lc '<cmd>'``. Pane 0's ``cmd`` runs as
+    ``bash -lc <cmd>``, matching :func:`_launch_argv` for every other pane — as a
+    child of the reused shell, so an ``… ; exec bash`` idiom replaces that child and
+    exiting it returns to the original shell rather than closing the window.
     """
     first_error = 0
     p0 = panes[0]
@@ -235,13 +296,23 @@ def _fill_current_tab(
     if p0.cwd is not None:
         first_error = _fail_soft(
             _client.kitten_at(
-                "send-text", "--match", f"id:{origin_window}", f"cd {p0.cwd}\n", to=to
+                "send-text",
+                "--match",
+                f"id:{origin_window}",
+                f"cd -- '{os.path.normpath(p0.cwd)}'\n",
+                to=to,
             ),
             first_error,
         )
     if p0.cmd is not None:
         first_error = _fail_soft(
-            _client.kitten_at("send-text", "--match", f"id:{origin_window}", f"{p0.cmd}\n", to=to),
+            _client.kitten_at(
+                "send-text",
+                "--match",
+                f"id:{origin_window}",
+                f"bash -lc '{p0.cmd}'\n",
+                to=to,
+            ),
             first_error,
         )
 
@@ -255,7 +326,7 @@ def _fill_current_tab(
         if launch_result.returncode != 0:
             sys.stderr.write(launch_result.stderr)
             return launch_result.returncode if first_error == 0 else first_error
-        win_id = int(launch_result.stdout.strip())
+        win_id = _window_id_from(launch_result, verb="launch")
         first_error = _apply_bg(win_id, pane.bg, to, first_error)
 
     # Layout + tab styling target the focused tab (no --match needed).
@@ -344,15 +415,17 @@ def launch_scene(
     # cannot prove it is solo — fall through to the new-tab path so we never pile
     # the scene's panes onto a populated tab.
     if origin_window is not None and not single and _origin_tab_is_solo(origin_window, to):
-        return _fill_current_tab(
-            layout,
-            tab_title,
-            tab_accent,
-            panes,
-            to=to,
-            default_cwd=default_cwd,
-            origin_window=origin_window,
-        )
+        if _pane0_typeable(panes[0]):
+            return _fill_current_tab(
+                layout,
+                tab_title,
+                tab_accent,
+                panes,
+                to=to,
+                default_cwd=default_cwd,
+                origin_window=origin_window,
+            )
+        sys.stderr.write(_UNTYPEABLE_NOTE)
 
     # First pane: a single-pane scene launches a WINDOW into the current tab; a
     # multi-pane scene opens a new tab carrying the tab title.
@@ -370,7 +443,7 @@ def launch_scene(
     if result.returncode != 0:
         sys.stderr.write(result.stderr)
         return result.returncode
-    win0 = int(result.stdout.strip())
+    win0 = _window_id_from(result, verb="launch")
     first_error = _apply_bg(win0, p0.bg, to, first_error)
 
     if single:
@@ -393,7 +466,7 @@ def launch_scene(
         if launch_result.returncode != 0:
             sys.stderr.write(launch_result.stderr)
             return launch_result.returncode if first_error == 0 else first_error
-        win_id = int(launch_result.stdout.strip())
+        win_id = _window_id_from(launch_result, verb="launch")
         first_error = _apply_bg(win_id, pane.bg, to, first_error)
 
     if tab_accent is not None:

@@ -38,12 +38,12 @@ my-kitty keys           # list every active binding grouped by source; flags con
 my-kitty keys --json    # same data as machine-readable JSON
 my-kitty <TAB>          # bash + zsh tab completion (after one make install + new shell)
 make test               # unit tests (integration tests skipped without KITTI_INTEGRATION=1)
-KITTI_INTEGRATION=1 make test    # run the autonomous integration tests against real kitty
-make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups)
-make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files; remove the rest
+make test-integration            # run tests/integration headless under a nested compositor (cage)
+make uninstall                   # remove EVERYTHING we created (config + payload + kitty + backups + payload asides)
+make uninstall KEEP_BACKUPS=1    # preserve kitty.conf.bak.* files + payload asides; remove the rest
 make uninstall KEEP_CONFIG=1     # preserve entire ~/.config/kitty/ footprint; still removes kitty.app
 make uninstall KEEP_KITTY=1      # preserve kitty.app + symlink + desktop; remove config + backups
-make clean              # strip our config block + wipe ./tmp/ scratch (keeps kitty + binary)
+make clean              # strip our config block + payload, wipe ./tmp/ scratch (keeps kitty + backups)
 make prune              # keep 3 most recent kitty.conf backups, delete the rest
 my-kitty prune          # dry-run: list backups + total size, no deletions
 my-kitty prune --backups --older-than 60   # non-default policy: trim by age (days)
@@ -111,7 +111,7 @@ Every `make install` that detects drift on `~/.config/kitty/kitty.conf`
 writes a timestamped `kitty.conf.bak.<UTC-ts>` next to it. Install **never**
 deletes those files. Uninstall **deletes them by default** (per
 simplify-uninstall-defaults — "uninstall = remove everything we put on your
-system"); pass `KEEP_BACKUPS=1` to preserve them. For routine maintenance
+system"); pass `KEEP_BACKUPS=1` to preserve them. An interrupted install keeps the previous payload as `~/.config/kitty/kitty-setup.rollback.<UTC-ts>`; uninstall removes those with the backups, `KEEP_BACKUPS=1` keeps them, `prune` never touches them, and `my-kitty doctor` names any that exist. For routine maintenance
 without uninstalling, use `prune`:
 
 ```
@@ -152,13 +152,7 @@ symlink + desktop entry + every `kitty.conf.bak.*` file). The pre-rename
 closest mapping to the legacy "config-only" default is
 `make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`.
 
-**Note as of `add-shell-completion`:** the sentinel-bracketed PATH block in
-your shell rc now contains a guarded `register-python-argcomplete` eval line
-in addition to the PATH export. Re-running `make install` rewrites the block
-body in place between the existing markers; nothing else in the rc file is
-touched. Open a fresh shell after the install — `my-kitty <TAB>` expands to
-the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
-`--keep-*` flags.
+**Note on shell completion:** `make install` generates a completion script under `~/.local/share/kitty-setup/` (`my-kitty-completion.bash` for bash, `_my-kitty` for zsh), and the sentinel-bracketed PATH block in your shell rc sources it after the PATH export, so no helper has to be found on PATH at shell start. Re-running `make install` rewrites the block body between the existing markers; nothing else in the rc file is touched, and install never moves the block. For zsh, the block puts the completion directory on `fpath` and starts zsh's completion system (`compinit`) itself if your rc has not, so zsh registers `_my-kitty` whether your own `compinit` runs before or after the block, including a deferred one. The one shape it does not cover is a `compinit -C` that runs after the block and loads a dump written without `_my-kitty`: a dump named with `-d`, or the default dump when a `compinit` ran before the block. Deleting that `-d` dump once, or moving the block above your first `compinit`, restores the registration. Zsh's `compaudit` also rejects `~/.local/share` when it is world-writable, or group-writable on a system without per-user groups, and then a `compinit` after the block asks about insecure directories at every start. Install keeps its own directory free of group and world write, but it does not change `~/.local/share`, so `chmod go-w ~/.local/share` is the fix. Doctor cannot see a live shell; confirm with `echo ${_comps[my-kitty]}` in a new shell, which prints `_my-kitty` or `_python_argcomplete`. Open a fresh shell after the install — `my-kitty <TAB>` expands to the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three `--keep-*` flags.
 
 ## Stack and layout
 

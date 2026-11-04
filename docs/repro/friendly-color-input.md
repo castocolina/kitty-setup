@@ -22,7 +22,8 @@ every color client-side first:
 
 - **hashless hex** → `#` added (`fff` → `#fff`),
 - **full X11/CSS name** → its hex (`teal` → `#008080`),
-- **`NONE` / `rgb:` / `rgb()`** → passthrough,
+- **`NONE`** and **`rgb:R/G/B`** (three groups of 1–4 hex digits) → passthrough,
+- **empty or whitespace-only** → treated as absent: no kitten argument is emitted,
 - **unrecognized** → `ColorError`, rejected before any `kitten @` call.
 
 The name table is built **X11 `rgb.txt` first (precedence), then CSS/SVG fills
@@ -98,9 +99,12 @@ logic host-independently; macOS would behave identically.
 
 ## Known limitations
 
-- **`rgb:` / `rgb()` / `rgba()` forms pass through unvalidated.** They reach
-  kitty as-is, so an invalid functional color is still only caught by kitty
-  (possibly after a window opens). Hex and names are validated up front.
+- **Only `rgb:R/G/B` passes through (since Phase 2, plan 02-06).** `rgba:`,
+  `rgb()`, `rgba()` and `hsl()` are rejected client-side before any `kitten @`
+  call; the `rgb:` pattern is limited to three groups of 1–4 hex digits because
+  the kitten rejects a fourth group and panics on a five-digit one, although
+  kitty's own `to_color` accepts both (measured on kitty 0.49.0; evidence in
+  `.planning/phases/02-defect-remediation/02-06-SUMMARY.md`).
 - **Table is a snapshot.** Sourced from this host's X11 `rgb.txt` + CSS/SVG; a
   future kitty that adds a brand-new name outside the table would have that name
   rejected by `my-kitty`. The 1.3 sweep is the guard; re-run it if kitty's table

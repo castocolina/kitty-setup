@@ -15,7 +15,11 @@ import sys
 from pathlib import Path
 
 from kitty_setup import binding_introspection, config_updater, installer, path_integration
-from kitty_setup.scenes._client import _parse_listen_on_base, _pgrep_kitty_pids
+from kitty_setup.scenes._client import parse_listen_on_base, pgrep_kitty_pids
+
+# ``_check_completion`` is shared with the integration test that proves its verdict equals what
+# real zsh registers (tests/integration/test_completion_e2e.py), so it is declared here.
+__all__ = ["CheckResult", "_check_completion", "cli_doctor", "run_checks"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -33,14 +37,17 @@ class CheckResult:
 
 
 def _check_kitty_binary() -> tuple[CheckResult, Path | None]:
-    candidates: list[Path] = [installer.SYMLINK_PATH, installer._kitty_bin(installer.DEFAULT_DEST)]
+    candidates: list[Path] = [
+        installer.SYMLINK_PATH,
+        installer.kitty_bin_path(installer.DEFAULT_DEST),
+    ]
     on_path = shutil.which("kitty")
     if on_path is not None:
         candidates.insert(0, Path(on_path))
     for candidate in candidates:
         if candidate.is_file() or candidate.is_symlink():
             try:
-                version = subprocess.run(  # noqa: S603 — trusted path
+                version = subprocess.run(
                     [str(candidate), "--version"],
                     capture_output=True,
                     text=True,
@@ -73,9 +80,16 @@ def _check_desktop_entry() -> CheckResult:
 
 
 def _check_payload(paths: config_updater.ConfigPaths) -> CheckResult:
+    # A payload aside an interrupted install left is named on the one line, PASS or FAIL (02-15).
+    asides = config_updater.list_payload_asides(paths)
+    note = (
+        f"; payload aside(s) kept from an interrupted install: {', '.join(str(a) for a in asides)}"
+        if asides
+        else ""
+    )
     if paths.payload_entry.is_file():
-        return CheckResult("config payload", True, str(paths.payload_entry))
-    return CheckResult("config payload", False, f"missing: {paths.payload_entry}")
+        return CheckResult("config payload", True, f"{paths.payload_entry}{note}")
+    return CheckResult("config payload", False, f"missing: {paths.payload_entry}{note}")
 
 
 def _check_sentinel_block(paths: config_updater.ConfigPaths) -> CheckResult:
@@ -86,21 +100,32 @@ def _check_sentinel_block(paths: config_updater.ConfigPaths) -> CheckResult:
     return CheckResult("sentinel block", False, f"absent from {paths.conf_file}")
 
 
+def _one_line(text: str) -> str:
+    """Join a multi-line diagnostic onto one line, so each check keeps one output line."""
+    return " | ".join(line.strip() for line in text.splitlines() if line.strip())
+
+
 def _check_parse(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> CheckResult:
     if kitty_bin is None:
-        return CheckResult("parse check", False, "skipped — kitty binary not available")
+        return CheckResult("parse check", False, "kitty binary not available", skipped=True)
     if not paths.conf_file.exists():
         return CheckResult("parse check", False, f"missing: {paths.conf_file}")
     try:
-        ok = config_updater._parse_check(paths.conf_file, kitty_bin)
+        result = config_updater.parse_check(paths.conf_file, kitty_bin)
     except config_updater.ConfigUpdaterError as exc:
         return CheckResult("parse check", False, str(exc))
-    return CheckResult("parse check", ok, f"kitty --debug-config exit={'0' if ok else 'non-0'}")
+    diagnostics = _one_line(result.stderr)
+    if result.ok:
+        warnings = f"; parser warnings: {diagnostics}" if diagnostics else ""
+        return CheckResult("parse check", True, f"{result.command} exit=0{warnings}")
+    return CheckResult(
+        "parse check", False, f"{result.command} exit=non-0: {diagnostics or '(no stderr)'}"
+    )
 
 
 def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -> CheckResult:
     if kitty_bin is None:
-        return CheckResult("bindings", False, "skipped — kitty binary not available")
+        return CheckResult("bindings", False, "kitty binary not available", skipped=True)
     if not paths.conf_file.exists():
         return CheckResult("bindings", False, f"missing: {paths.conf_file}")
     try:
@@ -108,7 +133,7 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
             paths.conf_file, kitty_bin=kitty_bin, payload_dir=paths.payload_dir
         )
     except binding_introspection.BindingIntrospectionError as exc:
-        return CheckResult("bindings", False, f"skipped — {exc}")
+        return CheckResult("bindings", False, str(exc), skipped=True)
     summary = (
         f"{report.ours_count} ours, {report.defaults_count} defaults, "
         f"{report.conflicts_count} conflict{'s' if report.conflicts_count != 1 else ''}"
@@ -119,11 +144,14 @@ def _check_bindings(paths: config_updater.ConfigPaths, kitty_bin: Path | None) -
 
 
 def _kitten_ls_succeeds(kitten_bin: Path, socket: Path) -> tuple[bool, str]:
-    """Return ``(ok, stderr_or_empty)`` for ``kitten @ --to unix:<socket> ls`` with KITTY_LISTEN_ON unset."""
+    """Return ``(ok, stderr_or_empty)`` for ``kitten @ --to unix:<socket> ls``.
+
+    ``KITTY_LISTEN_ON`` is unset in the child's environment.
+    """
     env = dict(os.environ)
     env.pop("KITTY_LISTEN_ON", None)
     try:
-        result = subprocess.run(  # noqa: S603 — trusted paths
+        result = subprocess.run(
             [str(kitten_bin), "@", f"--to=unix:{socket}", "ls"],
             capture_output=True,
             check=False,
@@ -145,7 +173,8 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
     `<base>-<PID>` exists on disk, calls `kitten @ ls` against it. SKIPs when no
     kitty is running OR no managed socket exists (e.g. a pre-`make setup` kitty
     is still running). FAILs only when at least one managed socket fails to
-    respond. Verified by probe 04 (`tmp/probes/phase2-remote-control-foundation/04-out-of-process-ls.md`).
+    respond. Verified by probe 04
+    (`tmp/probes/phase2-remote-control-foundation/04-out-of-process-ls.md`).
     """
     rc_conf = paths.payload_dir / "remote-control.conf"
     if not rc_conf.is_file():
@@ -155,7 +184,7 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
             "managed remote-control.conf not installed (run `make install`)",
             skipped=True,
         )
-    base = _parse_listen_on_base(rc_conf)
+    base = parse_listen_on_base(rc_conf)
     if base is None:
         return CheckResult(
             "remote-control", False, f"{rc_conf} has no `listen_on unix:<path>` directive"
@@ -165,10 +194,12 @@ def _check_remote_control_per_probe_04(paths: config_updater.ConfigPaths) -> Che
     if not kitten_bin.is_file():
         on_path = shutil.which("kitten")
         if on_path is None:
-            return CheckResult("remote-control", False, "no kitten binary on PATH or under ~/.local")
+            return CheckResult(
+                "remote-control", False, "no kitten binary on PATH or under ~/.local"
+            )
         kitten_bin = Path(on_path)
 
-    pids = _pgrep_kitty_pids()
+    pids = pgrep_kitty_pids()
     reachable: list[int] = []
     failures: list[str] = []
     for pid in pids:
@@ -203,38 +234,76 @@ _RC_BY_SHELL: dict[str, str] = {"zsh": ".zshrc", "bash": ".bashrc"}
 
 
 def _check_completion(home: Path | None = None) -> CheckResult:
-    """Verify the argcomplete helper + the completion eval line in rc."""
-    helper = shutil.which("register-python-argcomplete")
+    """Verify what can be proven about shell completion without starting the user's shell.
+
+    In order, reporting the first failure: the completion script we own exists; our rc block's
+    body is exactly the current template for the shell; and the script's bytes equal freshly
+    generated shellcode (the staleness check, U-3). The block is judged with the predicate
+    install uses, so doctor FAILs exactly the blocks the next ``my-kitty install`` rewrites. The
+    block's position is not judged: zsh registers the script through ``fpath`` wherever the
+    block sits (02-14).
+    """
     home_dir = home or Path.home()
     shell_name = Path(os.environ.get("SHELL", "")).name
     rc_basename = _RC_BY_SHELL.get(shell_name)
     if rc_basename is None:
-        rc_basename = ".zshrc"  # default when shell is unknown
-    rc_file = home_dir / rc_basename
-    rc_text = rc_file.read_text(encoding="utf-8") if rc_file.is_file() else ""
-    bounds = path_integration._find_block(
-        rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
-    )
-    body = ""
-    if bounds is not None:
-        body_lines = rc_text.splitlines(keepends=False)[bounds[0] + 1 : bounds[1] - 1]
-        body = "\n".join(body_lines)
-    rc_has_eval = path_integration.COMPLETION_LINE in body
-
-    if helper is not None and rc_has_eval:
-        return CheckResult("completion", True, f"helper {helper}; eval line present in {rc_file}")
-    if helper is None and not rc_has_eval:
         return CheckResult(
             "completion",
             False,
-            f"register-python-argcomplete not on PATH AND eval line missing from {rc_file}",
+            f"shell {shell_name or '<unknown>'} is not supported; "
+            "completion is set up for bash and zsh only",
+            skipped=True,
         )
-    if helper is None:
-        return CheckResult("completion", False, "register-python-argcomplete not on PATH")
+    script = installer.completion_script_path(shell_name, home=home)
+    if not script.is_file():
+        return CheckResult(
+            "completion", False, f"{script} is missing; run `my-kitty install` to generate it"
+        )
+
+    rc_file = home_dir / rc_basename
+    rc_text = (
+        rc_file.read_text(encoding="utf-8", errors="surrogateescape") if rc_file.is_file() else ""
+    )
+    bounds = path_integration.find_block(
+        rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
+    )
+    if bounds is None or not path_integration._block_body_matches_template(
+        rc_text, bounds, shell_name
+    ):
+        return CheckResult(
+            "completion",
+            False,
+            f"the my-kitty block in {rc_file} does not match the current template that "
+            f"sources {script}; run `my-kitty install` to rewrite it",
+        )
+    is_zsh = shell_name == installer.CompletionShell.ZSH
+
+    try:
+        current = script.read_bytes()
+    except OSError as exc:
+        return CheckResult("completion", False, f"cannot read {script}: {exc}")
+    if current != installer.generate_completion_script(shell_name).encode("utf-8"):
+        return CheckResult(
+            "completion",
+            False,
+            f"{script} is stale: it differs from freshly generated shellcode; "
+            "run `my-kitty install` to regenerate it",
+        )
+
+    if is_zsh:
+        return CheckResult(
+            "completion",
+            True,
+            f"{script} is current and sourced by the my-kitty block in {rc_file}; its directory "
+            "is on fpath, so zsh registers it whether compinit runs before or after the block. "
+            "Doctor did not observe a live registration, and ~/.zlogin or a ZDOTDIR elsewhere is "
+            "outside what it reads. The one shape that drops the registration is a later "
+            "`compinit -C` that loads a dump written without it (a dump named with -d, or the "
+            "default dump when an earlier compinit ran before the block); to confirm, run "
+            "`echo ${_comps[my-kitty]}` in a new shell",
+        )
     return CheckResult(
-        "completion",
-        False,
-        f"register-python-argcomplete present at {helper}; eval line missing from {rc_file}",
+        "completion", True, f"{script} is current and sourced by the my-kitty block in {rc_file}"
     )
 
 

@@ -78,8 +78,13 @@ def _normalise(value: str | None) -> str | None:
 
 
 def _require_str(value: object, *, key: str) -> str:
+    """Return ``value`` as a str. A NUL is refused: ``subprocess.run`` cannot pass one in argv."""
     if not isinstance(value, str):
         raise SceneRecipeError(f"key '{key}' must be a string, got {type(value).__name__}")
+    if "\x00" in value:
+        raise SceneRecipeError(
+            f"key '{key}' holds a NUL character, which no argv element can carry"
+        )
     return value
 
 

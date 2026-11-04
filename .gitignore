@@ -72,3 +72,18 @@ tmp/
 
 # Harness-created agent worktrees (live inside the repo, never committed)
 .claude/worktrees/
+
+# Project-local GSD install (open-gsd/gsd-core) — reinstallable, never committed
+.claude/gsd-core/
+.claude/gsd-file-manifest.json
+.claude/gsd-install-state.json
+.claude/.gsd-profile
+.claude/.gsd-staging/
+.claude/agents/gsd-*
+.claude/commands/gsd-*
+.claude/skills/gsd-*
+.claude/hooks/gsd-*
+.claude/hooks/lib/
+.claude/hooks/managed-hooks-registry.cjs
+.claude/hooks/package.json
+.claude/scripts/

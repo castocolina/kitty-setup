@@ -183,9 +183,11 @@ For every requirement a phase owns, repeat:
    - Delete the `tmp/h<NN>-<slug>/` directory.
 
 7. **Verify** end-to-end per R2: run `make doctor` and `make test`, and capture both
-   outputs with their exit codes into the plan's SUMMARY. `KITTI_INTEGRATION=1 make test`
-   is the form that actually executes `tests/integration/`, so a promotion that added an
-   integration test says which form it ran. Green is the merge precondition `AGENTS.md`'s
+   outputs with their exit codes into the plan's SUMMARY. `make test-integration` is the
+   form that actually executes `tests/integration/`: it runs them headless under a nested
+   compositor, so no window reaches the desktop, and it fails rather than skips when no
+   compositor exists. A promotion that added an integration test says which form it
+   ran. Green is the merge precondition `AGENTS.md`'s
    git policy states; capturing is this rule.
 
 8. **Close the plan**: write `.planning/phases/<NN>-<slug>/<phase>-<plan>-SUMMARY.md` —

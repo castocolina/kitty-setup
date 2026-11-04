@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as _dt
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,9 @@ BACKUP_SUFFIX_FMT: Final[str] = "%Y%m%dT%H%M%SZ"
 # Strict pattern guarding prune from touching anything we did not write.
 # See add-backup-pruning design D4 + risk #3 (no glob, exact regex).
 BACKUP_NAME_RE: Final[re.Pattern[str]] = re.compile(r"^kitty\.conf\.bak\.\d{8}T\d{6}Z$")
+# Suffix of the sibling the previous payload is renamed to while an install is in flight. A
+# sibling of ``payload_dir`` shares its filesystem, so every rename between the two is atomic.
+ROLLBACK_SUFFIX: Final[str] = ".rollback"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -104,6 +108,21 @@ class UninstallResult:
     payload_dir_removed: bool
     conf_restored_from: Path | None
     conf_deleted: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ParseCheckResult:
+    """Outcome of the config parse check.
+
+    ``command`` is the complete, shell-quoted argv that ran — ``shlex.split(command)`` gives the
+    argv back — so it can be copied and re-run. ``stderr`` is the parser's output, untouched: on a
+    rejection it names the file, line and reason; on a pass it may still carry warnings, such as
+    a missing ``include``, that do not fail the check.
+    """
+
+    ok: bool
+    command: str
+    stderr: str
 
 
 class ConfigUpdaterError(RuntimeError):
@@ -175,33 +194,52 @@ def list_backups(conf_file: Path) -> list[Path]:
     return sorted(p for p in parent.iterdir() if BACKUP_NAME_RE.match(p.name))
 
 
+def _has_marker_line(text: str) -> bool:
+    return any(line.rstrip() in (MARKER_BEGIN, MARKER_END) for line in text.splitlines())
+
+
 def _latest_backup(conf_file: Path) -> Path | None:
-    backups = list_backups(conf_file)
-    return backups[-1] if backups else None
+    """The newest backup that holds no marker line, or None.
+
+    A backup taken while install repaired a drifted block holds the old block. Restoring it would
+    put that block back on every uninstall, so ``make clean`` would never converge. With none, the
+    caller deletes the conf instead.
+    """
+    for backup in reversed(list_backups(conf_file)):
+        if not _has_marker_line(backup.read_text(encoding="utf-8", errors="surrogateescape")):
+            return backup
+    return None
 
 
+# One line, so the command built from it is one copyable line and doctor keeps one line per check.
+# The statements are the multi-line original's, joined with ``;``: ``print(b, file=sys.stderr)``
+# writes ``str(b)`` plus a newline, the same bytes as ``sys.stderr.write(str(b) + '\n')``.
 _PARSE_SNIPPET: Final[str] = (
-    "import sys\n"
-    "from kitty.config import load_config\n"
-    "bad = []\n"
-    "load_config(sys.argv[-1], accumulate_bad_lines=bad)\n"
-    "for b in bad:\n"
-    "    sys.stderr.write(str(b) + '\\n')\n"
-    "sys.exit(1 if bad else 0)\n"
+    "import sys; "
+    "from kitty.config import load_config; "
+    "bad = []; "
+    "load_config(sys.argv[-1], accumulate_bad_lines=bad); "
+    "[print(b, file=sys.stderr) for b in bad]; "
+    "sys.exit(1 if bad else 0)"
 )
 
 
-def _parse_check(conf_file: Path, kitty_bin: str | Path) -> bool:
-    """Validate ``conf_file`` via ``kitty +runpy`` (returns True iff no bad lines).
+def parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
+    """Validate ``conf_file`` by loading it in kitty's own interpreter.
 
-    Kitty 0.46+ does not expose a ``--debug-config`` flag; the equivalent
-    introspection runs ``kitty.config.load_config`` and checks the
-    ``accumulate_bad_lines`` collector. Exit code 0 means no malformed lines;
-    non-zero means at least one was rejected.
+    Runs ``kitty +runpy`` with a snippet that calls ``kitty.config.load_config`` with an
+    ``accumulate_bad_lines`` collector and exits non-zero when it collected anything. That
+    collector only sees value-conversion failures: an unknown key, a malformed line or a missing
+    ``include`` exits 0 and shows up on stderr only, which is why ``stderr`` is returned on a pass
+    as well as on a rejection.
+
+    A check that cannot finish or cannot run raises :class:`ConfigUpdaterError` naming what
+    happened, so the callers print one line and never a traceback.
     """
+    argv = [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)]
     try:
-        result = subprocess.run(  # noqa: S603 — args are constructed from trusted paths
-            [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)],
+        result = subprocess.run(
+            argv,
             capture_output=True,
             text=True,
             check=False,
@@ -209,7 +247,113 @@ def _parse_check(conf_file: Path, kitty_bin: str | Path) -> bool:
         )
     except FileNotFoundError as exc:
         raise ConfigUpdaterError(f"kitty binary not found at {kitty_bin}") from exc
-    return result.returncode == 0
+    except subprocess.TimeoutExpired as exc:
+        raise ConfigUpdaterError(
+            f"the config parse check did not finish within {exc.timeout} s: {shlex.join(argv)}"
+        ) from exc
+    except OSError as exc:
+        raise ConfigUpdaterError(f"kitty binary at {kitty_bin} could not be run: {exc}") from exc
+    return ParseCheckResult(
+        ok=result.returncode == 0, command=shlex.join(argv), stderr=result.stderr
+    )
+
+
+def _rejection_message(check: ParseCheckResult) -> str:
+    stderr = check.stderr.rstrip() or "(the parser wrote nothing to stderr)"
+    return (
+        "kitty's config parser rejected the mutated kitty.conf; kitty.conf was restored.\n"
+        f"command: {check.command}\n"
+        f"parser stderr:\n{stderr}"
+    )
+
+
+# The dated name and the ``.N`` suffix that _preserve_stale_aside and install() may add to an aside.
+_PAYLOAD_ASIDE_TAIL: Final[str] = r"(?:\.\d{8}T\d{6}Z)?(?:\.\d+)?"
+
+
+def list_payload_asides(paths: ConfigPaths) -> list[Path]:
+    """The payload asides an interrupted install left under ``kitty_dir``, sorted (02-15, IN-03).
+
+    Matches the live name, the dated one and the ``.N`` one, symlinks included. A look-alike such
+    as ``kitty-setup.rollback-mine`` never matches, so it is never listed or removed.
+    """
+    if not paths.kitty_dir.is_dir():
+        return []
+    pattern = re.compile(re.escape(paths.payload_dir.name + ROLLBACK_SUFFIX) + _PAYLOAD_ASIDE_TAIL)
+    return sorted(entry for entry in paths.kitty_dir.iterdir() if pattern.fullmatch(entry.name))
+
+
+def discard_payload_aside(path: Path) -> None:
+    """Remove one payload aside. A symlink is unlinked and its target left alone (rmtree refuses
+    a symlink and must never follow one into a dotfiles repo); anything else is removed whole.
+
+    The one removal rule for asides: ``install``'s commit step and ``cli_uninstall`` both call it.
+    """
+    if path.is_symlink():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+
+
+def _preserve_stale_aside(aside: Path, kitty_dir: Path, *, now: _dt.datetime | None) -> None:
+    """Move an aside left behind by an interrupted install out of the way. Never delete it.
+
+    An install interrupted between moving the previous payload aside and committing or restoring
+    it (Ctrl-C, a kill, a power loss) leaves ``aside`` behind, and renaming a directory onto a
+    non-empty one fails, so without this every later install would stop at the aside step. The
+    aside is preserved rather than restored: :func:`install` always replaces the payload, so a
+    restored aside would be moved aside again at once; no journal says which step was
+    interrupted, and an interrupted commit leaves a partial aside that looks whole; and preserving
+    needs no branch on whether the payload exists. The dated name sits beside the conf backups,
+    on the same filesystem, and a taken name — anything that exists, since renaming onto an empty
+    directory silently replaces it — gets the smallest free ``.N`` suffix instead. Neither
+    ``prune`` never touches the preserved copy; a full uninstall removes it with the backups,
+    ``--keep-backups`` and ``--keep-config`` keep it, and every uninstall names it.
+    """
+    if not (aside.exists() or aside.is_symlink()):
+        return
+    base = kitty_dir / f"{aside.name}.{_utc_timestamp(now)}"
+    destination = base
+    suffix = 0
+    while destination.exists() or destination.is_symlink():
+        suffix += 1
+        destination = base.with_name(f"{base.name}.{suffix}")
+    try:
+        aside.rename(destination)
+    except OSError as exc:
+        raise ConfigUpdaterError(
+            f"a payload aside from an interrupted install is at {aside} and could not be moved "
+            f"to {destination}: {exc}. Nothing was changed; move it out of the way by hand."
+        ) from exc
+    print(
+        f"config: preserved a payload aside from an interrupted install at {destination}",
+        file=sys.stderr,
+    )
+
+
+def _restore_payload(payload_dir: Path, aside: Path | None, failure: BaseException) -> None:
+    """Undo a failed install's payload copy: remove the partial target, rename the aside back.
+
+    Runs inside the ``except`` block that caught ``failure``, so anything raised here chains to
+    it. With an aside, a failed step keeps the aside — the only copy of the previous payload —
+    and raises :class:`ConfigUpdaterError` naming it and repeating ``failure``, so a parser's
+    diagnosis is not lost behind the restore error. With no aside nothing of the user's is at
+    risk, and the ``OSError`` propagates as is.
+    """
+    try:
+        if payload_dir.exists():
+            shutil.rmtree(payload_dir)
+        if aside is not None:
+            aside.rename(payload_dir)
+    except OSError as exc:
+        if aside is None:
+            raise
+        raise ConfigUpdaterError(
+            f"install failed and the previous payload could not be put back: {exc}\n"
+            f"The previous payload is kept, untouched, at {aside}; move it back to "
+            f"{payload_dir} by hand.\n"
+            f"Original failure ({type(failure).__name__}): {failure}"
+        ) from exc
 
 
 def install(
@@ -226,59 +370,104 @@ def install(
     mutated only by appending the marker block when the block is missing or
     has drifted. A timestamped backup is created before any mutating write.
 
-    When ``kitty_bin`` is provided the resulting ``conf_file`` is parsed with
-    ``kitty --debug-config``; on a non-zero exit code the latest backup is
-    restored and :class:`ConfigUpdaterError` is raised.
+    When ``kitty_bin`` is provided the resulting ``conf_file`` is loaded by
+    kitty's own config parser (see :func:`parse_check`); on a rejection the
+    latest backup is restored and :class:`ConfigUpdaterError` is raised, naming
+    the command that ran and carrying the parser's stderr.
+
+    The previous payload is never destroyed before the new one is accepted. It
+    is renamed to a ``.rollback`` sibling first; the sibling is deleted only
+    after the copy, the conf mutation and the parse check all succeed. On any
+    failure of those — ``KeyboardInterrupt`` and ``SystemExit`` included — the
+    partial payload is removed and the sibling renamed back.
     """
     if not payload_source.is_dir():
         raise FileNotFoundError(f"payload source not a directory: {payload_source}")
 
     paths.kitty_dir.mkdir(parents=True, exist_ok=True)
-    if paths.payload_dir.exists():
-        shutil.rmtree(paths.payload_dir)
-    shutil.copytree(payload_source, paths.payload_dir)
-    _select_clear_variant(paths.payload_dir)
+    aside = paths.payload_dir.with_name(paths.payload_dir.name + ROLLBACK_SUFFIX)
+    _preserve_stale_aside(aside, paths.kitty_dir, now=now)
+    previous = aside if paths.payload_dir.exists() else None
+    if previous is not None:
+        paths.payload_dir.rename(previous)
+    try:
+        shutil.copytree(payload_source, paths.payload_dir)
+        _select_clear_variant(paths.payload_dir)
+        result = _write_block_and_check(paths, kitty_bin=kitty_bin, now=now)
+    except BaseException as exc:
+        _restore_payload(paths.payload_dir, previous, exc)
+        raise
+    # Commit, outside the checked region: a failure here cannot roll back an accepted payload,
+    # and the aside it leaves is the stale case the next install preserves and reports. A symlinked
+    # aside is unlinked (rmtree refuses a symlink), so the dotfiles target stays untouched.
+    if previous is not None:
+        try:
+            discard_payload_aside(previous)
+        except OSError as exc:
+            print(
+                f"config: installed, but the previous payload could not be removed ({exc}); "
+                f"it is kept at {previous}",
+                file=sys.stderr,
+            )
+    return result
 
+
+def _restore_conf(conf: Path, backup_path: Path | None, *, created_conf: bool) -> None:
+    """Put ``conf`` back as it was before this install: the backup over it, or no conf if this
+    install created it. With neither, the failure came before any write and nothing changed."""
+    if backup_path is not None:
+        shutil.copy2(backup_path, conf)
+    elif created_conf:
+        conf.unlink(missing_ok=True)
+
+
+def _write_block_and_check(
+    paths: ConfigPaths, *, kitty_bin: str | Path | None, now: _dt.datetime | None
+) -> InstallResult:
+    """Inject the marker block into the conf, then parse-check it when it changed.
+
+    The conf is restored on any failure from its first conf write through the parse check,
+    ``KeyboardInterrupt`` included, and the exception is re-raised. So the payload rollback in
+    :func:`install` never races a conf that still holds our block. A failure before the first
+    conf write has nothing to restore.
+    """
     conf = paths.conf_file
     backup_path: Path | None = None
     created_conf = False
     updated_block = False
-
-    if not conf.exists():
-        conf.write_text(_block_text(), encoding="utf-8")
-        created_conf = True
-    else:
-        original = conf.read_text(encoding="utf-8")
-        if _has_correct_block(original):
-            new_content = original
-        else:
-            backup_path = _backup(conf, now=now)
-            bounds = _find_block(original)
-            if bounds is None:
-                separator = "" if original.endswith("\n") or original == "" else "\n"
-                new_content = f"{original}{separator}{_block_text()}"
-            else:
-                lines = original.splitlines(keepends=True)
-                lines[bounds[0] : bounds[1]] = [
-                    f"{MARKER_BEGIN}\n",
-                    f"{INCLUDE_LINE}\n",
-                    f"{MARKER_END}\n",
-                ]
-                new_content = "".join(lines)
-            conf.write_text(new_content, encoding="utf-8")
-            updated_block = True
-
     parse_ok: bool | None = None
-    if kitty_bin is not None and (created_conf or updated_block):
-        parse_ok = _parse_check(conf, kitty_bin)
-        if not parse_ok:
-            if backup_path is not None:
-                shutil.copy2(backup_path, conf)
-            elif created_conf:
-                conf.unlink()
-            raise ConfigUpdaterError(
-                "kitty --debug-config rejected the mutated kitty.conf; rolled back"
-            )
+
+    try:
+        if not conf.exists():
+            created_conf = True
+            conf.write_text(_block_text(), encoding="utf-8", errors="surrogateescape")
+        else:
+            original = conf.read_text(encoding="utf-8", errors="surrogateescape")
+            if not _has_correct_block(original):
+                backup_path = _backup(conf, now=now)
+                bounds = _find_block(original)
+                if bounds is None:
+                    separator = "" if original.endswith("\n") or original == "" else "\n"
+                    new_content = f"{original}{separator}{_block_text()}"
+                else:
+                    lines = original.splitlines(keepends=True)
+                    lines[bounds[0] : bounds[1]] = [
+                        f"{MARKER_BEGIN}\n",
+                        f"{INCLUDE_LINE}\n",
+                        f"{MARKER_END}\n",
+                    ]
+                    new_content = "".join(lines)
+                conf.write_text(new_content, encoding="utf-8", errors="surrogateescape")
+                updated_block = True
+
+        if kitty_bin is not None and (created_conf or updated_block):
+            check = parse_check(conf, kitty_bin)
+            parse_ok = check.ok
+            if not check.ok:
+                raise ConfigUpdaterError(_rejection_message(check))
+    except BaseException:
+        _restore_conf(conf, backup_path, created_conf=created_conf)
+        raise
 
     return InstallResult(
         conf_file=conf,
@@ -294,8 +483,8 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
     """Remove the sentinel block and our payload directory.
 
     If stripping the block leaves the conf file with no non-blank, non-comment
-    content, the file is replaced with the most recent backup if one exists,
-    or deleted outright.
+    content, the file is replaced with the most recent backup that holds no
+    marker line if one exists, or deleted outright.
     """
     conf = paths.conf_file
     block_removed = False
@@ -304,7 +493,7 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
     conf_deleted = False
 
     if conf.exists():
-        original = conf.read_text(encoding="utf-8")
+        original = conf.read_text(encoding="utf-8", errors="surrogateescape")
         bounds = _find_block(original)
         if bounds is not None:
             lines = original.splitlines(keepends=True)
@@ -319,7 +508,7 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
                     conf.unlink()
                     conf_deleted = True
             else:
-                conf.write_text(stripped_content, encoding="utf-8")
+                conf.write_text(stripped_content, encoding="utf-8", errors="surrogateescape")
             block_removed = True
 
     if paths.payload_dir.exists():
@@ -339,4 +528,4 @@ def is_block_present(paths: ConfigPaths) -> bool:
     """Status query: True iff the sentinel block is present in the user's kitty.conf."""
     if not paths.conf_file.exists():
         return False
-    return _has_correct_block(paths.conf_file.read_text(encoding="utf-8"))
+    return _has_correct_block(paths.conf_file.read_text(encoding="utf-8", errors="surrogateescape"))

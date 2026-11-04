@@ -22,6 +22,7 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import argcomplete
 
@@ -30,6 +31,23 @@ from kitty_setup import binding_introspection, doctor, installer, pruner, scenes
 PROG: str = "my-kitty"
 
 Handler = Callable[[argparse.Namespace], int]
+
+
+def _non_negative_int(raw: str) -> int:
+    """``type=`` for a count or an age: an int that is ``>= 0``, else argparse's usage error.
+
+    Both messages go through ``ArgumentTypeError``, so argparse prints them verbatim after
+    ``argument <option>:`` and exits 2. The non-integer message keeps argparse's own wording
+    for ``type=int``. ``pruner.prune_by_keep`` / ``prune_by_age`` keep their own guards for
+    direct callers.
+    """
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {raw!r}") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+    return value
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -69,13 +87,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--keep-backups",
         dest="keep_backups",
         action="store_true",
-        help="preserve every kitty.conf.bak.* file under ~/.config/kitty/",
+        help=(
+            "preserve every kitty.conf.bak.* file and kitty-setup.rollback* payload aside "
+            "under ~/.config/kitty/"
+        ),
     )
     p_uninstall.add_argument(
         "--keep-config",
         dest="keep_config",
         action="store_true",
-        help="preserve the entire ~/.config/kitty/ footprint (block + payload + backups)",
+        help=(
+            "preserve the entire ~/.config/kitty/ footprint (block + payload + backups + "
+            "payload asides)"
+        ),
     )
     p_uninstall.add_argument(
         "--keep-kitty",
@@ -106,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
     policy = p_prune.add_mutually_exclusive_group()
     policy.add_argument(
         "--keep",
-        type=int,
+        type=_non_negative_int,
         default=None,
         metavar="N",
         help="keep the N most recent backups (default 3 when --backups is passed alone)",
@@ -114,7 +138,7 @@ def _build_parser() -> argparse.ArgumentParser:
     policy.add_argument(
         "--older-than",
         dest="older_than",
-        type=int,
+        type=_non_negative_int,
         default=None,
         metavar="DAYS",
         help="delete backups whose mtime is older than DAYS days",
@@ -194,7 +218,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "color",
         help="color: named (blue), hex (#001a33), or NONE to reset",
     )
-    p_window_background_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    cast(Any, p_window_background_color).completer = scenes.colors.color_completer
     p_window_background.add_argument(
         "--match",
         type=str,
@@ -247,7 +271,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "color",
         help="color: named (blue), hex (#0066cc), or NONE to reset",
     )
-    p_tab_accent_color.completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    cast(Any, p_tab_accent_color).completer = scenes.colors.color_completer
     p_tab_accent.add_argument(
         "--active-fg",
         type=str,
@@ -318,7 +342,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_os_window_opacity = p_os_window_sub.add_parser(
         "opacity",
-        help="set the OS-window background opacity (0.0–1.0)",
+        help="set the OS-window background opacity (0.0-1.0)",
     )
     p_os_window_opacity.add_argument(
         "value",
@@ -382,7 +406,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # Shell tab-completion for the scene name: complete from the *.toml stems in
     # the scenes directory (glob only — no TOML parse, so a malformed recipe
     # never breaks completion).
-    p_scene_launch_name.completer = scenes.recipe.scene_name_completer  # type: ignore[attr-defined]
+    cast(Any, p_scene_launch_name).completer = scenes.recipe.scene_name_completer
     p_scene_launch.add_argument(
         "--layout",
         type=str,
@@ -401,17 +425,20 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TEXT",
         help="title for the new tab (UTF-8, including emoji)",
     )
-    p_scene_launch.add_argument(
-        "--tab-accent",
-        dest="tab_accent",
-        type=str,
-        default=None,
-        metavar="COLOR",
-        help=(
-            "accent color for the new tab (named, #rrggbb); applies "
-            "only to the focused-tab background"
+    cast(
+        Any,
+        p_scene_launch.add_argument(
+            "--tab-accent",
+            dest="tab_accent",
+            type=str,
+            default=None,
+            metavar="COLOR",
+            help=(
+                "accent color for the new tab (named, #rrggbb); applies "
+                "only to the focused-tab background"
+            ),
         ),
-    ).completer = scenes.colors.color_completer  # type: ignore[attr-defined]
+    ).completer = scenes.colors.color_completer
     p_scene_launch.add_argument(
         "--pane",
         dest="panes",

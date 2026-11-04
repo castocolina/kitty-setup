@@ -75,6 +75,9 @@ def test_my_kitty_scene_launch_named_recipe_creates_three_pane_tab(
         env = dict(os.environ)
         env["KITTY_LISTEN_ON"] = f"unix:{socket}"
         env["XDG_CONFIG_HOME"] = str(xdg)
+        # Run from inside a kitty window, the child would inherit that window's id, take the
+        # fill-current-tab branch (launcher.launch_scene), and fail the new-tab assertions.
+        env.pop("KITTY_WINDOW_ID", None)
 
         result = subprocess.run(
             [sys.executable, "-m", "kitty_setup.cli", "scene", "launch", "demo"],

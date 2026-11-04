@@ -49,11 +49,6 @@ def _find_window_by_id(payload: list[dict], win_id: int) -> tuple[dict, dict] | 
     return None
 
 
-def _find_tab_with_window(payload: list[dict], win_id: int) -> dict | None:
-    located = _find_window_by_id(payload, win_id)
-    return located[0] if located else None
-
-
 def _get_text(socket: Path, win_id: int) -> str:
     result = kitten_call(socket, "get-text", "--match", f"id:{win_id}")
     if result.returncode != 0:
@@ -393,6 +388,9 @@ def test_my_kitty_scene_launch_cli_creates_three_pane_tab(
         # _resolve_socket short-circuits to the right instance directly.
         env = dict(os.environ)
         env["KITTY_LISTEN_ON"] = f"unix:{socket}"
+        # Run from inside a kitty window, the child would inherit that window's id, take the
+        # fill-current-tab branch (launcher.launch_scene), and fail the new-tab assertions.
+        env.pop("KITTY_WINDOW_ID", None)
 
         result = subprocess.run(
             [

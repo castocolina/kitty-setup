@@ -17,11 +17,11 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
 > Note (2026-09-22, D-14): every "`CLAUDE.md`" below means the canonical instruction file,
 > which R0.8 establishes as `AGENTS.md` (with `CLAUDE.md` reduced to an `@AGENTS.md` import).
 
-- [ ] **R0.1**: `CLAUDE.md` carries a non-negotiable rule — *"Research, then experiment, then
+- [x] **R0.1**: `CLAUDE.md` carries a non-negotiable rule — *"Research, then experiment, then
       decide, then implement."* Any removal or replacement of behaviour (config line, chord, code
       path) requires (a) documented research (kitty docs/source/introspection) and (b) an
       experiment on a real kitty session with recorded evidence, **before** the decision.
-- [ ] **R0.2**: `openspec/changes/phase1-curated-bindings-revert-defaults` is retired with
+- [x] **R0.2**: `openspec/changes/phase1-curated-bindings-revert-defaults` is retired with
       `openspec archive --skip-specs` — the delta is NOT fixed and the main specs are NOT synced
       (reworded 2026-09-22, phase-1 discussion D-01/D-03: `openspec validate --strict` reports 7
       errors that will never be fixed because rewriting frozen specs is out of scope). The whole
@@ -29,34 +29,34 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       `.planning/legacy/openspec/README.md`, `docs/requirements.md`, and
       `docs/propossal_roadmap.md` — each reading "FROZEN — history only; source of truth is
       `.planning/`".
-- [ ] **R0.3**: `CLAUDE.md` and its authoritative-sources list point to `.planning/`; OpenSpec
+- [x] **R0.3**: `CLAUDE.md` and its authoritative-sources list point to `.planning/`; OpenSpec
       process references are retired (the hypothesis playbook `docs/agent-iteration.md` stays).
-- [ ] **R0.4**: Git policy written into `CLAUDE.md` (replacing "No auto-commit"), reworded
+- [x] **R0.4**: Git policy written into `CLAUDE.md` (replacing "No auto-commit"), reworded
       2026-09-22 per phase-1 discussion D-06: each phase runs in its own git worktree on branch
       `gsd/phase-{phase}-{slug}`; agents commit per plan (see R0.10), and at phase end — once `make doctor`
       and `make test` are green — merge into `master` and push. Agents MUST NOT force-push or
       amend pushed commits. A pre-push hook under `tools/hooks/`, wired via `core.hooksPath`,
       enforces this structurally rather than by acknowledgment (D-07/D-08).
-- [ ] **R0.5**: `CLAUDE.md` carries a research-tooling rule (D-12): prefer `codegraph_explore` /
+- [x] **R0.5**: `CLAUDE.md` carries a research-tooling rule (D-12): prefer `codegraph_explore` /
       `codegraph explore` before opening files; when a file must be read directly, size it first
       (`wc -l`, `rg -n '<symbol>'`) and read only the relevant range; prefer `rg`, `fd`, `wc`,
       `bat`, `sd`, `eza` over slower or more verbose equivalents.
-- [ ] **R0.6**: The CodeGraph index lifecycle is automated (D-13): a newly created phase worktree
+- [x] **R0.6**: The CodeGraph index lifecycle is automated (D-13): a newly created phase worktree
       gets an index built automatically (`.codegraph/` is gitignored, so a fresh worktree has
       none), and every commit refreshes it (`codegraph sync` preferred over a full rebuild). A
       CodeGraph failure warns and never aborts the commit or the worktree creation.
-- [ ] **R0.7**: Every new GSD plan carries `cross_ai: true` in its frontmatter (D-10), so
+- [x] **R0.7**: Every new GSD plan carries `cross_ai: true` in its frontmatter (D-10), so
       cross-AI execution is the default rather than per-plan opt-in.
-- [ ] **R0.8**: `AGENTS.md` is the canonical instruction file and carries every agent rule
+- [x] **R0.8**: `AGENTS.md` is the canonical instruction file and carries every agent rule
       (D-14): GSD's `project-instruction-file` resolves to `AGENTS.md`, and codex/opencode read it
       by convention, so rules kept only in `CLAUDE.md` would be invisible to the CLIs that execute
       plans. `CLAUDE.md` is reduced to the single line `@AGENTS.md`, and
       `.planning/config.json`'s `claude_md_path` is repointed.
-- [ ] **R0.9**: A placement rule is written into `AGENTS.md` (D-15): rules and process live in
+- [x] **R0.9**: A placement rule is written into `AGENTS.md` (D-15): rules and process live in
       `AGENTS.md` (validated with `agent-md-refactor`), project information for humans lives in
       `README.md` (validated with `crafting-effective-readmes`), and stack/tooling conventions stay
       in `.claude/conventions.md`. A rule belongs in exactly one file and is moved, never copied.
-- [ ] **R0.10**: A commit-granularity rule is written into `AGENTS.md` (added 2026-09-22 at the
+- [x] **R0.10**: A commit-granularity rule is written into `AGENTS.md` (added 2026-09-22 at the
       user's request): **one commit per plan**, not one per task. An executor squashes a plan's
       work into a single logical commit whose message names the plan and the requirements it
       satisfies. A plan is split into more than one commit only when the changes are genuinely
@@ -82,10 +82,10 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       `tdd_mode` off) before the user corrected it. Whichever way it is set, setting one without the
       other halts a phase mid-run or forbids a commit the gate requires.
 
-- [ ] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
+- [x] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
       vulture (added 2026-09-23 at the user's direction after the gate's claim was measured and
       found false). Owned by **Phase 2**, the earliest phase that already edits these files.
-      Measured baseline at `5452f54`: `src/` carries **19** of pyright's 571 errors; ruff's 28 and
+      Measured baseline at `5452f54`: `src/` carries **15** of pyright's 571 errors (`uv run pyright src`); ruff's 28 and
       black's 11 files span `src`+`tests`+`tools`; bandit reports **0 high** (8 medium, 19 low —
       an earlier report of "20 high" misread bandit's *confidence* column as severity). From the
       moment this lands, "src clean" is a hard gate in the Universal Phase Gate step 5.
@@ -98,11 +98,31 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       A silent scope reduction does not. No test's behaviour may change to satisfy a type checker:
       the suite's pass/fail set must be identical before and after, evidenced by both runs.
 
+- [x] **R0.13**: **The integration suite actually runs in the phase gate.** All 70 tests under
+      `tests/integration/` are skipped unless `KITTI_INTEGRATION=1`, so `make test` has been
+      reporting `311 passed, 70 skipped` while executing none of them — and the milestone's own
+      quality standard ("integration gated by `KITTI_INTEGRATION=1` and green") was never
+      verified by anything. Added 2026-09-23 **from measurement, not suspicion**: run headless
+      under a nested compositor, all **70 pass in 43.81s**
+      (`env -u WAYLAND_DISPLAY -u DISPLAY WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 cage --
+      bash -c 'KITTI_INTEGRATION=1 uv run pytest tests/integration -q'` → `70 passed in 43.81s`,
+      no orphan `cage` or `kitty` process left behind). The tests are not rotten; they are
+      unexecuted. Owned by **Phase 2**, because Phases 3–6 rest entirely on the R2.8 integration
+      oracle and must not inherit a suite nobody runs.
+      Deliverables: (a) a `make test-integration` target that runs the suite headless when a
+      nested compositor is available and says plainly why it is skipping when one is not —
+      never a silent skip; (b) `make test` keeps its fast unit default, so the gate change costs
+      no inner-loop time; (c) Universal Phase Gate step 5 requires the integration run's captured
+      output from this phase onward; (d) every integration gate written by a plan routes through
+      the headless wrapper, so no agent run ever puts a kitty window on the user's desktop.
+      This also supplies one of the four targets `.claude/conventions.md` documents and
+      **R6.3** (Phase 8) owns — R6.3 keeps `make validate`, `make format` and `make test-unit`.
+
 ### R1 — Defect remediation
 
 Each defect is a requirement with a regression test.
 
-- [ ] **R1.1**: `my-kitty doctor`'s shell-completion check passes on a uv-tool install. Mechanism
+- [x] **R1.1**: `my-kitty doctor`'s shell-completion check passes on a uv-tool install. Mechanism
       decided 2026-09-22 (phase-2 discussion D-01): install generates a **static completion file**
       (`register-python-argcomplete --shell bash|zsh my-kitty`) under
       `~/.local/share/kitty-setup/` and the rc block sources it, so no runtime PATH lookup is
@@ -119,24 +139,32 @@ Each defect is a requirement with a regression test.
           being reintroduced, which is stricter than the round-2 (O2) form it replaces.
         - `gsd/phase-1-governance-freeze` merges to `master` only once `make doctor` exits 0 with
           every check PASS or SKIP. R1.1 is therefore a release gate for two phases, not one.
-- [ ] **R1.2**: `make clean` behaviour and help text agree; `clean` MUST NOT delete `kitty.app` or
+- [x] **R1.2**: `make clean` behaviour and help text agree; `clean` MUST NOT delete `kitty.app` or
       backups.
-- [ ] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary
+- [x] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary
       branch works; errors are visible.
-- [ ] **R1.4**: Scene fill-current-tab shell-quotes pane-0 `cwd` (`shlex.quote`), and pane-0 `cmd`
-      honours the same `bash -lc` semantics as every other pane.
-- [ ] **R1.5**: Config parse check reports the actual command used, surfaces parser stderr on
+- [x] **R1.4**: Scene fill-current-tab types pane 0's `cwd` and `cmd` into the reused shell only when every character is printable and neither holds a single quote or a backslash, and then only as single-quoted literals (`cd -- '<path>'`, `bash -lc '<cmd>'`); a typed `cwd` is absolute and free of `$`. Anything else argv can carry opens the scene in a new tab through argv, with one stderr line, and pane 0's `cmd` keeps the `bash -lc` semantics of every other pane. A recipe string holding a NUL is refused by the loader before any kitten call
+      (reworded 2026-11-03 from "Scene fill-current-tab shell-quotes pane-0 `cwd` (`shlex.quote`), and pane-0 `cmd` honours the same `bash -lc` semantics as every other pane" — measured: fish reads a backslash-quote as an escape, which a recipe value reaches only as `\\'`, since kitten decodes `\\` to `\` and `\'` to `'`; a decoded Ctrl-A reorders the typed line in bash, zsh and fish; `shlex.quote`'s bare `=bash` and `%self` expand in zsh and fish; `subprocess.run` refuses a NUL in argv; 02-13).
+- [x] **R1.5**: Config parse check reports the actual command used, surfaces parser stderr on
       failure, and rolls back the payload dir on failure; the doctor label is fixed.
-- [ ] **R1.6**: Integration tests strip `KITTY_WINDOW_ID` (h25, `scene_recipe_e2e`) so results do
+- [x] **R1.6**: Integration tests strip `KITTY_WINDOW_ID` (h25, `scene_recipe_e2e`) so results do
       not depend on being run inside kitty.
-- [ ] **R1.7**: Minor defects: the install log is **removed** entirely (reworded 2026-09-22,
+- [x] **R1.7**: Minor defects: the install log is **removed** entirely (reworded 2026-09-22,
       phase-2 discussion D-11 — nothing reads it and the spec that required it is frozen history;
       it was previously specified as "relocate outside the uv venv"); guard `int(stdout)` in the
       launcher → clean error; an empty/whitespace color is treated as **absent** (no kitten
       argument emitted, matching the recipe loader's convention) and passthrough is narrowed to
-      real `rgb:`/`rgba:`/functional forms (D-12); `prune --keep <0` → argparse error; harness
-      teardown `close-os-window`; doctor "skipped" → real SKIP state; PATH-migration messages
-      printed as specified; unsupported-shell hint prints both lines.
+      **`rgb:` only** (reworded 2026-09-23 from "real `rgb:`/`rgba:`/functional forms" — measured
+      against kitty 0.49.0's own parser, which accepts `rgb:ff/00/00` and rejects `rgba:ff/00/00/80`,
+      `rgb(1,2,3)`, `rgba(1,2,3,0.5)` and `hsl(1,2%,3%)`, so the wider list named forms kitty cannot
+      consume; U-2 in `.planning/phases/02-defect-remediation/02-RESEARCH.md`); `prune --keep <0` →
+      argparse error; **the harness teardown verb stays `close-window`** (reworded 2026-09-23: the
+      original "teardown `close-os-window`" is not implementable — `close-os-window` is not a
+      `kitten @` subcommand in kitty 0.49.0, only a mappable action, and the teardown call is wrapped
+      in `except HarnessCommandError: pass`, so implementing it literally would leak one kitty process
+      per integration test **silently**; `close-window` was measured correct with 2 OS windows and 3
+      windows; U-1 in 02-RESEARCH.md); doctor "skipped" → real SKIP state; PATH-migration messages
+      printed as specified; the unsupported-shell hint prints every manual line the result carries — the PATH export, and, because no completion file is generated for a shell outside bash/zsh, an explicit statement that completion is not set up for that shell, **never** a completion line in another shell's syntax (amended 2026-09-23: the original "prints both lines" predates R1.1's static completion file, and taken literally would hand a fish user a bash `source` line — the class of untruth R1.1 exists to remove).
 - [ ] **R1.8**: Introspection macOS attribution — normalise payload chords through kitty's own
       `parse_shortcut` (in the same `+runpy` call) so `cmd+k` ≡ `super+k` attributes to our file
       (mechanism decided 2026-09-22, phase-3 discussion D-06; both verified to parse to
@@ -402,25 +430,26 @@ Every v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| R0.1 | Phase 1 | Pending |
-| R0.2 | Phase 1 | Pending |
-| R0.3 | Phase 1 | Pending |
-| R0.4 | Phase 1 | Pending |
-| R0.5 | Phase 1 | Pending |
-| R0.6 | Phase 1 | Pending |
-| R0.7 | Phase 1 | Pending |
-| R0.8 | Phase 1 | Pending |
-| R0.9 | Phase 1 | Pending |
-| R0.10 | Phase 1 | Pending |
-| R0.11 | Phase 2 | Pending |
+| R0.1 | Phase 1 | Complete |
+| R0.2 | Phase 1 | Complete |
+| R0.3 | Phase 1 | Complete |
+| R0.4 | Phase 1 | Complete |
+| R0.5 | Phase 1 | Complete |
+| R0.6 | Phase 1 | Complete |
+| R0.7 | Phase 1 | Complete |
+| R0.8 | Phase 1 | Complete |
+| R0.9 | Phase 1 | Complete |
+| R0.10 | Phase 1 | Complete |
+| R0.11 | Phase 2 | Complete |
 | R0.12 | Phase 8.5 | Pending |
-| R1.1 | Phase 2 | Pending |
-| R1.2 | Phase 2 | Pending |
-| R1.3 | Phase 2 | Pending |
-| R1.4 | Phase 2 | Pending |
-| R1.5 | Phase 2 | Pending |
-| R1.6 | Phase 2 | Pending |
-| R1.7 | Phase 2 | Pending |
+| R0.13 | Phase 2 | Complete |
+| R1.1 | Phase 2 | Complete |
+| R1.2 | Phase 2 | Complete |
+| R1.3 | Phase 2 | Complete |
+| R1.4 | Phase 2 | Complete |
+| R1.5 | Phase 2 | Complete |
+| R1.6 | Phase 2 | Complete |
+| R1.7 | Phase 2 | Complete |
 | R1.8 | Phase 3 | Pending |
 | R2.2 | Phase 3 | Pending |
 | R2.5 | Phase 3 | Pending |
@@ -462,6 +491,7 @@ test is *built* in Phase 3 and *re-run as a gate* in Phases 4, 7, and 9 — it i
 and is not double-mapped.
 
 **Coverage:**
+
 - v1 requirements: 36 total
 - Mapped to phases: 36
 - Unmapped: 0 ✓

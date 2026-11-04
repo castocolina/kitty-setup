@@ -96,3 +96,22 @@ def test_bad_color_in_scene_opens_no_window(scratch_dir: Path, tmp_path: Path) -
         tabs_after = {t["id"] for w in ls(socket) for t in w["tabs"]}
         # Rejected before any kitten launch — no new tab/window appeared.
         assert tabs_after == tabs_before
+
+
+def test_empty_colour_window_background_is_absent(scratch_dir: Path) -> None:
+    # D-12 (02-06): an empty colour is absent — no kitten argument, exit 0, no error. Before
+    # 02-06 `background=` reached the kitten: exit 1 "Error:  is not a valid color".
+    conf = draft_conf(scratch_dir)
+    with spawn_kitty(conf, scratch_dir) as pid:
+        socket = wait_for_socket(pid)
+        time.sleep(SETTLE_S)
+        # The scratch kitty has one window; with no --match, get-colors and the command
+        # both address it as the active window.
+        before = get_color(socket, "background")
+        assert before is not None
+
+        result = _run(socket, "window", "background", "")
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+        time.sleep(SETTLE_S)
+        assert get_color(socket, "background") == before

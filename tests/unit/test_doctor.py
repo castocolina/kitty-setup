@@ -59,7 +59,7 @@ def test_run_checks_reports_each_check(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
     monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
     monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
-    monkeypatch.setattr(doctor.installer, "_kitty_bin", lambda _: tmp_path / "missing-kitty")
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", lambda _: tmp_path / "missing-kitty")
 
     results = doctor.run_checks(home=home)
     names = [r.name for r in results]
@@ -139,6 +139,14 @@ def test_run_checks_uses_supplied_home_root(
 
     monkeypatch.setattr(doctor.config_updater.ConfigPaths, "for_user", spy)
     monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+    monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
+    monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
+
+    def missing_kitty(dest: Path) -> Path:
+        del dest
+        return tmp_path / "missing-kitty"
+
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", missing_kitty)
 
     doctor.run_checks(home=tmp_path)
     assert captured["home"] == tmp_path
@@ -159,59 +167,420 @@ def test_check_kitty_binary_subprocess_timeout(
     assert resolved is None
 
 
-def _seed_rc_with_block(home: Path, body: str) -> Path:
-    rc = home / ".zshrc"
-    rc.write_text(
-        f"{doctor.path_integration.MARKER_BEGIN}\n{body}\n{doctor.path_integration.MARKER_END}\n",
-        encoding="utf-8",
-    )
-    return rc
+# --- completion (R1.1, D-01..D-03, U-3) -------------------------------------
+# Built from the producers the runtime uses: ``installer.write_completion_script`` and
+# ``path_integration.ensure_local_bin_in_path`` against a ``tmp_path`` home, with ``SHELL`` set.
+# Each case asserts text no pre-D-01 detail can contain: under ``uv run`` the venv's ``bin/`` is
+# on PATH, so the old helper lookup PASSes on the eval line alone.
 
 
-def test_completion_check_passes_when_helper_and_rc_line_present(
+def _completion_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shell: str) -> Path:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("SHELL", f"/usr/bin/{shell}")
+    doctor.installer.write_completion_script(shell, home=home)
+    doctor.path_integration.ensure_local_bin_in_path(home=home, shell=shell)
+    return home
+
+
+def test_completion_check_passes_bash_naming_the_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
-    body = (
-        f"{doctor.path_integration.EXPORT_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
-        f"    {doctor.path_integration.COMPLETION_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_END}"
-    )
-    _seed_rc_with_block(tmp_path, body)
-    result = doctor._check_completion(home=tmp_path)
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    result = doctor._check_completion(home=home)
     assert result.name == "completion"
+    assert result.passed is True
+    assert result.skipped is False
+    assert str(doctor.installer.completion_script_path("bash", home=home)) in result.detail
+
+
+def test_completion_check_fails_when_file_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.unlink()
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert result.skipped is False
+    assert str(script) in result.detail
+
+
+def test_completion_check_fails_when_file_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.write_text("# shellcode from an older argcomplete\n", encoding="utf-8")
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert str(script) in result.detail
+    assert "stale" in result.detail
+    assert "my-kitty install" in result.detail
+
+
+def test_completion_check_fails_when_block_lacks_source_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    rc = home / ".bashrc"
+    rc.write_text(
+        f"{doctor.path_integration.MARKER_BEGIN}\n"
+        f"{doctor.path_integration.EXPORT_LINE}\n"
+        f"{doctor.path_integration.MARKER_END}\n",
+        encoding="utf-8",
+    )
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert str(rc) in result.detail
+    assert str(doctor.installer.completion_script_path("bash", home=home)) in result.detail
+
+
+def test_completion_check_skips_unsupported_shell(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    result = doctor._check_completion(home=home)
+    assert result.skipped is True
+    assert "fish" in result.detail
+    assert result.render().startswith("SKIP completion: ")
+
+
+def test_completion_check_passes_zsh_and_says_what_it_did_not_observe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert str(doctor.installer.completion_script_path("zsh", home=home)) in result.detail
+    assert "not observe" in result.detail
+    assert "_comps" in result.detail
+
+
+def test_completion_block_position_is_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """02-14: zsh registers through fpath wherever the block sits, so a later compinit is no FAIL.
+
+    Doctor must not FAIL an rc that a tool appended to: the position FAIL is gone.
+    """
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    rc = home / ".zshrc"
+    rc.write_text(
+        rc.read_text(encoding="utf-8") + "autoload -Uz compinit && compinit\n", encoding="utf-8"
+    )
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert result.skipped is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh"])
+def test_completion_rc_non_utf8_passes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, shell: str
+) -> None:
+    """WR-06: a Latin-1 byte in the rc is read with surrogateescape, not a traceback."""
+    home = _completion_home(tmp_path, monkeypatch, shell)
+    rc = home / (".bashrc" if shell == "bash" else ".zshrc")
+    rc.write_bytes(b"# caf\xe9 alias\n" + rc.read_bytes())
+    result = doctor._check_completion(home=home)
     assert result.passed is True
 
 
-def test_completion_check_fails_when_helper_missing(
+def test_completion_byte_compare_flags_crlf_only_as_stale(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
-    body = (
+    """A-4: the staleness check compares bytes, so a script whose only change is CRLF is stale."""
+    home = _completion_home(tmp_path, monkeypatch, "bash")
+    script = doctor.installer.completion_script_path("bash", home=home)
+    script.write_bytes(script.read_bytes().replace(b"\n", b"\r\n"))
+    result = doctor._check_completion(home=home)
+    assert result.passed is False
+    assert "stale" in result.detail
+
+
+def test_completion_zsh_pass_detail_names_fpath(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The zsh PASS detail names fpath and the one shape it cannot see (02-14, T-2-75)."""
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    result = doctor._check_completion(home=home)
+    assert result.passed is True
+    assert "fpath" in result.detail
+    assert "compinit -C" in result.detail
+    assert "last command" not in result.detail
+    assert "not observe" in result.detail
+
+
+def test_completion_check_fails_zsh_body_without_self_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pre-revision guard-only body, last, with no ``compinit`` anywhere: registers nothing.
+
+    Hand-built, because no producer emits this body any more.
+    """
+    home = _completion_home(tmp_path, monkeypatch, "zsh")
+    rc = home / ".zshrc"
+    rc.write_text(
+        f"{doctor.path_integration.MARKER_BEGIN}\n"
         f"{doctor.path_integration.EXPORT_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_BEGIN}\n"
-        f"    {doctor.path_integration.COMPLETION_LINE}\n"
-        f"{doctor.path_integration.COMPLETION_GUARD_END}"
+        f"{doctor.path_integration.completion_source_line('zsh')}\n"
+        f"{doctor.path_integration.MARKER_END}\n",
+        encoding="utf-8",
     )
-    _seed_rc_with_block(tmp_path, body)
-    result = doctor._check_completion(home=tmp_path)
+    result = doctor._check_completion(home=home)
     assert result.passed is False
-    assert "register-python-argcomplete" in result.detail
-    assert "not on PATH" in result.detail
+    assert result.skipped is False
+    assert str(rc) in result.detail
+    assert "my-kitty install" in result.detail
 
 
-def test_completion_check_fails_when_rc_eval_line_missing(
+# --- parse check and bindings: real SKIPs, and a label taken from the result (R1.5, R1.7) --------
+# Driven through the public ``run_checks`` with ``_check_kitty_binary`` replaced by name, so these
+# cases add no pyright ``reportPrivateUsage`` finding. New names (``ParseCheckResult``) are reached
+# as module attributes inside each body, so a missing one fails its own case at RED.
+
+BAD_LINE_DIAG = (
+    "BadLine(number=1, line='cursor_shape banana', exception=ValueError('Invalid cursor shape: "
+    "banana allowed values are block, beam, underline'), file='kitty-setup/kitty-setup.conf')\n"
+)
+MISSING_INCLUDE_WARNING = (
+    "[0.009] Could not find included config file: /x/kitty-setup/kitty-setup.conf, ignoring\n"
+)
+
+
+def _doctor_home(tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    paths.kitty_dir.mkdir(parents=True)
+    paths.conf_file.write_text("font_size 12\n", encoding="utf-8")
+    return home
+
+
+def _fake_parser_kitty(tmp_path: Path, *, exit_code: int, stderr: str = "") -> Path:
+    """A fake kitty that writes ``stderr`` verbatim and exits ``exit_code`` for any argv."""
+    script = tmp_path / f"fake-parser-kitty-{exit_code}"
+    sidecar = tmp_path / f"fake-parser-kitty-{exit_code}.stderr"
+    sidecar.write_text(stderr, encoding="utf-8")
+    script.write_text(
+        f"#!/usr/bin/env bash\ncat '{sidecar}' >&2\nexit {exit_code}\n", encoding="utf-8"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return script
+
+
+def _checks_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+    home: Path,
+    kitty: Path | None,
+    *,
+    bindings_error: str = "introspection is not exercised by this case",
+) -> dict[str, doctor.CheckResult]:
+    def fake_kitty_binary() -> tuple[doctor.CheckResult, Path | None]:
+        return doctor.CheckResult("kitty binary", kitty is not None, str(kitty)), kitty
+
+    def failing_introspection(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise doctor.binding_introspection.BindingIntrospectionError(bindings_error)
+
+    monkeypatch.setattr(doctor, "_check_kitty_binary", fake_kitty_binary)
+    monkeypatch.setattr(doctor.binding_introspection, "enumerate_bindings", failing_introspection)
+    return {r.name: r for r in doctor.run_checks(home=home)}
+
+
+def _assert_one_skip(result: doctor.CheckResult, name: str) -> None:
+    line = result.render()
+    assert result.skipped is True
+    assert result.passed is False
+    assert line == f"SKIP {name}: {result.detail}"
+    assert line.count("SKIP") == 1
+    assert "skipped" not in line[len("SKIP ") :].lower()
+
+
+def test_skip_state_parse_check_without_kitty_binary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(doctor, "_RC_BY_SHELL", {"zsh": ".zshrc"})
-    monkeypatch.setattr(doctor.os, "environ", {"SHELL": "/usr/bin/zsh"})
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/u/bin/" + name)
-    _seed_rc_with_block(tmp_path, doctor.path_integration.EXPORT_LINE)  # PATH-only block
-    result = doctor._check_completion(home=tmp_path)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), None)["parse check"]
+    _assert_one_skip(result, "parse check")
+    assert "kitty binary not available" in result.detail
+
+
+def test_skip_state_bindings_without_kitty_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), None)["bindings"]
+    _assert_one_skip(result, "bindings")
+    assert "kitty binary not available" in result.detail
+
+
+def test_skip_state_bindings_when_introspection_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0)
+    checks = _checks_by_name(
+        monkeypatch, _doctor_home(tmp_path), kitty, bindings_error="probe failure"
+    )
+    result = checks["bindings"]
+    _assert_one_skip(result, "bindings")
+    assert result.detail == "probe failure"
+
+
+def test_parse_detail_names_the_command_from_the_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sentinel = "/sentinel/kitty +runpy 'import sys' /sentinel/kitty.conf"
+
+    def fake_parse_check(
+        conf_file: Path, kitty_bin: str | Path
+    ) -> doctor.config_updater.ParseCheckResult:
+        del conf_file, kitty_bin
+        return doctor.config_updater.ParseCheckResult(ok=True, command=sentinel, stderr="")
+
+    monkeypatch.setattr(doctor.config_updater, "parse_check", fake_parse_check)
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
+    assert result.passed is True
+    assert result.skipped is False
+    assert sentinel in result.detail
+    assert "--debug-config" not in result.detail
+
+
+def test_parse_detail_surfaces_parser_stderr_on_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kitty = _fake_parser_kitty(tmp_path, exit_code=1, stderr=BAD_LINE_DIAG)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
     assert result.passed is False
-    assert "missing" in result.detail.lower()
+    assert result.skipped is False
+    assert BAD_LINE_DIAG.strip() in result.detail
+    assert "+runpy" in result.detail
+    assert "--debug-config" not in result.detail
+    assert "\n" not in result.render()
+
+
+def test_parse_detail_pass_carries_parser_warnings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing include does not fail the check (T-2-19), so the PASS line must show it."""
+    kitty = _fake_parser_kitty(tmp_path, exit_code=0, stderr=MISSING_INCLUDE_WARNING)
+    result = _checks_by_name(monkeypatch, _doctor_home(tmp_path), kitty)["parse check"]
+    assert result.passed is True
+    assert MISSING_INCLUDE_WARNING.strip() in result.detail
+    assert "+runpy" in result.detail
+    assert "\n" not in result.render()
+
+
+def test_guard_kitty_less_host_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Over the real ``run_checks``: two checks turning into SKIPs must not let this host pass."""
+    home = _doctor_home(tmp_path)
+    missing_kitty = tmp_path / "missing-kitty"
+
+    def no_which(name: str) -> None:
+        del name
+
+    def kitty_bin_under(dest: Path) -> Path:
+        del dest
+        return missing_kitty
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(doctor.shutil, "which", no_which)
+    monkeypatch.setattr(doctor.installer, "SYMLINK_PATH", tmp_path / "missing-link")
+    monkeypatch.setattr(doctor.installer, "DESKTOP_PATH", tmp_path / "missing.desktop")
+    monkeypatch.setattr(doctor.installer, "kitty_bin_path", kitty_bin_under)
+
+    code = doctor.cli_doctor()
+
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 1
+    assert len(lines) == 9
+    assert lines[0].startswith("FAIL kitty binary: ")
+
+
+def test_guard_all_pass_or_skip_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def all_pass_or_skip(home: Path | None = None) -> list[doctor.CheckResult]:
+        del home
+        return [
+            doctor.CheckResult("alpha", True, "ok"),
+            doctor.CheckResult("beta", False, "not applicable on this host", skipped=True),
+        ]
+
+    monkeypatch.setattr(doctor, "run_checks", all_pass_or_skip)
+
+    code = doctor.cli_doctor()
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "PASS alpha: ok",
+        "SKIP beta: not applicable on this host",
+    ]
+
+
+_OUR_BLOCK = (
+    f"{doctor.config_updater.MARKER_BEGIN}\n{doctor.config_updater.INCLUDE_LINE}\n"
+    f"{doctor.config_updater.MARKER_END}\n"
+).encode()
+
+
+def test_parse_cannot_run_is_a_fail_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A parse check that times out is a FAIL line naming the timeout, not a traceback (WR-01)."""
+    paths = doctor.config_updater.ConfigPaths.for_user(home=_doctor_home(tmp_path))
+
+    def timed_out(*args: Any, **kwargs: Any) -> None:
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=15)
+
+    monkeypatch.setattr(doctor.config_updater.subprocess, "run", timed_out)
+    check_parse = vars(doctor)["_check_parse"]
+    result = check_parse(paths, Path("/nonexistent/kitty"))
+    assert not result.passed
+    assert not result.skipped
+    assert "did not finish within" in result.detail
+
+
+def test_sentinel_non_utf8(tmp_path: Path) -> None:
+    """A Latin-1 byte outside our block does not break doctor's sentinel check (WR-06)."""
+    home = tmp_path / "home"
+    conf = home / ".config" / "kitty" / "kitty.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_bytes(b"# caf\xe9 comment\nfont_size 13\n" + _OUR_BLOCK)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    check_sentinel = vars(doctor)["_check_sentinel_block"]
+    assert check_sentinel(paths).passed
+
+
+# --- IN-03: doctor's payload line names every payload aside (02-15) ---------------------------
+
+
+@pytest.mark.parametrize("state", ["installed", "missing"])
+def test_payload_check_names_asides(state: str, tmp_path: Path) -> None:
+    """With an aside left by an interrupted install, PASS and FAIL both name it on the line."""
+    home = _doctor_home(tmp_path)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    if state == "installed":
+        paths.payload_entry.parent.mkdir(parents=True, exist_ok=True)
+        paths.payload_entry.write_text("", encoding="utf-8")
+    aside = paths.kitty_dir / "kitty-setup.rollback.20261103T120000Z"
+    aside.mkdir()
+    check_payload = vars(doctor)["_check_payload"]
+    result = check_payload(paths)
+    assert result.passed is (state == "installed")
+    assert str(aside) in result.detail, result.detail
+
+
+def test_payload_check_without_asides_is_unchanged(tmp_path: Path) -> None:
+    """With no aside the detail is the bare payload path (PASS) or ``missing:`` (FAIL)."""
+    home = _doctor_home(tmp_path)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    check_payload = vars(doctor)["_check_payload"]
+    missing = check_payload(paths)
+    assert missing.passed is False
+    assert missing.detail == f"missing: {paths.payload_entry}"
+    paths.payload_entry.parent.mkdir(parents=True, exist_ok=True)
+    paths.payload_entry.write_text("", encoding="utf-8")
+    present = check_payload(paths)
+    assert present.passed is True
+    assert present.detail == str(paths.payload_entry)
