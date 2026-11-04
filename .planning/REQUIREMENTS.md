@@ -143,8 +143,8 @@ Each defect is a requirement with a regression test.
       backups.
 - [x] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary
       branch works; errors are visible.
-- [x] **R1.4**: Scene fill-current-tab shell-quotes pane-0 `cwd` (`shlex.quote`), and pane-0 `cmd`
-      honours the same `bash -lc` semantics as every other pane.
+- [x] **R1.4**: Scene fill-current-tab types pane 0's `cwd` and `cmd` into the reused shell only when every character is printable and neither holds a single quote or a backslash, and then only as single-quoted literals (`cd -- '<path>'`, `bash -lc '<cmd>'`); a typed `cwd` is absolute and free of `$`. Anything else argv can carry opens the scene in a new tab through argv, with one stderr line, and pane 0's `cmd` keeps the `bash -lc` semantics of every other pane. A recipe string holding a NUL is refused by the loader before any kitten call
+      (reworded 2026-11-03 from "Scene fill-current-tab shell-quotes pane-0 `cwd` (`shlex.quote`), and pane-0 `cmd` honours the same `bash -lc` semantics as every other pane" — measured: fish reads a backslash-quote as an escape, which a recipe value reaches only as `\\'`, since kitten decodes `\\` to `\` and `\'` to `'`; a decoded Ctrl-A reorders the typed line in bash, zsh and fish; `shlex.quote`'s bare `=bash` and `%self` expand in zsh and fish; `subprocess.run` refuses a NUL in argv; 02-13).
 - [x] **R1.5**: Config parse check reports the actual command used, surfaces parser stderr on
       failure, and rolls back the payload dir on failure; the doctor label is fixed.
 - [x] **R1.6**: Integration tests strip `KITTY_WINDOW_ID` (h25, `scene_recipe_e2e`) so results do
