@@ -63,7 +63,7 @@ discuss-phase.
 - Decimal phases (2.1, 2.2): urgent insertions (marked INSERTED), executing between integers
 
 - [ ] **Phase 1: Governance & Freeze** - Lock the mantra, the git policy, and `.planning/` as the one source of truth; archive and freeze `openspec/`
-- [ ] **Phase 2: Defect Remediation** - Fix every known audit defect with a regression test so a fresh install is all PASS/SKIP
+- [x] **Phase 2: Defect Remediation** - Fix every known audit defect with a regression test so a fresh install is all PASS/SKIP (completed 2026-11-04)
 - [ ] **Phase 3: Keybinding Research & Oracle** - Build the `keys`-vs-live-kitty oracle test first, then the chord matrix and the categorisation experiment
 - [ ] **Phase 4: Keybinding Harmonization** - Make chords kitty-organic per OS, judged by the oracle
 - [ ] **Phase 5: Component Separation & Version Floor** - Foundation and scenes install independently, no cross-imports, doctor enforces a minimum kitty version
@@ -129,7 +129,7 @@ instruction-file ordering constraint plus the tracer-first lead, not by a lack o
   6. `uv run ruff check src`, `uv run black --check src`, `uv run pyright src`, `uv run bandit -c pyproject.toml -q -r src` and `uv run vulture src tests vulture_allowlist.py` all report clean for `src/` (R0.11) — the Universal Phase Gate's src half becomes a hard gate from this phase onward. `tests/` is out of scope here; Phase 8.5 owns it.
 
   7. **The integration suite runs, and is seen to run** (R0.13): `make test-integration` executes all of `tests/integration/` headless under a nested compositor and reports its real count — measured green today at **70 passed in 43.81s** — while `make test` keeps its fast unit-only default. A run that skips because no compositor was found says so loudly and does not count as green. Genuinely dead code found on the way is **deleted**, not allowlisted; only framework idioms that a static checker cannot see through (argcomplete's `completer` attribute, `__exit__`'s signature parameters, pytest's own hooks, and an enum member reached only by value lookup or iteration — today `CompletionShell.BASH`, via `CompletionShell(shell)` and `for member in CompletionShell`) go in `vulture_allowlist.py`, each with a one-line reason. Pytest fixtures, which pytest resolves by parameter name or `usefixtures`, are excluded generically through vulture's `ignore_decorators = ["@pytest.fixture"]` in `[tool.vulture]` rather than named one by one. (Amended 2026-09-24 from a measured decision: 02-01/02-02 added these four vulture findings, and deleting any of them breaks bash completion or the tests that use the fixtures.)
-**Plans**: 15/15 plans executed
+**Plans**: 15/15 plans complete
 - [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
 - [x] 02-03-PLAN.md
@@ -298,7 +298,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Governance & Freeze | 5/5 | Complete (merge deferred) | 2026-09-23 |
-| 2. Defect Remediation | 15/15 | In Progress | - |
+| 2. Defect Remediation | 15/15 | Complete    | 2026-11-04 |
 | 3. Keybinding Research & Oracle | 0/TBD | Not started | - |
 | 4. Keybinding Harmonization | 0/TBD | Not started | - |
 | 5. Component Separation & Version Floor | 0/TBD | Not started | - |
