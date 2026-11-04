@@ -313,6 +313,124 @@ def test_install_log_not_written_by_mocked_install(
     assert calls["uninstall"] == [] and calls["remove_kitty"] == []
 
 
+# --- IN-03 / R1.5: payload asides are removed on a full uninstall, kept and named otherwise -----
+
+_ASIDE_NAMES: tuple[str, ...] = (
+    "kitty-setup.rollback",
+    "kitty-setup.rollback.20261103T120000Z",
+    "kitty-setup.rollback.20261103T120000Z.1",
+)
+_SYMLINK_ASIDE_NAME = "kitty-setup.rollback.20261103T120000Z.2"
+_LOOKALIKE_NAMES: tuple[str, ...] = (
+    "kitty-setup.rollback-mine",
+    "kitty-setup.rollback.notes",
+    "kitty-setup.rollbackX",
+    "kitty-setup.rollback.20261103T120000Z.1.bak",
+)
+
+
+def _seed_payload_asides(tmp_path: Path) -> tuple[list[Path], list[Path], Path]:
+    """The asides an interrupted install leaves under ``~/.config/kitty``, plus four look-alikes.
+
+    Returns (the asides, the look-alikes, the marker file in the symlink's target). The ``.2``
+    aside is a symlink to a directory outside the footprint, which a removal must unlink and
+    never follow.
+    """
+    kitty_dir = tmp_path / ".config" / "kitty"
+    kitty_dir.mkdir(parents=True)
+    asides = [kitty_dir / name for name in _ASIDE_NAMES]
+    for aside in asides:
+        aside.mkdir()
+    target = tmp_path / "dotfiles"
+    target.mkdir()
+    marker = target / "MARKER"
+    marker.write_text("kept", encoding="utf-8")
+    link = kitty_dir / _SYMLINK_ASIDE_NAME
+    link.symlink_to(target, target_is_directory=True)
+    looks = [kitty_dir / name for name in _LOOKALIKE_NAMES]
+    for look in looks:
+        look.mkdir()
+    return [*asides, link], looks, marker
+
+
+def _present(path: Path) -> bool:
+    return path.is_symlink() or path.exists()
+
+
+@pytest.mark.parametrize("keep_kitty", [False, True], ids=["default", "keep_kitty"])
+def test_full_uninstall_removes_payload_asides(
+    keep_kitty: bool,
+    calls: dict[str, list[object]],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A full uninstall (no ``--keep-backups``/``--keep-config``) removes and names every aside."""
+    asides, looks, marker = _seed_payload_asides(tmp_path)
+
+    rc = installer.cli_uninstall(_ns(keep_kitty=keep_kitty))
+
+    assert rc == 0
+    for aside in asides:
+        assert not _present(aside), f"{aside.name} survived a full uninstall"
+    assert marker.read_text(encoding="utf-8") == "kept", "a symlinked aside's target was touched"
+    for look in looks:
+        assert look.is_dir(), f"{look.name} is not a payload aside and must survive"
+    out = capsys.readouterr().out
+    for aside in asides:
+        assert f"removed payload aside {aside}" in out, aside.name
+
+
+@pytest.mark.parametrize("case", ["keep_backups", "keep_config", "clean_recipe"])
+def test_kept_payload_asides_are_named(
+    case: str, tmp_path: Path, capsys: pytest.CaptureFixture[str], calls: dict[str, list[object]]
+) -> None:
+    """Each uninstall that keeps backups keeps every aside and names it: delete it by hand."""
+    del calls
+    asides, looks, _marker = _seed_payload_asides(tmp_path)
+    if case == "clean_recipe":
+        flags = _clean_recipe_uninstall_flags()
+    else:
+        flags = [f"--{case.replace('_', '-')}"]
+
+    rc = cli.main(["uninstall", *flags])
+
+    assert rc == 0
+    for aside in [*asides, *looks]:
+        assert _present(aside), f"{aside.name} was removed by {flags}"
+    kept = [line for line in capsys.readouterr().out.splitlines() if "kept payload aside" in line]
+    assert len(kept) == len(asides), kept
+    for aside in asides:
+        assert any(f"kept payload aside {aside}" in line for line in kept), aside.name
+    assert all("delete it by hand" in line for line in kept), kept
+
+
+def test_payload_aside_removal_failure_is_one_line(
+    calls: dict[str, list[object]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A removal that fails names its aside on one stderr line; the rest of the uninstall runs."""
+    asides, _looks, _marker = _seed_payload_asides(tmp_path)
+
+    def denied(path: Path) -> None:
+        raise OSError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(config_updater, "discard_payload_aside", denied, raising=False)
+
+    rc = installer.cli_uninstall(_ns())
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    failures = [line for line in captured.err.splitlines() if "payload aside" in line]
+    assert len(failures) == len(asides), failures
+    for aside in asides:
+        assert any(str(aside) in line for line in failures), aside.name
+    assert "uv tool uninstall my-kitty" in captured.out, "the self-removal banner must still print"
+    assert len(calls["remove_kitty"]) == 1
+    assert len(calls["remove_completion"]) == 1
+
+
 def _bundled(name: str) -> Path:
     """Where a wheel install puts a force-included directory, next to ``installer.py``."""
     return Path(installer.__file__).resolve().parent / name

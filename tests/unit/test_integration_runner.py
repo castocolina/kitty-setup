@@ -2,7 +2,7 @@
 
 Hermetic: no ``cage``, no display and no kitty. Every compositor here is a fake
 written as a Python script under ``tmp_path`` (the Stack rule forbids shell in the
-repo); the child inside it is real — the runner's own ``--child`` mode, which runs
+repo); the child inside it is real — the runner's own child entry point, which runs
 ``sys.executable -m pytest`` over a two-line test file under ``tmp_path``, so the
 repository's ``conftest.py`` and ``addopts`` do not apply.
 
@@ -29,8 +29,10 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -253,7 +255,7 @@ def test_propagates_child_mode_writes_its_status_file(
     monkeypatch.chdir(tmp_path)
     status = tmp_path / "status"
     args = _pytest_case(tmp_path, passing=False)
-    assert rt.main(["--child", str(status), "--", *args]) == 1
+    assert vars(rt)["_child"]([str(status), "--", *args]) == 1
     assert status.read_text(encoding="utf-8").strip() == "1"
 
 
@@ -487,3 +489,186 @@ def test_forge_no_runner_message_carries_a_pytest_summary_token(
         result = scenario()
         assert result != 0
     _assert_no_forgery(capfd.readouterr().err)
+
+
+# --------------------------------------------------------------------------- IN-02 (02-15)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--ignore", "tests/integration/test_x.py"],
+        ["--deselect", "tests/integration/test_x.py::test_a"],
+    ],
+    ids=["ignore", "deselect"],
+)
+def test_selector_option_value_is_never_a_selector(argv: list[str], tmp_path: Path) -> None:
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    (tmp_path / "tests" / "integration" / "test_x.py").write_text("", encoding="utf-8")
+    assert _rt().build_pytest_args(argv, cwd=tmp_path) == ["tests/integration", *argv]
+
+
+def test_selector_k_value_naming_a_path_is_not_a_usage_error(tmp_path: Path) -> None:
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    (tmp_path / "tests" / "unit").mkdir(parents=True)
+    args = ["-k", "tests"]
+    assert _rt().build_pytest_args(args, cwd=tmp_path) == ["tests/integration", *args]
+
+
+@pytest.mark.parametrize(
+    "argv", [["-q", "tests/unit"], ["-k", "x", "tests/unit"]], ids=["q_then_unit", "k_then_unit"]
+)
+def test_selector_flag_before_an_outside_path_still_refuses(
+    argv: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = _rt()
+    (tmp_path / "tests" / "unit").mkdir(parents=True)
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    def must_not_run() -> object:
+        raise AssertionError("a refused argv reached the compositor lookup")
+
+    monkeypatch.setattr(rt, "resolve_compositor", must_not_run)
+    assert rt.main(argv) == 64
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--cov", "-k", "tests"],
+        ["--debug", "-k", "tests"],
+        ["--cov", "tests/unit"],
+        ["-xk", "tests"],
+    ],
+    ids=["cov_then_k", "debug_then_k", "cov_bare_value", "short_cluster"],
+)
+def test_selector_option_values_follow_argparse(argv: list[str], tmp_path: Path) -> None:
+    (tmp_path / "tests" / "unit").mkdir(parents=True)
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    assert _rt().build_pytest_args(argv, cwd=tmp_path) == ["tests/integration", *argv]
+
+
+# (argv, the option the message must name). The `=` spellings of a short option are measured in
+# 02-15's SUMMARY: pytest's argparse strips the `=` and takes the rest as the value.
+_BYPASS_CASES: list[tuple[list[str], str]] = [
+    (["--noconftest"], "--noconftest"),
+    (["--confcutdir=tests/integration"], "--confcutdir"),
+    (["--confcutdir", "tests/integration"], "--confcutdir"),
+    (["-o", "addopts=--noconftest"], "-o"),
+    (["-oaddopts=--noconftest"], "-o"),
+    (["--override-ini=addopts=--noconftest"], "--override-ini"),
+    (["-c", "tests/integration/alt.ini"], "-c"),
+    (["-ctests/integration/alt.ini"], "-c"),
+    (["-xc", "tests/integration/alt.ini"], "-c"),
+    (["--config-file=x.ini"], "--config-file"),
+    (["@tests/integration/args.txt"], "@tests/integration/args.txt"),
+    (["-k", "@tests/integration/args.txt"], "@tests/integration/args.txt"),
+    (["-o=addopts=--noconftest"], "-o"),
+    (["-c=tests/integration/alt.ini"], "-c"),
+]
+_BYPASS_IDS: list[str] = [
+    "noconftest",
+    "confcutdir_eq",
+    "confcutdir_sep",
+    "override_sep",
+    "override_glued",
+    "override_long_eq",
+    "config_sep",
+    "config_glued",
+    "config_cluster",
+    "config_file_eq",
+    "argfile",
+    "argfile_as_value",
+    "override_eq_short",
+    "config_eq_short",
+]
+
+
+@pytest.mark.parametrize(("argv", "option"), _BYPASS_CASES, ids=_BYPASS_IDS)
+def test_selector_conftest_bypass_is_a_usage_error(
+    argv: list[str], option: str, tmp_path: Path
+) -> None:
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    (tmp_path / "tests" / "integration" / "alt.ini").write_text("", encoding="utf-8")
+    (tmp_path / "tests" / "integration" / "args.txt").write_text("--noconftest\n", encoding="utf-8")
+    rt = _rt()
+    # Called directly, never through main: at RED nothing is refused, and main would then start
+    # a compositor.
+    with pytest.raises(rt.UsageError) as caught:
+        rt.build_pytest_args(argv, cwd=tmp_path)
+    message = str(caught.value)
+    assert repr(option) in message, message
+    assert "tests/conftest.py" in message, message
+    _assert_no_forgery(message)
+
+
+def test_selector_override_ini_of_another_key_is_allowed(tmp_path: Path) -> None:
+    (tmp_path / "tests" / "integration").mkdir(parents=True)
+    argv = ["-o", "xfail_strict=true"]
+    assert _rt().build_pytest_args(argv, cwd=tmp_path) == ["tests/integration", *argv]
+
+
+def test_headless_env_scrubs_pytest_addopts() -> None:
+    env = _rt().headless_env({"PYTEST_ADDOPTS": "--noconftest", "PATH": "/usr/bin"})
+    assert "PYTEST_ADDOPTS" not in env
+    assert env["PATH"] == "/usr/bin"
+
+
+def test_selector_child_flag_never_reaches_the_child_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """T-2-71: a leading ``--child`` in PYTEST_ARGS is a usage error, never the child entry."""
+    rt = _rt()
+    monkeypatch.chdir(tmp_path)
+    received: list[list[str]] = []
+
+    def spy(args: list[str]) -> int:
+        received.append(list(args))
+        return 0
+
+    def must_not_run() -> object:
+        raise AssertionError("--child reached the compositor lookup")
+
+    monkeypatch.setattr(rt, "_child", spy)
+    monkeypatch.setattr(rt, "resolve_compositor", must_not_run)
+
+    assert rt.main(["--child", str(tmp_path / "status"), "--", "-q"]) == 64
+    assert received == [], "PYTEST_ARGS reached the child entry point"
+    err = capfd.readouterr().err
+    assert "'--child'" in err, err
+    _assert_no_forgery(err)
+
+
+@dataclass(frozen=True)
+class _FakeItem:
+    """The two attributes the collection hook reads from a pytest item."""
+
+    path: Path
+    nodeid: str
+
+
+def test_scope_backstop_refuses_items_outside_integration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Under KITTI_INTEGRATION=1 an item outside tests/integration/ is a usage error (IN-02)."""
+    conftest = importlib.import_module("tests.conftest")
+    root: Path = vars(conftest)["REPO_ROOT"]
+    hook: Any = vars(conftest)["pytest_collection_modifyitems"]
+    monkeypatch.setenv("KITTI_INTEGRATION", "1")
+    inside = _FakeItem(
+        root / "tests" / "integration" / "test_x.py", "tests/integration/test_x.py::t"
+    )
+    outside = _FakeItem(root / "tests" / "unit" / "test_u.py", "tests/unit/test_u.py::test_u1")
+    with pytest.raises(pytest.UsageError, match="tests/integration/") as caught:
+        hook(None, [inside, outside])
+    assert "tests/unit/test_u.py::test_u1" in str(caught.value)
+
+
+def test_scope_backstop_allows_integration_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    conftest = importlib.import_module("tests.conftest")
+    root: Path = vars(conftest)["REPO_ROOT"]
+    hook: Any = vars(conftest)["pytest_collection_modifyitems"]
+    monkeypatch.setenv("KITTI_INTEGRATION", "1")
+    inside = _FakeItem(
+        root / "tests" / "integration" / "test_x.py", "tests/integration/test_x.py::t"
+    )
+    assert hook(None, [inside]) is None

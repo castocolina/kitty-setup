@@ -178,3 +178,29 @@ def test_will_remove_list_names_the_completion_file_unless_keep_kitty(
     assert "STUB" not in kept.stdout
     assert "About to remove (preserving: kitty)" in kept.stdout
     assert "my-kitty-completion" not in kept.stdout
+
+
+ASIDE_LINE: Final[str] = (
+    "  - payload asides ~/.config/kitty/kitty-setup.rollback* left by interrupted installs"
+)
+
+
+def test_will_remove_list_names_payload_asides_unless_kept(sandbox: Sandbox) -> None:
+    """The prompt names the payload asides by default and not under either keep flag (02-15).
+
+    A full uninstall removes them, so the list must say so; ``KEEP_BACKUPS=1`` and
+    ``KEEP_CONFIG=1`` keep them, so the list must not promise their removal.
+    """
+    sandbox.stub(sandbox.fake_bin, "my-kitty")
+
+    default = sandbox.run(force=False, stdin="n\n")
+    assert default.returncode == 1, f"stderr={default.stderr!r}"
+    assert ASIDE_LINE in default.stdout.splitlines()
+
+    kept_backups = sandbox.run({"KEEP_BACKUPS": "1"}, force=False, stdin="n\n")
+    assert kept_backups.returncode == 1, f"stderr={kept_backups.stderr!r}"
+    assert ASIDE_LINE not in kept_backups.stdout.splitlines()
+
+    kept_config = sandbox.run({"KEEP_CONFIG": "1"}, force=False, stdin="n\n")
+    assert kept_config.returncode == 1, f"stderr={kept_config.stderr!r}"
+    assert ASIDE_LINE not in kept_config.stdout.splitlines()

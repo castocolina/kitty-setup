@@ -550,3 +550,37 @@ def test_sentinel_non_utf8(tmp_path: Path) -> None:
     paths = doctor.config_updater.ConfigPaths.for_user(home=home)
     check_sentinel = vars(doctor)["_check_sentinel_block"]
     assert check_sentinel(paths).passed
+
+
+# --- IN-03: doctor's payload line names every payload aside (02-15) ---------------------------
+
+
+@pytest.mark.parametrize("state", ["installed", "missing"])
+def test_payload_check_names_asides(state: str, tmp_path: Path) -> None:
+    """With an aside left by an interrupted install, PASS and FAIL both name it on the line."""
+    home = _doctor_home(tmp_path)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    if state == "installed":
+        paths.payload_entry.parent.mkdir(parents=True, exist_ok=True)
+        paths.payload_entry.write_text("", encoding="utf-8")
+    aside = paths.kitty_dir / "kitty-setup.rollback.20261103T120000Z"
+    aside.mkdir()
+    check_payload = vars(doctor)["_check_payload"]
+    result = check_payload(paths)
+    assert result.passed is (state == "installed")
+    assert str(aside) in result.detail, result.detail
+
+
+def test_payload_check_without_asides_is_unchanged(tmp_path: Path) -> None:
+    """With no aside the detail is the bare payload path (PASS) or ``missing:`` (FAIL)."""
+    home = _doctor_home(tmp_path)
+    paths = doctor.config_updater.ConfigPaths.for_user(home=home)
+    check_payload = vars(doctor)["_check_payload"]
+    missing = check_payload(paths)
+    assert missing.passed is False
+    assert missing.detail == f"missing: {paths.payload_entry}"
+    paths.payload_entry.parent.mkdir(parents=True, exist_ok=True)
+    paths.payload_entry.write_text("", encoding="utf-8")
+    present = check_payload(paths)
+    assert present.passed is True
+    assert present.detail == str(paths.payload_entry)
