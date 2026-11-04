@@ -103,6 +103,14 @@ ignore = []
 #       literal, so no untrusted input reaches the call. Scoped to this one file for the reason
 #       given above.
 "tests/integration/test_completion_e2e.py" = ["S603"]
+# S603: test_makefile_clean.py (02-12, IN-07) runs `make` by the absolute path shutil.which resolved,
+#       with shell=False and a complete sandbox env built from literals and tmp_path values. Scoped to
+#       this one file for the reason given above.
+"tests/unit/test_makefile_clean.py" = ["S603"]
+# S603: test_unit_hermeticity.py (02-12, IN-08) runs `sys.executable -m pytest` over a sandbox project,
+#       with shell=False and a complete sandbox env built from literals and tmp_path values. Scoped to
+#       this one file for the reason given above.
+"tests/unit/test_unit_hermeticity.py" = ["S603"]
 # --- src/ entries (R0.11, 02-10): these replace the last inline `# noqa` directives, in the
 # same edit that removes them, because adding an id to a config ignore list turns every
 # existing directive for it into a RUF100 finding (the measured Phase 1 lesson recorded

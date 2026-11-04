@@ -194,9 +194,21 @@ def list_backups(conf_file: Path) -> list[Path]:
     return sorted(p for p in parent.iterdir() if BACKUP_NAME_RE.match(p.name))
 
 
+def _has_marker_line(text: str) -> bool:
+    return any(line.rstrip() in (MARKER_BEGIN, MARKER_END) for line in text.splitlines())
+
+
 def _latest_backup(conf_file: Path) -> Path | None:
-    backups = list_backups(conf_file)
-    return backups[-1] if backups else None
+    """The newest backup that holds no marker line, or None.
+
+    A backup taken while install repaired a drifted block holds the old block. Restoring it would
+    put that block back on every uninstall, so ``make clean`` would never converge. With none, the
+    caller deletes the conf instead.
+    """
+    for backup in reversed(list_backups(conf_file)):
+        if not _has_marker_line(backup.read_text(encoding="utf-8", errors="surrogateescape")):
+            return backup
+    return None
 
 
 # One line, so the command built from it is one copyable line and doctor keeps one line per check.
@@ -220,6 +232,9 @@ def parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
     collector only sees value-conversion failures: an unknown key, a malformed line or a missing
     ``include`` exits 0 and shows up on stderr only, which is why ``stderr`` is returned on a pass
     as well as on a rejection.
+
+    A check that cannot finish or cannot run raises :class:`ConfigUpdaterError` naming what
+    happened, so the callers print one line and never a traceback.
     """
     argv = [str(kitty_bin), "+runpy", _PARSE_SNIPPET, str(conf_file)]
     try:
@@ -232,6 +247,12 @@ def parse_check(conf_file: Path, kitty_bin: str | Path) -> ParseCheckResult:
         )
     except FileNotFoundError as exc:
         raise ConfigUpdaterError(f"kitty binary not found at {kitty_bin}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ConfigUpdaterError(
+            f"the config parse check did not finish within {exc.timeout} s: {shlex.join(argv)}"
+        ) from exc
+    except OSError as exc:
+        raise ConfigUpdaterError(f"kitty binary at {kitty_bin} could not be run: {exc}") from exc
     return ParseCheckResult(
         ok=result.returncode == 0, command=shlex.join(argv), stderr=result.stderr
     )
@@ -349,10 +370,30 @@ def install(
         _restore_payload(paths.payload_dir, previous, exc)
         raise
     # Commit, outside the checked region: a failure here cannot roll back an accepted payload,
-    # and the aside it leaves is the stale case the next install preserves and reports.
+    # and the aside it leaves is the stale case the next install preserves and reports. A symlinked
+    # aside is unlinked (rmtree refuses a symlink), so the dotfiles target stays untouched.
     if previous is not None:
-        shutil.rmtree(previous)
+        try:
+            if previous.is_symlink():
+                previous.unlink()
+            else:
+                shutil.rmtree(previous)
+        except OSError as exc:
+            print(
+                f"config: installed, but the previous payload could not be removed ({exc}); "
+                f"it is kept at {previous}",
+                file=sys.stderr,
+            )
     return result
+
+
+def _restore_conf(conf: Path, backup_path: Path | None, *, created_conf: bool) -> None:
+    """Put ``conf`` back as it was before this install: the backup over it, or no conf if this
+    install created it. With neither, the failure came before any write and nothing changed."""
+    if backup_path is not None:
+        shutil.copy2(backup_path, conf)
+    elif created_conf:
+        conf.unlink(missing_ok=True)
 
 
 def _write_block_and_check(
@@ -360,48 +401,48 @@ def _write_block_and_check(
 ) -> InstallResult:
     """Inject the marker block into the conf, then parse-check it when it changed.
 
-    On the parser's rejection the conf is restored (or the created conf deleted) *before*
-    :class:`ConfigUpdaterError` is raised, so the payload rollback that follows never races it.
+    The conf is restored on any failure from its first conf write through the parse check,
+    ``KeyboardInterrupt`` included, and the exception is re-raised. So the payload rollback in
+    :func:`install` never races a conf that still holds our block. A failure before the first
+    conf write has nothing to restore.
     """
     conf = paths.conf_file
     backup_path: Path | None = None
     created_conf = False
     updated_block = False
-
-    if not conf.exists():
-        conf.write_text(_block_text(), encoding="utf-8")
-        created_conf = True
-    else:
-        original = conf.read_text(encoding="utf-8")
-        if _has_correct_block(original):
-            new_content = original
-        else:
-            backup_path = _backup(conf, now=now)
-            bounds = _find_block(original)
-            if bounds is None:
-                separator = "" if original.endswith("\n") or original == "" else "\n"
-                new_content = f"{original}{separator}{_block_text()}"
-            else:
-                lines = original.splitlines(keepends=True)
-                lines[bounds[0] : bounds[1]] = [
-                    f"{MARKER_BEGIN}\n",
-                    f"{INCLUDE_LINE}\n",
-                    f"{MARKER_END}\n",
-                ]
-                new_content = "".join(lines)
-            conf.write_text(new_content, encoding="utf-8")
-            updated_block = True
-
     parse_ok: bool | None = None
-    if kitty_bin is not None and (created_conf or updated_block):
-        check = parse_check(conf, kitty_bin)
-        parse_ok = check.ok
-        if not check.ok:
-            if backup_path is not None:
-                shutil.copy2(backup_path, conf)
-            elif created_conf:
-                conf.unlink()
-            raise ConfigUpdaterError(_rejection_message(check))
+
+    try:
+        if not conf.exists():
+            created_conf = True
+            conf.write_text(_block_text(), encoding="utf-8", errors="surrogateescape")
+        else:
+            original = conf.read_text(encoding="utf-8", errors="surrogateescape")
+            if not _has_correct_block(original):
+                backup_path = _backup(conf, now=now)
+                bounds = _find_block(original)
+                if bounds is None:
+                    separator = "" if original.endswith("\n") or original == "" else "\n"
+                    new_content = f"{original}{separator}{_block_text()}"
+                else:
+                    lines = original.splitlines(keepends=True)
+                    lines[bounds[0] : bounds[1]] = [
+                        f"{MARKER_BEGIN}\n",
+                        f"{INCLUDE_LINE}\n",
+                        f"{MARKER_END}\n",
+                    ]
+                    new_content = "".join(lines)
+                conf.write_text(new_content, encoding="utf-8", errors="surrogateescape")
+                updated_block = True
+
+        if kitty_bin is not None and (created_conf or updated_block):
+            check = parse_check(conf, kitty_bin)
+            parse_ok = check.ok
+            if not check.ok:
+                raise ConfigUpdaterError(_rejection_message(check))
+    except BaseException:
+        _restore_conf(conf, backup_path, created_conf=created_conf)
+        raise
 
     return InstallResult(
         conf_file=conf,
@@ -417,8 +458,8 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
     """Remove the sentinel block and our payload directory.
 
     If stripping the block leaves the conf file with no non-blank, non-comment
-    content, the file is replaced with the most recent backup if one exists,
-    or deleted outright.
+    content, the file is replaced with the most recent backup that holds no
+    marker line if one exists, or deleted outright.
     """
     conf = paths.conf_file
     block_removed = False
@@ -427,7 +468,7 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
     conf_deleted = False
 
     if conf.exists():
-        original = conf.read_text(encoding="utf-8")
+        original = conf.read_text(encoding="utf-8", errors="surrogateescape")
         bounds = _find_block(original)
         if bounds is not None:
             lines = original.splitlines(keepends=True)
@@ -442,7 +483,7 @@ def uninstall(paths: ConfigPaths) -> UninstallResult:
                     conf.unlink()
                     conf_deleted = True
             else:
-                conf.write_text(stripped_content, encoding="utf-8")
+                conf.write_text(stripped_content, encoding="utf-8", errors="surrogateescape")
             block_removed = True
 
     if paths.payload_dir.exists():
@@ -462,4 +503,4 @@ def is_block_present(paths: ConfigPaths) -> bool:
     """Status query: True iff the sentinel block is present in the user's kitty.conf."""
     if not paths.conf_file.exists():
         return False
-    return _has_correct_block(paths.conf_file.read_text(encoding="utf-8"))
+    return _has_correct_block(paths.conf_file.read_text(encoding="utf-8", errors="surrogateescape"))

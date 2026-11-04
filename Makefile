@@ -25,9 +25,9 @@ install: setup
 setup:
 	@./tools/setup.sh
 
-# `|| true`: the safe reset verb must succeed with nothing installed, even without my-kitty.
+# Skips uninstall when my-kitty is not on PATH (nothing to undo); a failing uninstall fails the target.
 clean:
-	@my-kitty uninstall --keep-kitty --keep-backups || true
+	@if command -v my-kitty >/dev/null 2>&1; then my-kitty uninstall --keep-kitty --keep-backups; fi
 	@rm -rf tmp/
 
 doctor:
