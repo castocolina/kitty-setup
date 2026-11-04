@@ -7,10 +7,11 @@ the completion script ``installer`` generates (R1.1, D-01). Its body is a
 function of the shell, because zsh needs ``compinit`` before ``compdef`` exists
 and bash has neither.
 
-In ``~/.zshrc`` the block must also be the last thing that runs: a ``compinit``
-after it resets the registration. Install moves a zsh block to the end of the
-file when anything but blanks or comments follows it; bash blocks are rewritten
-in place. Idempotent: a block that already matches is left byte-identical.
+The zsh body also puts the completion directory on ``fpath``, so zsh registers
+the script whether ``compinit`` runs before or after the block: install never
+moves the block, and the user's PATH order is theirs. The rc is read and written
+as bytes, so every byte outside the block survives. Idempotent: a block that
+already matches is left byte-identical.
 """
 
 from __future__ import annotations
@@ -33,7 +34,6 @@ __all__ = [
     "PathEditResult",
     "_block_body_lines",
     "_block_body_matches_template",
-    "_block_followed_only_by_comments",
     "_block_text",
     "completion_source_line",
     "ensure_local_bin_in_path",
@@ -92,10 +92,19 @@ def completion_source_line(shell: str) -> str:
     return f"[ -f {script} ] && . {script}"
 
 
+def zsh_fpath_line() -> str:
+    """Put the completion directory on ``fpath``, so a later ``compinit`` autoloads the script.
+
+    Rendered from the installer's own path, so the directory is the one the file is written to.
+    """
+    directory = installer.completion_script_path("zsh", home=_RC_HOME).parent
+    return f'fpath=("{directory}" $fpath)'
+
+
 def _block_body_lines(shell: str) -> tuple[str, ...]:
     """The lines between the markers for ``shell``, rendered on every install (D-01)."""
     if shell == installer.CompletionShell.ZSH:
-        return (EXPORT_LINE, ZSH_COMPINIT_LINE, completion_source_line(shell))
+        return (EXPORT_LINE, zsh_fpath_line(), ZSH_COMPINIT_LINE, completion_source_line(shell))
     return (EXPORT_LINE, completion_source_line(shell))
 
 
@@ -115,27 +124,8 @@ def _block_body_matches_template(rc_text: str, bounds: tuple[int, int], shell: s
     return body == expected
 
 
-def _block_followed_only_by_comments(rc_text: str, bounds: tuple[int, int]) -> bool:
-    """True iff every line after the block's end marker is blank or a comment.
-
-    For zsh this is what keeps the registration: a ``compinit`` that runs after the block —
-    including one a sourced framework file runs, which no scan of the rc text can see —
-    resets it.
-    """
-    trailing = rc_text.splitlines(keepends=False)[bounds[1] :]
-    return all(not line.strip() or line.lstrip().startswith("#") for line in trailing)
-
-
-def _needs_end_placement(rc_text: str, bounds: tuple[int, int], shell: str) -> bool:
-    if shell != installer.CompletionShell.ZSH:
-        return False
-    return not _block_followed_only_by_comments(rc_text, bounds)
-
-
 def _block_is_current(rc_text: str, bounds: tuple[int, int], shell: str) -> bool:
-    if not _block_body_matches_template(rc_text, bounds, shell):
-        return False
-    return not _needs_end_placement(rc_text, bounds, shell)
+    return _block_body_matches_template(rc_text, bounds, shell)
 
 
 def _append_block(rc_text: str, shell: str) -> str:
@@ -144,15 +134,42 @@ def _append_block(rc_text: str, shell: str) -> str:
 
 
 def _render_block(rc_text: str, bounds: tuple[int, int], shell: str) -> str:
-    """Replace the block at ``bounds`` with the current one for ``shell``.
+    """Replace the block at ``bounds`` with the current one for ``shell``, in place.
 
-    In place, except for a zsh block that something executable follows: its lines are
-    removed and the block is appended at the end. Every line outside the block keeps its
-    bytes and its relative order.
+    Every line outside the block keeps its bytes and its relative order, so install never
+    moves a block.
     """
-    if _needs_end_placement(rc_text, bounds, shell):
-        return _append_block(_splice_lines(rc_text, bounds[0], bounds[1], []), shell)
     return _splice_lines(rc_text, bounds[0], bounds[1], _block_lines(shell))
+
+
+def _find_blocks(rc_text: str, begin: str, end: str) -> list[tuple[int, int]]:
+    """Every (start, end-exclusive) marker block, in order. ``find_block`` returns the first."""
+    blocks: list[tuple[int, int]] = []
+    start: int | None = None
+    for idx, line in enumerate(rc_text.splitlines(keepends=False)):
+        stripped = line.rstrip()
+        if stripped == begin:
+            start = idx
+        elif stripped == end and start is not None:
+            blocks.append((start, idx + 1))
+            start = None
+    return blocks
+
+
+def _remove_blocks(rc_text: str, blocks: list[tuple[int, int]]) -> str:
+    """Remove every block, last first, so each earlier index stays valid."""
+    for start, end in sorted(blocks, reverse=True):
+        rc_text = _splice_lines(rc_text, start, end, [])
+    return rc_text
+
+
+def _read_rc(path: Path) -> str:
+    """Read an rc as bytes, so no newline is translated and a non-UTF-8 byte survives."""
+    return path.read_bytes().decode("utf-8", "surrogateescape")
+
+
+def _write_rc(path: Path, text: str) -> None:
+    path.write_bytes(text.encode("utf-8", "surrogateescape"))
 
 
 def _detect_shell(explicit: str | None, env_shell: str | None) -> str | None:
@@ -177,16 +194,20 @@ def find_block(rc_text: str, begin: str, end: str) -> tuple[int, int] | None:
 
 
 def _splice_lines(rc_text: str, start: int, end: int, replacement: list[str]) -> str:
-    """Replace lines [start, end) in ``rc_text`` with ``replacement`` (no trailing newline)."""
+    """Replace lines [start, end) in ``rc_text``; every byte outside the range is kept.
+
+    When the original has no final newline and the splice reaches its last line, the
+    replacement's own last newline is trimmed. A removal never trims: the newline before it
+    belongs to the surviving user line.
+    """
     lines = rc_text.splitlines(keepends=True)
-    has_final_newline = rc_text.endswith("\n") if rc_text else False
     new_lines = [
         *lines[:start],
         *(line + "\n" for line in replacement),
         *lines[end:],
     ]
     out = "".join(new_lines)
-    if not has_final_newline and out.endswith("\n"):
+    if replacement and end >= len(lines) and not rc_text.endswith("\n"):
         out = out[:-1]
     return out
 
@@ -202,7 +223,7 @@ def ensure_local_bin_in_path(
     "user has manual export" would drop the completion line, so block injection
     is unconditional given a supported shell. Splice helpers find/replace by
     sentinel marker — user-authored PATH lines elsewhere in the rc are
-    untouched. A zsh block ends up last in the file (see the module docstring).
+    untouched. The block stays where the user put it (see the module docstring).
     """
     home_dir = home or Path.home()
     detected_shell = _detect_shell(shell, os.environ.get("SHELL"))
@@ -226,20 +247,19 @@ def ensure_local_bin_in_path(
     rc_file = home_dir / rc_basename
 
     if rc_file.is_file():
-        rc_text = rc_file.read_text(encoding="utf-8")
-        new_block = find_block(rc_text, MARKER_BEGIN, MARKER_END)
+        rc_text = _read_rc(rc_file)
+        blocks = _find_blocks(rc_text, MARKER_BEGIN, MARKER_END)
         legacy_block = find_block(rc_text, _LEGACY_MARKER_BEGIN, _LEGACY_MARKER_END)
 
-        if new_block is not None and legacy_block is not None:
-            # Degenerate: both blocks present. Remove the legacy one, then put the retained
-            # block through the same template check and placement as the single-block path
-            # (H3), so an obsolete body cannot survive the upgrade. Re-find it: its lines
-            # shift when the legacy block came first.
-            new_text = _splice_lines(rc_text, legacy_block[0], legacy_block[1], [])
+        if blocks and legacy_block is not None:
+            # A legacy block beside a current one: remove the legacy block and every
+            # duplicate, then put the retained block through the template check (H3). Re-find
+            # it: its lines shift when the legacy block came first.
+            new_text = _remove_blocks(rc_text, [legacy_block, *blocks[1:]])
             retained = find_block(new_text, MARKER_BEGIN, MARKER_END)
             if retained is not None and not _block_is_current(new_text, retained, detected_shell):
                 new_text = _render_block(new_text, retained, detected_shell)
-            rc_file.write_text(new_text, encoding="utf-8")
+            _write_rc(rc_file, new_text)
             return PathEditResult(
                 changed=True,
                 skipped=False,
@@ -248,24 +268,24 @@ def ensure_local_bin_in_path(
                 reason="removed duplicate legacy marker",
             )
 
-        if new_block is None and legacy_block is not None:
-            # Migration: replace the legacy marker lines with the current block
-            # (in place, or last for zsh when something executable follows).
-            new_text = _render_block(rc_text, legacy_block, detected_shell)
-            rc_file.write_text(new_text, encoding="utf-8")
+        if len(blocks) > 1:
+            # Duplicate current blocks (IN-01): keep the first, remove the rest, write once.
+            new_text = _remove_blocks(rc_text, blocks[1:])
+            if not _block_is_current(new_text, blocks[0], detected_shell):
+                new_text = _render_block(new_text, blocks[0], detected_shell)
+            _write_rc(rc_file, new_text)
             return PathEditResult(
                 changed=True,
                 skipped=False,
                 rc_file=rc_file,
                 shell=detected_shell,
-                reason="migrated legacy marker",
+                reason="removed duplicate rc block",
             )
 
-        if new_block is not None:
-            # Block exists with current markers. Short-circuit iff the body matches the
-            # template and, for zsh, nothing executable follows it. Otherwise rewrite it
-            # (e.g. a host on an older body), moving a zsh block to the end of the file.
-            if _block_is_current(rc_text, new_block, detected_shell):
+        if blocks:
+            # One block with current markers. Short-circuit iff its body matches the template;
+            # otherwise rewrite it in place (e.g. a host on an older body).
+            if _block_is_current(rc_text, blocks[0], detected_shell):
                 return PathEditResult(
                     changed=False,
                     skipped=False,
@@ -273,23 +293,26 @@ def ensure_local_bin_in_path(
                     shell=detected_shell,
                     reason="rc block already matches current template",
                 )
-            body_current = _block_body_matches_template(rc_text, new_block, detected_shell)
-            new_text = _render_block(rc_text, new_block, detected_shell)
-            rc_file.write_text(new_text, encoding="utf-8")
-            if body_current:
-                return PathEditResult(
-                    changed=True,
-                    skipped=False,
-                    rc_file=rc_file,
-                    shell=detected_shell,
-                    reason="moved rc block to end of file",
-                )
+            new_text = _render_block(rc_text, blocks[0], detected_shell)
+            _write_rc(rc_file, new_text)
             return PathEditResult(
                 changed=True,
                 skipped=False,
                 rc_file=rc_file,
                 shell=detected_shell,
                 reason="rewrote rc block body to current template",
+            )
+
+        if legacy_block is not None:
+            # Migration: replace the legacy marker lines with the current block, in place.
+            new_text = _render_block(rc_text, legacy_block, detected_shell)
+            _write_rc(rc_file, new_text)
+            return PathEditResult(
+                changed=True,
+                skipped=False,
+                rc_file=rc_file,
+                shell=detected_shell,
+                reason="migrated legacy marker",
             )
 
         # No block (new or legacy) in the rc; append a fresh one. Any
@@ -299,7 +322,7 @@ def ensure_local_bin_in_path(
         new_text = _block_text(detected_shell)
 
     rc_file.parent.mkdir(parents=True, exist_ok=True)
-    rc_file.write_text(new_text, encoding="utf-8")
+    _write_rc(rc_file, new_text)
     return PathEditResult(
         changed=True,
         skipped=False,

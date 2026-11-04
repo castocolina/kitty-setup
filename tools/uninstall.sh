@@ -73,7 +73,7 @@ print_will_remove() {
         printf '  - ~/.local/kitty.app/\n'
         printf '  - ~/.local/bin/kitty symlink\n'
         printf '  - ~/.local/share/applications/kitty.desktop\n'
-        printf '  - ~/.local/share/kitty-setup/my-kitty-completion.{bash,zsh}\n'
+        printf '  - ~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty,my-kitty-completion.zsh}\n'
     fi
     printf '\n'
     printf 'After this completes, run `uv tool uninstall my-kitty` to remove the binary itself.\n'

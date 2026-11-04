@@ -152,21 +152,7 @@ symlink + desktop entry + every `kitty.conf.bak.*` file). The pre-rename
 closest mapping to the legacy "config-only" default is
 `make uninstall KEEP_KITTY=1 KEEP_BACKUPS=1`.
 
-**Note on shell completion:** `make install` generates a completion script
-under `~/.local/share/kitty-setup/` (`my-kitty-completion.bash` or `.zsh`),
-and the sentinel-bracketed PATH block in your shell rc sources it after the
-PATH export, so no helper has to be found on PATH at shell start. Re-running
-`make install` rewrites the block body between the existing markers; nothing
-else in the rc file is touched. For zsh, the block starts zsh's completion
-system (`compinit`) itself if your rc has not, and install keeps it as the
-last command in `~/.zshrc`, moving it there when anything but comments
-follows it, because a `compinit` that runs after it would undo the
-registration. A plugin manager that defers `compinit` until after `~/.zshrc`
-(zinit turbo `wait`, zsh-defer) undoes it the same way, and neither install nor
-doctor can see that; check with `echo ${_comps[my-kitty]}` in a new shell.
-Open a fresh shell after the install — `my-kitty <TAB>` expands to
-the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
-`--keep-*` flags.
+**Note on shell completion:** `make install` generates a completion script under `~/.local/share/kitty-setup/` (`my-kitty-completion.bash` for bash, `_my-kitty` for zsh), and the sentinel-bracketed PATH block in your shell rc sources it after the PATH export, so no helper has to be found on PATH at shell start. Re-running `make install` rewrites the block body between the existing markers; nothing else in the rc file is touched, and install never moves the block. For zsh, the block puts the completion directory on `fpath` and starts zsh's completion system (`compinit`) itself if your rc has not, so zsh registers `_my-kitty` whether your own `compinit` runs before or after the block, including a deferred one. The one shape it does not cover is a `compinit -C` that runs after the block and loads a dump written without `_my-kitty`: a dump named with `-d`, or the default dump when a `compinit` ran before the block. Deleting that `-d` dump once, or moving the block above your first `compinit`, restores the registration. Zsh's `compaudit` also rejects `~/.local/share` when it is world-writable, or group-writable on a system without per-user groups, and then a `compinit` after the block asks about insecure directories at every start. Install keeps its own directory free of group and world write, but it does not change `~/.local/share`, so `chmod go-w ~/.local/share` is the fix. Doctor cannot see a live shell; confirm with `echo ${_comps[my-kitty]}` in a new shell, which prints `_my-kitty` or `_python_argcomplete`. Open a fresh shell after the install — `my-kitty <TAB>` expands to the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three `--keep-*` flags.
 
 ## Stack and layout
 

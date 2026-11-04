@@ -153,11 +153,10 @@ exclude_dirs = ["tests", "tmp"]
 #   import is unavoidable, not a finding.
 # B603 (x12): every subprocess call passes a list argv with shell=False; the same trusted-input
 #   reasoning as ruff's S603 entries above, which cover the same call sites.
-# B604 (x9, path_integration.py x7 + installer.py x2): a false positive — each is a `shell=`
+# B604 (x8, path_integration.py x7 + installer.py x1): a false positive — each is a `shell=`
 #   keyword argument to a function that runs nothing (PathEditResult(...) dataclass
-#   constructors, COMPLETION_BASENAME.format(shell=...), argcomplete's shellcode(..., shell=...)),
-#   which bandit mistakes for a shell-injection sink. No subprocess call carries shell=True
-#   anywhere in src/.
+#   constructors, argcomplete's shellcode(..., shell=...)), which bandit mistakes for a
+#   shell-injection sink. No subprocess call carries shell=True anywhere in src/.
 # B607 (x2): the same two partial-path sites as ruff's S607 (installer.py's `sh`,
 #   _client.py's `pgrep`) — deliberately PATH-resolved, see the ruff rationale above.
 # B310 (x1, installer.py urlopen): guarded in code — a non-https scheme raises ValueError

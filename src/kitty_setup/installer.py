@@ -5,7 +5,7 @@ The install path is intentionally per-user and ``sudo``-free:
 * ``~/.local/kitty.app/`` — payload from the upstream installer.
 * ``~/.local/bin/kitty`` — symlink to ``~/.local/kitty.app/bin/kitty``.
 * ``~/.local/share/applications/kitty.desktop`` — desktop entry.
-* ``~/.local/share/kitty-setup/my-kitty-completion.{bash,zsh}`` — shell completion.
+* ``~/.local/share/kitty-setup/{my-kitty-completion.bash,_my-kitty}`` — shell completion.
 * ``~/.config/kitty/kitty-setup/`` — our configuration payload.
 * ``~/.config/kitty/kitty.conf`` — modified between sentinel markers only.
 
@@ -20,6 +20,7 @@ import dataclasses
 import enum
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -49,7 +50,13 @@ DESKTOP_PATH: Final[Path] = Path.home() / ".local" / "share" / "applications" / 
 # three constants above. ``_COMPLETION_RELDIR`` is the same location relative to an injected home.
 _COMPLETION_RELDIR: Final[Path] = Path(".local") / "share" / "kitty-setup"
 COMPLETION_DIR: Final[Path] = Path.home() / _COMPLETION_RELDIR
-COMPLETION_BASENAME: Final[str] = "my-kitty-completion.{shell}"
+# zsh's script is named ``_my-kitty`` so zsh's ``fpath`` autoload registers it (02-14). The
+# 02-02-era name is only removed, by a zsh write or an uninstall, never written again.
+COMPLETION_BASENAMES: Final[dict[str, str]] = {
+    "bash": "my-kitty-completion.bash",
+    "zsh": "_my-kitty",
+}
+_LEGACY_ZSH_BASENAME: Final[str] = "my-kitty-completion.zsh"
 COMPLETION_PROG: Final[str] = "my-kitty"
 
 
@@ -326,7 +333,7 @@ def completion_script_path(shell: str, *, home: Path | None = None) -> Path:
     because no script is ever written for it.
     """
     member = CompletionShell(shell)
-    return _completion_dir(home) / COMPLETION_BASENAME.format(shell=member.value)
+    return _completion_dir(home) / COMPLETION_BASENAMES[member.value]
 
 
 def generate_completion_script(shell: str) -> str:
@@ -345,29 +352,36 @@ def write_completion_script(shell: str | None, *, home: Path | None = None) -> P
     """Write the completion script for ``shell`` and return its path.
 
     Returns ``None`` and creates nothing when ``shell`` is ``None`` or unsupported —
-    a bash script a fish user never reads is not written. Idempotent.
+    a bash script a fish user never reads is not written. Idempotent. A zsh write also
+    removes the 02-02-era file, which only the old zsh body sources, and clears the group
+    and world write bits of the directory: zsh's ``compaudit`` would otherwise drop it
+    from ``fpath``. A bash write touches neither.
     """
     if shell is None or shell not in {member.value for member in CompletionShell}:
         return None
     path = completion_script_path(shell, home=home)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(generate_completion_script(shell), encoding="utf-8")
+    if shell == CompletionShell.ZSH:
+        path.parent.chmod(stat.S_IMODE(path.parent.stat().st_mode) & ~0o022)
+        (path.parent / _LEGACY_ZSH_BASENAME).unlink(missing_ok=True)
     return path
 
 
 def remove_completion_script(*, home: Path | None = None) -> list[Path]:
-    """Delete every per-shell completion script we own; return the paths removed.
+    """Delete every completion script we own, the 02-02-era zsh file included.
 
-    The directory is removed only when it is left empty — never recursively, since a
-    user may keep something else there.
+    Returns the paths removed. The directory is removed only when it is left empty — never
+    recursively, since a user may keep something else there.
     """
+    directory = _completion_dir(home)
+    owned = [completion_script_path(member.value, home=home) for member in CompletionShell]
+    owned.append(directory / _LEGACY_ZSH_BASENAME)
     removed: list[Path] = []
-    for member in CompletionShell:
-        path = completion_script_path(member.value, home=home)
+    for path in owned:
         if path.is_file() or path.is_symlink():
             path.unlink(missing_ok=True)
             removed.append(path)
-    directory = _completion_dir(home)
     if directory.is_dir() and not any(directory.iterdir()):
         directory.rmdir()
     return removed
@@ -396,7 +410,7 @@ def _print_path_result(result: path_integration.PathEditResult) -> None:
     """Report what ``ensure_local_bin_in_path`` did, in its own words (D-13, R1.7).
 
     A change prints the ``reason`` the edit computed: an append, an in-place rewrite, a legacy
-    migration, a duplicate removal and a zsh move are different events. A skip prints each
+    migration and a duplicate removal are different events. A skip prints each
     ``manual_lines`` entry on its own line, because each is a line for the rc file; joined onto
     one line, a ``#`` entry would comment out whatever followed it.
     """

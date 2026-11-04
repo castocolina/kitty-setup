@@ -230,10 +230,11 @@ def _check_completion(home: Path | None = None) -> CheckResult:
     """Verify what can be proven about shell completion without starting the user's shell.
 
     In order, reporting the first failure: the completion script we own exists; our rc block's
-    body is exactly the current template for the shell; for zsh, nothing executable follows the
-    block; and the script's bytes equal freshly generated shellcode (the staleness check, U-3).
-    The block is judged with the same two predicates install uses to decide whether to rewrite
-    or move it, so doctor FAILs exactly the blocks the next ``my-kitty install`` fixes.
+    body is exactly the current template for the shell; and the script's bytes equal freshly
+    generated shellcode (the staleness check, U-3). The block is judged with the predicate
+    install uses, so doctor FAILs exactly the blocks the next ``my-kitty install`` rewrites. The
+    block's position is not judged: zsh registers the script through ``fpath`` wherever the
+    block sits (02-14).
     """
     home_dir = home or Path.home()
     shell_name = Path(os.environ.get("SHELL", "")).name
@@ -253,7 +254,9 @@ def _check_completion(home: Path | None = None) -> CheckResult:
         )
 
     rc_file = home_dir / rc_basename
-    rc_text = rc_file.read_text(encoding="utf-8") if rc_file.is_file() else ""
+    rc_text = (
+        rc_file.read_text(encoding="utf-8", errors="surrogateescape") if rc_file.is_file() else ""
+    )
     bounds = path_integration.find_block(
         rc_text, path_integration.MARKER_BEGIN, path_integration.MARKER_END
     )
@@ -267,19 +270,12 @@ def _check_completion(home: Path | None = None) -> CheckResult:
             f"sources {script}; run `my-kitty install` to rewrite it",
         )
     is_zsh = shell_name == installer.CompletionShell.ZSH
-    if is_zsh and not path_integration._block_followed_only_by_comments(rc_text, bounds):
-        return CheckResult(
-            "completion",
-            False,
-            f"the my-kitty block in {rc_file} is not the last command in it, so a later "
-            "compinit undoes its registration; run `my-kitty install` to move it to the end",
-        )
 
     try:
-        current = script.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        current = script.read_bytes()
+    except OSError as exc:
         return CheckResult("completion", False, f"cannot read {script}: {exc}")
-    if current != installer.generate_completion_script(shell_name):
+    if current != installer.generate_completion_script(shell_name).encode("utf-8"):
         return CheckResult(
             "completion",
             False,
@@ -291,10 +287,12 @@ def _check_completion(home: Path | None = None) -> CheckResult:
         return CheckResult(
             "completion",
             True,
-            f"{script} is current and sourced by the my-kitty block in {rc_file}, which starts "
-            "zsh's completion system itself when needed and is the last command in the file "
-            "(both checked). Doctor did not observe a live registration, and ~/.zlogin or a "
-            "ZDOTDIR elsewhere is outside what it reads; to confirm, run "
+            f"{script} is current and sourced by the my-kitty block in {rc_file}; its directory "
+            "is on fpath, so zsh registers it whether compinit runs before or after the block. "
+            "Doctor did not observe a live registration, and ~/.zlogin or a ZDOTDIR elsewhere is "
+            "outside what it reads. The one shape that drops the registration is a later "
+            "`compinit -C` that loads a dump written without it (a dump named with -d, or the "
+            "default dump when an earlier compinit ran before the block); to confirm, run "
             "`echo ${_comps[my-kitty]}` in a new shell",
         )
     return CheckResult(
