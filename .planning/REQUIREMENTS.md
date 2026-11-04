@@ -64,6 +64,40 @@ Requirements for this remediation milestone. Each maps to exactly one roadmap ph
       commit's message. This supersedes "agents commit per task" in R0.4 — R0.4 keeps the worktree,
       merge, push and no-force-push half of the policy.
 
+      **Amended 2026-09-23 by user direction: TDD is kept as commit topology.** A plan whose
+      frontmatter is `type: tdd` produces **exactly two** commits — a RED commit containing only the
+      new tests, subject `test(<phase>-<plan>): …`, at which those tests **fail**; then a GREEN commit
+      with the implementation and the SUMMARY, subject `feat(<phase>-<plan>): …`. Every other plan
+      still produces exactly one commit. The rule is two **per plan**, never per task: review round 1
+      removed per-task RED/GREEN commits and that removal stands, because per-task was unbounded while
+      a per-plan pair is a fixed shape a gate can assert — including RED-before-GREEN ancestry via
+      `git merge-base --is-ancestor`.
+
+      **This requirement and `workflow.tdd_mode` must move together.** With `tdd_mode: true`, GSD's
+      harness gate demands a RED commit touching `tests/` before the implementation step of any task
+      where `query task.is-behavior-adding` is true, matched at commit scope
+      `^[a-z]+\((0*N)-(0*M)\):`. Measured: plans `01-01` and `01-02` are `type: tdd` and return
+      `is_behavior_adding: true`. A one-commit-per-plan rule therefore makes that gate unsatisfiable —
+      which is what the first version of this amendment resolved in the opposite direction (by turning
+      `tdd_mode` off) before the user corrected it. Whichever way it is set, setting one without the
+      other halts a phase mid-run or forbids a commit the gate requires.
+
+- [ ] **R0.11**: **`src/` is clean under all five quality tools** — ruff, black, pyright, bandit,
+      vulture (added 2026-09-23 at the user's direction after the gate's claim was measured and
+      found false). Owned by **Phase 2**, the earliest phase that already edits these files.
+      Measured baseline at `5452f54`: `src/` carries **19** of pyright's 571 errors; ruff's 28 and
+      black's 11 files span `src`+`tests`+`tools`; bandit reports **0 high** (8 medium, 19 low —
+      an earlier report of "20 high" misread bandit's *confidence* column as severity). From the
+      moment this lands, "src clean" is a hard gate in the Universal Phase Gate step 5.
+- [ ] **R0.12**: **`tests/` type-checks and lints clean**, so a real defect in a test is visible
+      rather than buried in ~580 pre-existing findings. Owned by **Phase 8.5**. 96% of the debt is
+      `typeCheckingMode = "strict"` applied to pytest bodies (`reportUnknownVariableType`,
+      `reportUnknownArgumentType`, `reportUnknownLambdaType` dominate), which is noisy by nature
+      and not evidence of broken tests — so a **deliberate, justified narrowing** of pyright's
+      scope or mode for `tests` satisfies this requirement as fully as driving the count to zero.
+      A silent scope reduction does not. No test's behaviour may change to satisfy a type checker:
+      the suite's pass/fail set must be identical before and after, evidenced by both runs.
+
 ### R1 — Defect remediation
 
 Each defect is a requirement with a regression test.
@@ -74,6 +108,17 @@ Each defect is a requirement with a regression test.
       `~/.local/share/kitty-setup/` and the rc block sources it, so no runtime PATH lookup is
       needed; doctor checks the generated file plus the rc source line. Root cause confirmed: the
       helper exists inside the uv tool venv but `uv tool install` exposes only `my-kitty`.
+      **R1.1 unblocks Phase 1's merge.** `make doctor` was measured red on 2026-09-23 (exit 2, one
+      FAIL: `register-python-argcomplete not on PATH`) — that failure *is* this requirement. Rather
+      than write an expiring exemption so Phase 1 could merge against a red doctor, Phase 1 commits
+      and pushes its branch and **defers its merge** until this requirement makes doctor green
+      (user direction, 2026-09-23). Two consequences:
+        - No `PHASE-1-DOCTOR-CARVE-OUT` marker is ever written. The check
+          `for F in AGENTS.md .planning/ROADMAP.md .planning/PROJECT.md; do if rg -q 'PHASE-1-DOCTOR-CARVE-OUT' "$F"; then exit 1; fi; done`
+          must hold at every point, not merely become true later — it guards against the exemption
+          being reintroduced, which is stricter than the round-2 (O2) form it replaces.
+        - `gsd/phase-1-governance-freeze` merges to `master` only once `make doctor` exits 0 with
+          every check PASS or SKIP. R1.1 is therefore a release gate for two phases, not one.
 - [ ] **R1.2**: `make clean` behaviour and help text agree; `clean` MUST NOT delete `kitty.app` or
       backups.
 - [ ] **R1.3**: `tools/uninstall.sh` logs to stderr inside `resolve_binary`; the legacy-binary
@@ -234,6 +279,15 @@ Each defect is a requirement with a regression test.
       "Stack" section match actual behaviour.
 - [ ] **R6.2**: Every changed behaviour has a repro doc with both a Linux status section and a
       macOS status section.
+- [ ] **R6.3**: **`.claude/conventions.md` and the `Makefile` agree on which targets exist**
+      (added 2026-09-23; surfaced by the Phase 1 replan as genuinely unowned, distinct from the
+      quality-tool gap R0.11/R0.12 now own). `.claude/conventions.md:60-69` requires
+      `make validate`, `make format`, `make test-unit` and `make test-integration`, and says
+      "Never commit code that fails `make validate`" — **none of those four targets exist in the
+      `Makefile`**. Resolve in whichever direction is true: add the targets (subject to the
+      five-line-per-target stack rule) or rewrite the conventions text to name the commands that
+      really work. A convention nobody can run is worse than no convention, because it reads as
+      satisfied.
 
 ### R7 — macOS end-to-end verification and remediation over SSH
 
@@ -298,8 +352,13 @@ phase can be called done. Sourced from the PRD's "Quality Standards" and "Constr
   key-auth only.
 - **Binding gate**: any phase that touches bindings re-runs the R2.8 oracle test on Linux
   (Phases 3, 4, 7; macOS in Phase 10).
-- **Git gate**: commit per task, push branch `gsd/<phase>`; never merge to `master`, force-push,
-  amend pushed commits, or push `master` (R0.4).
+- **Git gate**: each phase runs in its own git worktree on branch `gsd/phase-{phase}-{slug}`; work
+  lands at the granularity `AGENTS.md`'s commit-granularity rule states — that bullet is the only
+  place in the repo where the rule is written, so it is pointed at rather than repeated here; at
+  phase end, once `make doctor` and `make test` are green, merge into `master` and push; never
+  force-push or amend pushed commits (R0.4 as reworded per D-06, with its granularity half
+  reworded per D-16). Structurally enforced by `tools/hooks/pre-push`, whose every limit is
+  disclosed in `AGENTS.md`'s git-policy bullet and in the hook's own header.
 
 ## Edge Cases To Cover
 
@@ -335,7 +394,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | kitty auto-upgrade on reinstall | Upgrading kitty stays the user's action; doctor only reports a too-old version (R3.4) |
 | Kitten promotion | Deferred; the CLI + `kitten @` remote control covers everything in scope here |
 | Rewriting frozen OpenSpec specs | `openspec/` is history-only after R0.2; correcting stale specs has no payoff now that `.planning/` is authoritative |
-| Merging to `master` | Agents push a feature branch only; integration is the owner's call (R0.4) |
+| Merging to `master` outside a green phase boundary | Merging **at** a green phase boundary is in scope per D-06: the phase-end flow merges into `master` and pushes once `make doctor` and `make test` are green. What stays out of scope is any merge, force-push or amend of pushed commits outside that boundary — `tools/hooks/pre-push` rejects it (R0.4 as reworded) |
 
 ## Traceability
 
@@ -353,6 +412,8 @@ Every v1 requirement maps to exactly one phase.
 | R0.8 | Phase 1 | Pending |
 | R0.9 | Phase 1 | Pending |
 | R0.10 | Phase 1 | Pending |
+| R0.11 | Phase 2 | Pending |
+| R0.12 | Phase 8.5 | Pending |
 | R1.1 | Phase 2 | Pending |
 | R1.2 | Phase 2 | Pending |
 | R1.3 | Phase 2 | Pending |
@@ -383,6 +444,7 @@ Every v1 requirement maps to exactly one phase.
 | R5.3 | Phase 7 | Pending |
 | R6.1 | Phase 8 | Pending |
 | R6.2 | Phase 8 | Pending |
+| R6.3 | Phase 8 | Pending |
 | R7.1 | Phase 10 | Pending |
 | R7.2 | Phase 10 | Pending |
 | R7.3 | Phase 10 | Pending |

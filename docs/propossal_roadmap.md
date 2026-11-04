@@ -1,5 +1,8 @@
 # kitty-scenes — Proposal & Roadmap
 
+> **FROZEN — history only; source of truth is `.planning/`.**
+> Superseded by `.planning/ROADMAP.md`. Retained for provenance; do not edit.
+
 Date: 2026-05-01. Companion to [requirements.md](requirements.md). Captures the strategic decisions for the restart and the staged path to ship.
 
 ## Strategy decisions

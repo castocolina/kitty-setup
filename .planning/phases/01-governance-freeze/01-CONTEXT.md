@@ -41,7 +41,23 @@ changes in this phase — it writes `AGENTS.md` (canonical) with `CLAUDE.md` red
   - **`README.md`** — project information for humans: what kitty-setup is, install, usage, uninstall. Validated with `crafting-effective-readmes`.
   - **`.claude/conventions.md`** — stack and tooling conventions (uv, black, ruff, pyright, bandit, vulture), keeping the existing "Pluggable rules" indirection so the language layer stays swappable.
   - A rule belongs in exactly one of these. A rule discovered in the wrong file is moved, not copied.
-- **D-16:** **One commit per plan** (added 2026-09-22 by user request). The rule goes in `AGENTS.md`: an executor squashes a plan's work into a single logical commit naming the plan and the requirements it satisfies, rather than emitting a commit per task. A plan may produce more than one commit only when the changes are genuinely independent — an unrelated drive-by fix — and the second commit's message says why. This supersedes the "commit per task" half of D-06; D-06 keeps worktree-per-phase, merge-on-green, push, and the no-force-push/no-amend guard. Consequence for downstream planners: a plan is sized so that one commit is a coherent unit of review, and the executor is expected to stage the whole plan before committing. Applies from Phase 1 onward, including Phase 1's own execution. — **Reversibility:** reversible — a documented rule.
+- **D-16:** **One commit per plan** (added 2026-09-22 by user request). The rule goes in `AGENTS.md`: an executor squashes a plan's work into a single logical commit naming the plan and the requirements it satisfies, rather than emitting a commit per task. A plan may produce more than one commit only when the changes are genuinely independent — an unrelated drive-by fix — and the second commit's message says why. This supersedes the "commit per task" half of D-06; D-06 keeps worktree-per-phase, merge-on-green, push, and the no-force-push/no-amend guard. Consequence for downstream planners: a plan is sized so that one commit is a coherent unit of review, and the executor is expected to stage the whole plan before committing. Applies from Phase 1 onward, including Phase 1's own execution.
+
+  **Amended 2026-09-23 by user direction — TDD is kept as commit topology.** A plan whose frontmatter
+  is `type: tdd` produces **exactly two** commits: a RED commit containing only the new tests, whose
+  subject is `test(<phase>-<plan>): …` and at which those tests **fail**, followed by a GREEN commit
+  containing the implementation and the SUMMARY, subject `feat(<phase>-<plan>): …`. Every other plan
+  still produces exactly one. The distinction that makes this compatible with D-16's intent: the rule
+  is two commits **per plan**, not per task — review round 1 removed per-task RED/GREEN commits and
+  that removal stands. In Phase 1 this applies to plans `01-01` and `01-02`, both `type: tdd` with
+  `query task.is-behavior-adding` returning true.
+
+  Why it is a config dependency and not just prose: with `workflow.tdd_mode: true`, GSD's harness gate
+  requires a RED commit touching `tests/` before a behavior-adding task's implementation, and it
+  matches the commit scope `^[a-z]+\((0*N)-(0*M)\):`. A one-commit-per-plan rule makes that gate
+  unsatisfiable; the two settings must move together. R0.10 records the same dependency from the
+  requirements side. — **Reversibility:** reversible — a documented rule, but reverting it means
+  setting `workflow.tdd_mode: false` in the same change, or phases halt with `TDD GATE TRIPPED`.
 
 ### Tooling discipline (added 2026-09-22 by user request)
 - **D-12:** `CLAUDE.md` gains a research-tooling rule, because token/context cost is a first-class concern: prefer the `codegraph_explore` MCP tool (or `codegraph explore`) **before** opening files — it returns verbatim source plus call paths in one call. When a file must be opened directly, size it up first (`wc -l`, `rg -n '<symbol>'` to get the line number) and read only the relevant range instead of the whole file. Prefer the fast, focused tools — `rg`, `fd`, `wc`, `bat`, `sd`, `eza` — over their slower or more verbose equivalents. Rationale: this repo is CodeGraph-indexed, so a grep/read loop repeats work the index already did.
@@ -74,7 +90,11 @@ changes in this phase — it writes `AGENTS.md` (canonical) with `CLAUDE.md` red
 ### Files this phase edits
 - `AGENTS.md` — the canonical instruction file this phase creates (D-09, D-10, D-14, D-15).
 - `CLAUDE.md` — reduced to a single `@AGENTS.md` import line (D-14).
-- `README.md` — not edited here; named only so the placement rule in D-15 can point at it.
+- `README.md` — two edits only (plan 01-01 Step 0 b/b2): the `## Stack and layout` shell-allow-list
+  sentence gains `tools/hooks/`, and the repository-tree block gains an `AGENTS.md` entry. Nothing
+  else; `01-05` gates the branch diff at exactly two hunks. Corrected in review round 2 — this line
+  previously read "not edited here", which contradicted the plan that this phase's own hook work
+  forces: the allow-list claim becomes false the moment `tools/hooks/pre-push` exists.
 - `docs/requirements.md`, `docs/propossal_roadmap.md` — banner targets (D-04).
 - `openspec/changes/phase1-curated-bindings-revert-defaults/` — the change being archived (D-01).
 - `openspec/config.yaml` — moves with the tree (D-02).

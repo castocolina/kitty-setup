@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# tools/hooks/pre-push — git policy guard (R0.4, D-07). Invoked by `git push` before
+# any ref is transferred; a non-zero exit aborts the entire push.
+#
+# This file is shell because it is a git-invoked hook entry point, which the shell
+# allow-list in the repo's canonical instruction file ("Stack" section) permits. The
+# section is named rather than the filename on purpose: the canonical instruction file
+# changes during this phase, and a filename here would go stale.
+#
+# argv:  $1 = remote name (e.g. "origin"), $2 = remote URL.
+# stdin: one line per ref being pushed —
+#          <local_ref> SP <local_sha> SP <remote_ref> SP <remote_sha> LF
+#        An all-zero sha means "does not exist": an all-zero local_sha is a ref
+#        deletion, an all-zero remote_sha is a ref not yet present on the remote.
+#
+# Guard 1 (rewrite): rejects any push whose remote tip is not an ancestor of the local
+#   tip — force-push, amend-after-push, rebase-after-push. Verified live in
+#   .planning/phases/01-governance-freeze/01-RESEARCH.md Pattern 2. Unconditional: this is
+#   the T-1-01 control and has no escape hatch.
+# Guard 2 (master provenance): a push that names refs/heads/master on EITHER side of its
+#   refspec must carry only non-merge commits that some `gsd/*` branch contains. Both
+#   sides, because keyed on the remote side alone the guard never saw
+#   `git push origin master:refs/heads/main` — which carries the very commit
+#   `git push origin master` is rejected for. Measured, both before and after, in
+#   tmp/h06-prepush-refspec (plan 01-06; probe 01 recorded local_ref=refs/heads/master
+#   and remote_ref=refs/heads/main for that form, probe 02 the 11-scenario matrix).
+#   The hook cannot see how a commit was produced (01-RESEARCH.md "Open Questions" 1),
+#   so it judges provenance by reachability. Skippable with KITTI_ALLOW_MASTER_PUSH=1,
+#   which is announced whenever honoured.
+#
+# LIMITS — every one of these was established by execution, not guessed. If you hit one,
+# this hook is behaving exactly as designed; do not "fix" it.
+#   1. `git push --no-verify` bypasses this hook, and any client-side hook, entirely.
+#   2. KITTI_ALLOW_MASTER_PUSH=1 deliberately skips the master provenance guard, and only
+#      that guard. It is announced in the output whenever it is honoured.
+#   3. A squash merge into master is REJECTED: the squashed commit is a new object that no
+#      `gsd/*` branch contains. Verified by execution.
+#   4. Cherry-picked or rebased commits landing on master are REJECTED for the same reason
+#      — the replayed commits are new objects.
+#   5. A `gsd/*` branch deleted BEFORE its merge is pushed makes the guard reject a
+#      legitimate post-merge push. Verified by execution.
+#   6. The first-ever push of master to an empty remote ref is REJECTED: with no remote tip
+#      there is no range to enumerate, so provenance cannot be established at all. Widened
+#      2026-09-23 (plan 01-06) from `refs/heads/master` to an empty remote ref of ANY name,
+#      which is the only behaviour change the guard-2 keying fix makes beyond closing the
+#      bypass: `git push origin master:refs/heads/main` used to be waved through silently.
+#   7. Deleting refs/heads/master on the remote is REJECTED. Deleting any other ref,
+#      including a merged `gsd/*` phase branch, is allowed.
+#   8. Guard 2 is keyed on ref NAMES, so master's content pushed from some other local ref
+#      name is not seen: `git push origin <other-branch>:refs/heads/main` and
+#      `git push origin HEAD:refs/heads/main` both skip provenance even when that content
+#      is a commit authored on master. Reproduced (probe 02 scenario S7), and left open
+#      deliberately: the only content-based alternative — enumerating every push against
+#      the local master tip — would reject the first push of a legitimate `gsd/*` branch,
+#      which has no remote tip to enumerate against either (limit 6's cause). Guard 1 still
+#      applies to such a ref, so it cannot afterwards be rewritten, and the integration
+#      branch is master, so the residue is a stray remote branch. Same class as the
+#      reachability caveat on guard 2 above: a fabricated `gsd/*` branch pointer at a
+#      master-authored commit also satisfies provenance.
+# For 3-6 the sanctioned route is KITTI_ALLOW_MASTER_PUSH=1.
+# This is a compliance guard for cooperating agents, not a security boundary.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "${REPO_ROOT}"
+
+log() { printf '[pre-push] %s\n' "$*"; }
+# A rejection is diagnostic output, not progress, so it goes to stderr. `log`'s stdout
+# semantics are left as house style has them (tools/setup.sh:21); `err` is added beside
+# it rather than changing them.
+err() { printf '[pre-push] %s\n' "$*" >&2; }
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+MASTER_REF="refs/heads/master"
+
+# True when either side of the refspec names master: "$1" = local_ref, "$2" = remote_ref.
+# A deletion arrives with local_ref "(delete)", which matches neither side, and is decided
+# by the deletion branch below on the remote ref alone — what is deleted IS the remote ref.
+names_master() {
+    [[ "$1" == "${MASTER_REF}" || "$2" == "${MASTER_REF}" ]]
+}
+
+# Every nested git call below takes its stdin from /dev/null: git supplies the ref list
+# on fd 0, and a nested command that read stdin would silently swallow the remaining
+# ref lines.
+while read -r local_ref local_sha remote_ref remote_sha || [[ -n "${local_ref:-}" ]]; do
+    if [[ -z "${local_ref:-}" ]]; then
+        continue
+    fi
+
+    # Edge: an all-zero local_sha is a ref DELETION. Deleting a merged gsd/* branch is
+    # routine and stays allowed; deleting master is not. Decided explicitly rather than
+    # left to `git merge-base` erroring on a zero sha.
+    if [[ "${local_sha}" == "${ZERO_SHA}" ]]; then
+        if [[ "${remote_ref}" == "${MASTER_REF}" ]]; then
+            err "REJECTED deletion of ${remote_ref}: master is not a deletable ref"
+            printf '  deleting a merged gsd/* branch is routine; deleting master is not\n' >&2
+            exit 1
+        fi
+        continue
+    fi
+
+    # Edge: an all-zero remote_sha means the remote ref does not exist yet. There is no tip
+    # to compare against, so the rewrite guard does not apply (01-RESEARCH.md Pattern 2,
+    # "Limits" — a brand-new branch push is normal, not a bypass) and the provenance guard
+    # has no range to enumerate.
+    if [[ "${remote_sha}" == "${ZERO_SHA}" ]]; then
+        # A brand-new ref naming master on neither side is the phase-branch first push;
+        # the whole workflow depends on it being allowed.
+        if ! names_master "${local_ref}" "${remote_ref}"; then
+            continue
+        fi
+        if [[ "${KITTI_ALLOW_MASTER_PUSH:-}" == "1" ]]; then
+            log "KITTI_ALLOW_MASTER_PUSH=1 honoured; first push of ${remote_ref} allowed"
+            continue
+        fi
+        err "REJECTED ${local_ref} -> ${remote_ref}: provenance cannot be established"
+        printf '  a first push of master to an empty remote ref has no remote tip to compare\n' >&2
+        printf '  against, so not one incoming commit can be provenance-checked\n' >&2
+        printf '  for a deliberate repo bootstrap: KITTI_ALLOW_MASTER_PUSH=1 git push ...\n' >&2
+        exit 1
+    fi
+
+    # `if !` rather than a bare call: under `set -e` a bare non-zero exit would abort the
+    # script with no diagnostic at all. 01-RESEARCH.md Pattern 2 reproduced this exact
+    # signature live for both `--force` and amend-then-push.
+    if ! git merge-base --is-ancestor "${remote_sha}" "${local_sha}" </dev/null; then
+        err "REJECTED ${local_ref} -> ${remote_ref}: non-fast-forward (history rewrite)"
+        printf '  remote tip %s is not an ancestor of local %s\n' \
+            "${remote_sha:0:12}" "${local_sha:0:12}" >&2
+        printf '  push a new branch instead, or merge the remote tip rather than rewriting it\n' >&2
+        exit 1
+    fi
+
+    # ---- Guard 2: master provenance ----
+    if ! names_master "${local_ref}" "${remote_ref}"; then
+        continue
+    fi
+
+    # House idiom for env-var-driven behaviour (tools/uninstall.sh:45-47, 82). The hatch
+    # is announced so a bypass is never silent, and it skips THIS guard only — guard 1
+    # above stays unconditional.
+    if [[ "${KITTI_ALLOW_MASTER_PUSH:-}" == "1" ]]; then
+        log "KITTI_ALLOW_MASTER_PUSH=1 honoured; master provenance guard skipped for ${remote_ref}"
+        continue
+    fi
+
+    # Capture rev-list's output AND check git's own exit status before iterating: a
+    # `while read … < <(git rev-list …)` process substitution masks the producer's status
+    # even under `set -euo pipefail`, which would let a push through after enumeration
+    # failed. Fail closed instead.
+    if ! incoming="$(git rev-list --no-merges "${remote_sha}..${local_sha}" </dev/null)"; then
+        err "REJECTED ${local_ref} -> ${remote_ref}: provenance unverifiable"
+        printf '  could not enumerate %s..%s\n' "${remote_sha:0:12}" "${local_sha:0:12}" >&2
+        printf '  failing closed; re-run after `git fetch`, or use KITTI_ALLOW_MASTER_PUSH=1\n' >&2
+        exit 1
+    fi
+
+    # `git branch --list` exits 0 with empty output when nothing matches, so emptiness is
+    # what must be tested, not the exit status. A commit authored on master is contained in
+    # no gsd/* branch; a fast-forward or --no-ff merge yields only commits reachable from
+    # the merged branch (the merge commit itself is excluded by --no-merges).
+    while read -r sha; do
+        if [[ -z "${sha}" ]]; then
+            continue
+        fi
+        if [[ -z "$(git branch --list 'gsd/*' --contains "${sha}" </dev/null)" ]]; then
+            err "REJECTED ${local_ref} -> ${remote_ref}: provenance — ${sha:0:12} is in no gsd/* branch"
+            printf '  master takes work authored on a gsd/* branch and merged, not commits authored on master\n' >&2
+            printf '  for a deliberate bootstrap or override: KITTI_ALLOW_MASTER_PUSH=1 git push ...\n' >&2
+            exit 1
+        fi
+    done <<<"${incoming}"
+done
+
+exit 0

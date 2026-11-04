@@ -162,8 +162,10 @@ the subcommand list; `my-kitty uninstall --keep<TAB>` expands to the three
 
 ## Stack and layout
 
-Python is the stack. Bash exists only inside `tools/setup.sh` and `tools/uninstall.sh`
-for prerequisite bootstrap. Everything else is a Python entry point under
+Python is the stack. Bash exists only inside the bootstrap pair `tools/setup.sh` and
+`tools/uninstall.sh`, and inside the git hook entry points under `tools/hooks/`
+(`pre-push`, `post-commit`, `post-checkout`), each a thin dispatcher. Everything else is
+a Python entry point under
 `src/kitty_setup/`. Exactly one entry is exposed via `[project.scripts]`:
 `my-kitty`, dispatching subcommands (`install`, `uninstall`, `doctor`,
 `prune`, `help`) via argparse subparsers in `src/kitty_setup/cli.py`.
@@ -173,6 +175,7 @@ for prerequisite bootstrap. Everything else is a Python entry point under
 ├── Makefile               # thin glue, ≤5 lines per target
 ├── pyproject.toml         # uv-managed Python project, [project.scripts] entry points
 ├── README.md
+├── AGENTS.md
 ├── CLAUDE.md
 ├── docs/
 │   ├── requirements.md            # v1 scope, source of truth for what ships

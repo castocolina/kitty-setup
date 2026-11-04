@@ -77,6 +77,17 @@ ignore = []
 # S108: tests pass literal "/tmp/x" paths to argparse; never touched on disk.
 # S604: tests pass `shell="zsh"` to path_integration helpers (not subprocess shell).
 "tests/**/*.py" = ["S101", "S108", "S604"]
+# S603: test_git_hooks.py's `_git` helper passes a fixed literal argv list with shell=False;
+#       there is no untrusted input to check for.
+# S607: the same helper names the `git` binary without an absolute path on purpose — the test
+#       must exercise whichever `git` the host resolves from PATH, which is the one a developer
+#       and a hook actually run.
+# Scoped to this one file rather than appended to the "tests/**/*.py" list above, which is what
+# 01-01-PLAN.md Step 1b asked for: measured, appending them there suppresses pre-existing
+# `# noqa: S603` directives in five other test modules and turns each into a RUF100 "unused
+# noqa" finding — growing the repo's recorded lint baseline from 19 findings to 21 instead of
+# holding it. The narrower entry holds it at 19. See 01-01-SUMMARY.md "Deviations".
+"tests/unit/test_git_hooks.py" = ["S603", "S607"]
 
 [tool.pyright]
 include = ["src", "tests"]

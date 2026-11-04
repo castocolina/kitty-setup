@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# tools/hooks/post-checkout — CodeGraph index lifecycle, worktree-creation half
+# (R0.6, D-13). Invoked by `git checkout`, `git switch` and `git worktree add`, after
+# the working tree has already been updated. This hook is ADVISORY: it can only warn,
+# never abort a checkout or a worktree creation, and it has no non-zero exit path.
+#
+# This file is shell because it is a git-invoked hook entry point, which the shell
+# allow-list in the repo's canonical instruction file ("Stack" section) permits. The
+# section is named rather than the filename on purpose: the canonical instruction file
+# changes during this phase, and a filename here would go stale.
+#
+# argv:  $1 = previous HEAD sha, $2 = new HEAD sha, $3 = branch-checkout flag
+#        (1 = a branch checkout, 0 = a file checkout).
+# stdin: unused.
+#
+# FIRST-CHECKOUT MARKER: a brand-new worktree (or clone) is the one case where $1 is
+#   the all-zero sha and $3 is 1. An ordinary same-worktree branch switch passes a real
+#   previous-HEAD sha, so this hook is a no-op for it and the index is kept fresh by
+#   tools/hooks/post-commit instead. Reproduced live in
+#   .planning/phases/01-governance-freeze/01-RESEARCH.md Pattern 3.
+#
+# CWD IS LOAD-BEARING, and was measured rather than assumed. git runs this hook with
+#   cwd set to the root of the worktree it just checked out — for `git worktree add`
+#   that is the NEW worktree — but it resolves the hook FILE from core.hooksPath
+#   relative to the INVOKING worktree. Measured on git 2.55.0:
+#     worktree add -> argv=[000…0 <new-sha> 1]
+#                     cwd  = <new worktree>
+#                     hook = <invoking worktree>/tools/hooks/post-checkout
+#   So the house REPO_ROOT idiom, `cd "$(dirname "${BASH_SOURCE[0]}")/../.."`, would
+#   walk OUT of the new worktree and index the wrong tree — and would do so on EVERY
+#   invocation whenever core.hooksPath is an absolute path. This hook therefore stays
+#   in the directory git handed it. Do not add a `cd`.
+#
+# LIMITS — established by execution, not guessed. If you hit one, this hook is
+# behaving as designed; do not "fix" it.
+#   1. An ordinary `git checkout` / `git switch` inside an existing worktree never
+#      rebuilds the index, by design (the first-checkout marker above).
+#   2. A CodeGraph absence, failure or timeout is warned about and then ignored.
+#   3. On a host with no `timeout` binary (a default macOS install) the call is
+#      unbounded. Accepted residual risk, recorded as threat-register row T-1-04 in
+#      .planning/phases/01-governance-freeze/01-02-PLAN.md.
+
+set -euo pipefail
+
+log() { printf '[post-checkout] %s\n' "$*"; }
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+prev_head="${1:-}"
+branch_flag="${3:-}"
+
+# Not a first checkout: nothing to build.
+if [[ "${branch_flag}" != "1" || "${prev_head}" != "${ZERO_SHA}" ]]; then
+    exit 0
+fi
+
+# House precondition idiom (01-PATTERNS.md invariant 6): `command -v`, never `which`.
+if ! command -v codegraph >/dev/null 2>&1; then
+    log "warning: codegraph is not on PATH — no index was built for this worktree; the checkout itself is unaffected"
+    exit 0
+fi
+
+# Bounded so a codegraph that never returns cannot wedge a worktree creation. macOS
+# ships no `timeout` by default and this repo is verified on a Mac in Phases 9-10, so
+# the bare fallback is required rather than optional.
+CODEGRAPH_TIMEOUT_S="${KITTI_CODEGRAPH_TIMEOUT_S:-60}"
+rc=0
+if command -v timeout >/dev/null 2>&1; then
+    # `-y` is `--yes`: "Non-interactive: skip every prompt" (codegraph init --help).
+    # Without it a fresh worktree could block on a prompt with nobody to answer it.
+    timeout "${CODEGRAPH_TIMEOUT_S}" codegraph init -y >/dev/null || rc=$?
+else
+    codegraph init -y >/dev/null || rc=$?
+fi
+
+# A successful run is logged too, not just a failing one: `codegraph init`'s own
+# output is discarded above, so without this line the happy path would emit nothing
+# and R0.6's "demonstrated, not asserted" criterion would have no signal to capture.
+if [[ "${rc}" -eq 0 ]]; then
+    log "CodeGraph index built for this new worktree"
+else
+    log "warning: codegraph init exited ${rc} (failure or timeout) — the index was not built; the checkout itself is unaffected"
+fi
+
+exit 0

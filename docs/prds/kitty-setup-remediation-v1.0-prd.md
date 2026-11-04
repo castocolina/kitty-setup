@@ -1,5 +1,10 @@
 # kitty-setup Remediation & Cross-OS Harmonization — PRD
 
+> **FROZEN — history only; source of truth is `.planning/`.**
+> The dated input `.planning/REQUIREMENTS.md` was ingested from, and still cites as its
+> `Source:`. Superseded wherever the two differ — notably R0.4's git policy, reworded
+> 2026-09-22/23 per phase-1 decisions D-06 and D-16. Retained for provenance; do not edit.
+
 ## Requirements Description
 
 ### Background

@@ -2,7 +2,7 @@
 
 This file is the **plug point** for stack-specific rules. To switch the project to a
 different language, replace the contents of this file with the new stack's conventions.
-The filename (`.claude/conventions.md`) and the link from `CLAUDE.md` stay the same.
+The filename (`.claude/conventions.md`) and the link from `AGENTS.md` stay the same.
 
 Applies whenever the repo contains Python source. Phase 1 (foundation) may ship without
 Python — these rules engage as soon as a `pyproject.toml` lands.

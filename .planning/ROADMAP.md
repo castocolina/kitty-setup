@@ -25,12 +25,25 @@ repeated in each phase's success criteria — they are preconditions for calling
    `docs/agent-iteration.md`. No behaviour is removed or replaced without this.
 3. **Decide** — the decision and its rationale recorded.
 4. **Implement**.
-5. **Verify** — `make doctor` and `make test` output captured. ruff, black, pyright, bandit,
-   vulture clean. "Should work" is not an outcome.
+5. **Verify** — `make doctor` and `make test` output captured. "Should work" is not an outcome.
+   Quality tools, reworded 2026-09-23 after measurement (the original "ruff, black, pyright,
+   bandit, vulture clean" had never been satisfiable and would have gated every phase on debt it
+   did not cause):
+   - **`src/` must be clean** under ruff, black, pyright, bandit and vulture. Phase 2 brings it
+     there (R0.11); from then on this is a hard gate.
+   - **`tests/` must not regress** — no tool's finding count may grow against the recorded
+     baseline (measured at `5452f54`: ruff 28, black 11 files, pyright 571 errors of which 19 are
+     in `src/`, bandit 0 high / 8 medium / 19 low, vulture 12). Phase 8.5 drives the `tests/`
+     remainder down.
+   - A phase that *adds* a file owns that file being clean, wherever it lives.
 6. **Commit + merge + push** — each phase runs in its own git worktree on branch
-   `gsd/phase-{phase}-{slug}`; commit per task, then at phase end (gates green) merge into
-   `master` and push. Never force-push or amend pushed commits. A `tools/hooks/` pre-push guard
-   enforces this (updated 2026-09-22, phase-1 discussion D-06/D-07).
+   `gsd/phase-{phase}-{slug}`; work lands as **one commit per plan** — the granularity rule
+   lives in `AGENTS.md` and is pointed to, not restated here — then at phase end (gates
+   green) merge into `master` and push. Never force-push or amend pushed commits. A
+   `tools/hooks/` pre-push guard enforces this structurally — a compliance guard for
+   cooperating agents, not a security boundary; its seven disclosed limits are listed in
+   `AGENTS.md`'s git-policy bullet and are not repeated here (updated 2026-09-23, phase-1
+   execution, discussion D-06/D-07/D-16).
 
 Phases that touch bindings (3, 4, 7 on Linux; 10 on macOS) additionally re-run the R2.8 oracle
 test as a gate.
@@ -77,13 +90,30 @@ discuss-phase.
   10. `AGENTS.md` states the placement rule: rules in `AGENTS.md` (validated with `agent-md-refactor`), project information in `README.md` (validated with `crafting-effective-readmes`), stack conventions in `.claude/conventions.md`; each rule in exactly one file.
   11. `AGENTS.md` states the commit-granularity rule (one commit per plan, squashed logically; a split is justified in the message), and it appears in exactly one file — R0.4's text points at it rather than repeating it.
 
-**Plans**: TBD
+**Plans**: 5 plans in 5 waves (serial — the chain is forced by the archive → move → banner →
+instruction-file ordering constraint plus the tracer-first lead, not by a lack of parallelism)
+
+- [ ] 01-01-PLAN.md — TRACER: widen the shell allow-list in all four places that state it, then
+      `tools/hooks/pre-push` force/rewrite + `master`-provenance guard with every limit disclosed,
+      wired via one shared `core.hooksPath`, regression-tested in a disposable sandbox (R0.4)
+- [ ] 01-02-PLAN.md — CodeGraph index lifecycle: `post-checkout` indexes a new worktree,
+      `post-commit` syncs incrementally, neither can abort a git operation — absence, failure and
+      hang each tested, each hook logging a tagged success line (R0.6)
+- [ ] 01-03-PLAN.md — Archive the pending change with `--skip-specs`, stage the archive's own
+      effects, `git mv openspec/` under `.planning/legacy/` as a pure rename, FROZEN banners on the
+      three history files (R0.2)
+- [ ] 01-04-PLAN.md — `AGENTS.md` as the canonical rule set, `CLAUDE.md` reduced to `@AGENTS.md`,
+      `claude_md_path` and every stale `CLAUDE.md` pointer repointed (R0.1, R0.3, R0.4, R0.5, R0.7,
+      R0.8, R0.9, R0.10)
+- [ ] 01-05-PLAN.md — `agent-md-refactor` validation pass, ROADMAP/PROJECT git-policy alignment
+      including the out-of-scope merge bullet, and the phase governance gate run and recorded. The
+      phase-end merge to `master` is Universal Phase Gate step 6, not a plan task (R0.4, R0.9, R0.10)
 
 ### Phase 2: Defect Remediation
 
 **Goal**: A fresh install on Bazzite is provably healthy — `my-kitty doctor` is all PASS/SKIP and every known audit defect is fixed and pinned by a regression test, giving later phases a green baseline they can trust.
 **Depends on**: Phase 1
-**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7
+**Requirements**: R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R0.11
 **Success Criteria** (what must be TRUE):
 
   1. `my-kitty doctor` exits 0 with every check PASS or SKIP on a fresh Bazzite uv-tool install: completion works via an install-generated static completion file that the rc block sources (no runtime `register-python-argcomplete` PATH lookup), and checks that previously printed "skipped" now report a real SKIP state.
@@ -92,6 +122,7 @@ discuss-phase.
   4. A failing config-parse check reports the actual command it ran, surfaces the parser's stderr, rolls the payload directory back, and is labelled correctly in doctor; the integration suite passes when run from inside a kitty window (`KITTY_WINDOW_ID` stripped in h25 and `scene_recipe_e2e`).
   5. Every remaining minor defect has a regression test: the install log removed outright, launcher `int(stdout)` guarded into a clean error, empty/whitespace colors treated as absent and passthrough restricted to real `rgb:`/`rgba:`/functional forms, `prune --keep <0` raising an argparse error, harness teardown issuing `close-os-window`, and the PATH-migration and unsupported-shell hint messages printed exactly as specified (both lines).
 
+  6. `uv run ruff check src`, `uv run black --check src`, `uv run pyright` over `src`, `uv run bandit -q -r src` and `uv run vulture src` all report clean for `src/` (R0.11) — the Universal Phase Gate's src half becomes a hard gate from this phase onward. `tests/` is out of scope here; Phase 8.5 owns it.
 **Plans**: TBD
 
 ### Phase 3: Keybinding Research & Oracle
@@ -176,14 +207,32 @@ discuss-phase.
 
 **Goal**: Nothing a user or a future agent reads about this project is a lie — the docs describe the code as it now is, and where macOS is still unproven they say so rather than guessing.
 **Depends on**: Phase 7
-**Requirements**: R6.1, R6.2
+**Requirements**: R6.1, R6.2, R6.3
 **Success Criteria** (what must be TRUE):
 
   1. CLI help text, docstrings, README, scene example headers, and the `CLAUDE.md` "Stack" section all match current behaviour — every claim checkable against a command's actual output.
   2. Every behaviour changed in Phases 2-7 has a repro doc carrying both a Linux status section (filled with recorded evidence) and a macOS status section (filled, or explicitly marked pending Phase 10 rather than left blank or assumed).
   3. Frozen `openspec/` specs are left unrewritten, with the freeze banner from Phase 1 still the only change to them.
+  4. `.claude/conventions.md` and the `Makefile` agree on which targets exist: `make validate`, `make format`, `make test-unit` and `make test-integration` each either exist and run, or are removed from `.claude/conventions.md` — verified by invoking all four, not by reading either file (R6.3). Added 2026-09-23 by plan 01-06: Phase 8 declared R6.3 but wrote no criterion for it, so it would have run ungated — `/gsd-verify-work` confirmed all four targets are absent from the `Makefile` while `.claude/conventions.md` requires them, including "never commit code that fails `make validate`".
 
 **Plans**: TBD
+
+### Phase 8.5: Test-Suite Type & Lint Cleanup
+
+**Goal**: The quality gate means what it says everywhere, not just in `src/` — the test suite type-checks and lints clean, so a real defect in a test is visible instead of buried in ~580 pre-existing findings.
+**Depends on**: Phase 8 (added 2026-09-23 at the user's direction: clean `src` immediately, then a dedicated phase before Distribution for the rest). Numbered 8.5 rather than inserted as a new 9 so no existing phase, directory, or traceability row is renumbered.
+**Requirements**: R0.12
+**Success Criteria** (what must be TRUE):
+
+  1. `uv run pyright` reports **0 errors** across `include = ["src", "tests"]`, or `pyproject.toml` records a deliberate, justified narrowing (e.g. a laxer `typeCheckingMode` for `tests`) with the rationale written next to it — a silent scope reduction does not satisfy this.
+  2. `uv run ruff check src tests tools` and `uv run black --check src tests tools` both exit 0.
+  3. `uv run vulture src tests` reports no finding that is a real dead-code defect; each remaining report is either removed or whitelisted with a one-line reason.
+  4. `uv run bandit -q -r src` has no high-severity issue, and every medium is either fixed or carries an inline `# nosec` with a stated reason.
+  5. No test's **behaviour** changed to satisfy a type checker: the suite's pass/fail set before and after is identical, evidenced by a captured run of both.
+  6. The Universal Phase Gate's step 5 is updated to drop the `tests/` no-regression clause, because the baseline is now zero.
+
+**Plans**: TBD
+**Note**: This phase exists because the gate as originally written was aspirational. 96% of the debt is `typeCheckingMode = "strict"` applied to pytest bodies (`reportUnknownVariableType`, `reportUnknownArgumentType`, `reportUnknownLambdaType` dominate) — noisy by nature, not evidence of broken tests. Deciding *whether* strict typing over tests earns its keep is in scope; criterion 1 accepts a justified narrowing as readily as a fix.
 
 ### Phase 9: Distribution & Release Channels
 
@@ -221,11 +270,11 @@ discuss-phase.
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 8.5 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Governance & Freeze | 0/TBD | Not started | - |
+| 1. Governance & Freeze | 5/5 | Complete (merge deferred) | 2026-09-23 |
 | 2. Defect Remediation | 0/TBD | Not started | - |
 | 3. Keybinding Research & Oracle | 0/TBD | Not started | - |
 | 4. Keybinding Harmonization | 0/TBD | Not started | - |
@@ -233,6 +282,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Pane Color Cycle | 0/TBD | Not started | - |
 | 7. Presets & Chord→Scene | 0/TBD | Not started | - |
 | 8. Live-Doc Hygiene | 0/TBD | Not started | - |
+| 8.5. Test-Suite Type & Lint Cleanup | 0/TBD | Not started | - |
 | 9. Distribution & Release Channels | 0/TBD | Not started | - |
 | 10. macOS E2E Over SSH | 0/TBD | Not started | - |
 
